@@ -857,3 +857,63 @@ class FMREDatabase:
         cursor.execute("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE username = ?", (username,))
         conn.commit()
         conn.close()
+    
+    def search_call_signs_dynamic(self, pattern, limit=10):
+        """Busca indicativos que coincidan con el patrón ingresado para filtros dinámicos"""
+        if not pattern or len(pattern.strip()) < 2:
+            return []
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Buscar en reportes recientes y historial de estaciones
+        pattern_upper = pattern.upper().strip()
+        search_pattern = f"{pattern_upper}%"
+        
+        # Primero buscar en historial de estaciones (más relevante)
+        cursor.execute('''
+            SELECT DISTINCT call_sign, operator_name, qth, zona, sistema, use_count
+            FROM station_history 
+            WHERE call_sign LIKE ? 
+            ORDER BY use_count DESC, call_sign ASC
+            LIMIT ?
+        ''', (search_pattern, limit))
+        
+        history_results = cursor.fetchall()
+        
+        # Si no hay suficientes resultados, buscar en reportes
+        if len(history_results) < limit:
+            remaining_limit = limit - len(history_results)
+            cursor.execute('''
+                SELECT DISTINCT call_sign, operator_name, qth, zona, sistema, 
+                       COUNT(*) as report_count
+                FROM reports 
+                WHERE call_sign LIKE ? 
+                AND call_sign NOT IN (SELECT call_sign FROM station_history WHERE call_sign LIKE ?)
+                GROUP BY call_sign, operator_name, qth, zona, sistema
+                ORDER BY report_count DESC, call_sign ASC
+                LIMIT ?
+            ''', (search_pattern, search_pattern, remaining_limit))
+            
+            report_results = cursor.fetchall()
+            
+            # Combinar resultados
+            all_results = history_results + report_results
+        else:
+            all_results = history_results
+        
+        conn.close()
+        
+        # Formatear resultados
+        formatted_results = []
+        for result in all_results:
+            formatted_results.append({
+                'call_sign': result[0],
+                'operator_name': result[1],
+                'qth': result[2],
+                'zona': result[3],
+                'sistema': result[4],
+                'usage_count': result[5] if len(result) > 5 else 0
+            })
+        
+        return formatted_results

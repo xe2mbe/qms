@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -1435,7 +1434,9 @@ def registro_reportes():
     
     if 'prefill_estado' in st.session_state:
         try:
-            default_estado_idx = estados.index(st.session_state['prefill_estado'])
+            # Convertir a formato título para que coincida con la lista
+            estado_formatted = st.session_state['prefill_estado'].title()
+            default_estado_idx = estados.index(estado_formatted)
         except ValueError:
             default_estado_idx = 0
     
@@ -1468,7 +1469,7 @@ def registro_reportes():
                 col_idx = i % 3
                 with cols[col_idx]:
                     # Botón más compacto y atractivo
-                    usage_text = f"({suggestion['usage_count']} usos)" if suggestion['usage_count'] > 0 else "(nuevo)"
+                    usage_text = f"({suggestion['use_count']} usos)" if suggestion['use_count'] > 0 else "(nuevo)"
                     
                     button_key = f"quick_select_{suggestion['call_sign']}_{i}"
                     
@@ -1482,13 +1483,14 @@ def registro_reportes():
                         st.session_state['prefill_call'] = suggestion['call_sign']
                         st.session_state['prefill_name'] = suggestion['operator_name']
                         st.session_state['prefill_estado'] = suggestion['qth']
+                        st.session_state['prefill_ciudad'] = suggestion.get('ciudad', '')
                         st.session_state['prefill_zona'] = suggestion['zona']
                         st.session_state['prefill_sistema'] = suggestion['sistema']
                         
                         # Mostrar mensaje de éxito
                         st.success(f"✅ Datos cargados: {suggestion['call_sign']} - {suggestion['operator_name']}")
                         st.rerun()
-            
+                            # Mostrar debug persistente si existe
             # Tip mejorado
             st.info("💡 **Tip:** Haz clic en cualquier sugerencia para autocompletar todos los campos automáticamente")
 
@@ -1653,20 +1655,54 @@ def registro_reportes():
     
     if not recent_reports.empty:
         # Métricas del historial
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
             unique_participants = recent_reports['call_sign'].nunique()
             st.metric("Participantes Únicos", unique_participants)
         
         with col2:
-            most_used = recent_reports.iloc[0] if len(recent_reports) > 0 else None
-            if most_used is not None:
-                st.metric("Más Utilizada", most_used['call_sign'], f"{most_used['use_count']} usos")
-        
+            total_reports = len(recent_reports)
+            st.metric("Total Reportes", total_reports)
+
         with col3:
-            avg_uses = recent_reports['use_count'].mean()
-            st.metric("Promedio de Usos", f"{avg_uses:.1f}")
+            if not recent_reports.empty:
+                # Encontrar el sistema que más aparece
+                sistema_counts = recent_reports['sistema'].value_counts()
+                most_used_system = sistema_counts.index[0] if len(sistema_counts) > 0 else "N/A"
+                system_count = sistema_counts.iloc[0] if len(sistema_counts) > 0 else 0
+                st.metric("Sistema Más Utilizado", most_used_system, f"{system_count} reportes")
+            else:
+                st.metric("Sistema Más Utilizado", "N/A")
+        
+        #with col4:
+        #    if not recent_reports.empty:
+        #        # Encontrar el indicativo que más aparece
+        #        call_sign_counts = recent_reports['call_sign'].value_counts()
+        #        most_used_call = call_sign_counts.index[0] if len(call_sign_counts) > 0 else "N/A"
+        #        usage_count = call_sign_counts.iloc[0] if len(call_sign_counts) > 0 else 0
+        #        st.metric("Más Utilizada", most_used_call, f"{usage_count} reportes")
+        #    else:
+        #        st.metric("Más Utilizada", "N/A")
+        with col4:
+            if not recent_reports.empty:
+                # Encontrar el estado que más aparece
+                estado_counts = recent_reports['qth'].value_counts()
+                most_active_state = estado_counts.index[0] if len(estado_counts) > 0 else "N/A"
+                state_count = estado_counts.iloc[0] if len(estado_counts) > 0 else 0
+                st.metric("Estado Más Activo", most_active_state, f"{state_count} reportes")
+            else:
+                st.metric("Estado Más Activo", "N/A")
+
+        with col5:
+            # Zona con más actividad
+            if not recent_reports.empty:
+                zona_counts = recent_reports['zona'].value_counts()
+                most_active_zone = zona_counts.index[0] if len(zona_counts) > 0 else "N/A"
+                zone_count = zona_counts.iloc[0] if len(zona_counts) > 0 else 0
+                st.metric("Zona Más Activa", most_active_zone, f"{zone_count} reportes")
+            else:
+                st.metric("Zona Más Activa", "N/A")
         
         # Mostrar reportes con checkboxes para selección
         st.write("**Reportes de esta sesión:**")
@@ -1871,7 +1907,6 @@ def registro_reportes():
                     del st.session_state.show_selected_details
                     st.rerun()
         
-        # Modal para edición individual o masiva
         if st.session_state.get('show_bulk_edit', False):
             @st.dialog(f"✏️ Editar {len(st.session_state.selected_reports)} Reporte{'s' if len(st.session_state.selected_reports) > 1 else ''}")
             def show_individual_edit():
@@ -1924,38 +1959,38 @@ def registro_reportes():
                         with col2:
                             # Zona
                             zonas = get_zonas()
-                            current_zona = report.get('zona', '')
+                            current_zona = report['zona']
                             zona_index = zonas.index(current_zona) if current_zona in zonas else 0
                             edit_zona = st.selectbox("Zona:", zonas, index=zona_index)
                             
                             # Sistema
                             sistemas = get_sistemas()
-                            current_sistema = report.get('sistema', '')
+                            current_sistema = report['sistema']
                             sistema_index = sistemas.index(current_sistema) if current_sistema in sistemas else 0
                             edit_sistema = st.selectbox("Sistema:", sistemas, index=sistema_index)
                             
-                            edit_signal_report = st.text_input(
-                                "Reporte de Señal:",
-                                value=report.get('signal_report', ''),
-                                help="Ejemplo: Buena, Regular, Mala"
-                            )
+                            # Reporte de señal
+                            signal_reports = ["59", "58", "57", "56", "55", "54", "53", "52", "51", "Buena", "Regular", "Mala"]
+                            current_signal = report['signal_report']
+                            signal_index = signal_reports.index(current_signal) if current_signal in signal_reports else 0
+                            edit_signal_report = st.selectbox("Reporte de Señal:", signal_reports, index=signal_index)
                             
                             edit_observations = st.text_area(
                                 "Observaciones:",
-                                value=report.get('observations', '') or '',
+                                value=report.get('observations', ''),
                                 height=100
                             )
                         
                         col_save, col_cancel = st.columns(2)
                         
                         with col_save:
-                            save_individual = st.form_submit_button("💾 Guardar Cambios")
+                            save_individual = st.form_submit_button("💾 Guardar Cambios", type="primary", use_container_width=True)
                         
                         with col_cancel:
-                            cancel_individual = st.form_submit_button("❌ Cancelar")
+                            cancel_individual = st.form_submit_button("❌ Cancelar", use_container_width=True)
                         
                         if save_individual:
-                            # Validar datos
+                            # Validar campos
                             is_valid, errors = validate_all_fields(edit_call_sign, edit_operator_name, edit_qth, edit_ciudad, edit_signal_report, edit_zona, edit_sistema)
                             
                             if is_valid:
@@ -1963,7 +1998,7 @@ def registro_reportes():
                                 needs_confirmation, warning_msg = detect_inconsistent_data(edit_call_sign, edit_qth, edit_zona)
                                 
                                 if needs_confirmation:
-                                    # Guardar datos en session_state para confirmación de edición
+                                    # Guardar para confirmación
                                     pending_key = f"pending_individual_edit_{report['id']}"
                                     st.session_state[pending_key] = {
                                         'report_id': report['id'],
@@ -1976,10 +2011,9 @@ def registro_reportes():
                                         'signal_report': edit_signal_report,
                                         'grid_locator': edit_grid_locator,
                                         'observations': edit_observations,
-                                        'warning_msg': warning_msg,
-                                        'edit_key': edit_key
+                                        'warning_msg': warning_msg
                                     }
-                                    del st.session_state[edit_key]
+                                    del st.session_state.show_bulk_edit
                                     st.rerun()
                                 else:
                                     # Actualizar directamente
@@ -2001,9 +2035,8 @@ def registro_reportes():
                                         del st.session_state.show_bulk_edit
                                         st.success("✅ Reporte actualizado exitosamente")
                                         st.rerun()
-                                        
                                     except Exception as e:
-                                        st.error(f"❌ Error al actualizar reporte: {str(e)}")
+                                        st.error(f"❌ Error al actualizar: {str(e)}")
                             else:
                                 for error in errors:
                                     st.error(f"❌ {error}")
@@ -2036,10 +2069,10 @@ def registro_reportes():
                         col_save, col_cancel = st.columns(2)
                         
                         with col_save:
-                            save_bulk = st.form_submit_button("💾 Actualizar Todos")
+                            save_bulk = st.form_submit_button("💾 Actualizar Todos", type="primary", use_container_width=True)
                         
                         with col_cancel:
-                            cancel_bulk = st.form_submit_button("❌ Cancelar")
+                            cancel_bulk = st.form_submit_button("❌ Cancelar", use_container_width=True)
                         
                         if save_bulk:
                             try:
@@ -3305,7 +3338,7 @@ def show_user_management():
                                     else:
                                         st.warning("⚠️ Usuario creado. Configura SMTP para enviar credenciales por email")
                                     
-                                    # Esperar un momento antes de recargar para que se vea el mensaje
+                                    # Esperar un momento antes de recargar para mostrar mensajes
                                     import time
                                     time.sleep(2)
                                     st.rerun()

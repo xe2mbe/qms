@@ -34,9 +34,16 @@ class FMREDatabase:
                 session_date TEXT NOT NULL,
                 timestamp DATETIME DEFAULT (datetime('now', 'localtime')),
                 region TEXT,
-                signal_quality INTEGER
+                signal_quality INTEGER,
+                created_by TEXT
             )
         ''')
+        
+        # Agregar columna created_by si no existe (para bases de datos existentes)
+        try:
+            cursor.execute('ALTER TABLE reports ADD COLUMN created_by TEXT')
+        except sqlite3.OperationalError:
+            pass  # La columna ya existe
         
         # Tabla de sesiones
         cursor.execute('''
@@ -146,7 +153,7 @@ class FMREDatabase:
         except Exception as e:
             print(f"Error durante la migración: {e}")
     
-    def add_report(self, call_sign, operator_name, qth, ciudad, signal_report, zona, sistema, grid_locator="", hf_frequency="", hf_band="", hf_mode="", hf_power="", observations="", session_date=None):
+    def add_report(self, call_sign, operator_name, qth, ciudad, signal_report, zona, sistema, grid_locator="", hf_frequency="", hf_band="", hf_mode="", hf_power="", observations="", session_date=None, created_by=None):
         """Agrega un nuevo reporte a la base de datos"""
         if session_date is None:
             # Usar zona horaria de México para la fecha de sesión
@@ -170,11 +177,11 @@ class FMREDatabase:
         try:
             cursor.execute('''
                 INSERT INTO reports (call_sign, operator_name, qth, ciudad, signal_report, zona, sistema,
-                               grid_locator, hf_frequency, hf_band, hf_mode, hf_power, observations, session_date, region, signal_quality)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                               grid_locator, hf_frequency, hf_band, hf_mode, hf_power, observations, session_date, region, signal_quality, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (call_sign.upper(), operator_name.title(), qth.upper(), ciudad.title(), signal_report, zona, sistema,
                   grid_locator.upper() if grid_locator else None, hf_frequency or None, hf_band or None, 
-                  hf_mode or None, hf_power or None, observations, session_date, region, signal_quality))
+                  hf_mode or None, hf_power or None, observations, session_date, region, signal_quality, created_by))
         except sqlite3.OperationalError as e:
             if "no column named" in str(e):
                 # Fallback para compatibilidad con esquemas antiguos

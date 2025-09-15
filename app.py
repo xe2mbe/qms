@@ -1582,12 +1582,13 @@ def registro_reportes():
                 else:
                     # No hay inconsistencias, guardar directamente
                     try:
+                        created_by = current_user['username'] if current_user else 'guest'
                         # Agregar a la base de datos
                         report_id = db.add_report(
                             call_sign, operator_name, estado, ciudad, 
                             signal_report, zona, sistema, 
                             grid_locator="", hf_frequency="", hf_band="", hf_mode="", hf_power="", 
-                            observations=observations
+                            observations=observations, created_by=created_by
                         )
                         
                         # Limpiar datos precargados después de agregar reporte
@@ -1617,13 +1618,14 @@ def registro_reportes():
             with col_confirm:
                 if st.button("✅ Continuar y Guardar", key="confirm_save_modal", type="primary", use_container_width=True):
                     try:
+                        created_by = current_user['username'] if current_user else 'guest'
                         # Agregar a la base de datos
                         report_id = db.add_report(
                             pending['call_sign'], pending['operator_name'], pending['estado'], 
                             pending['ciudad'], pending['signal_report'], pending['zona'], 
                             pending['sistema'], 
                             grid_locator="", hf_frequency="", hf_band="", hf_mode="", hf_power="", 
-                            observations=pending['observations']
+                            observations=pending['observations'], created_by=created_by
                         )
                         
                         # Limpiar datos precargados después de agregar reporte
@@ -1752,8 +1754,11 @@ def registro_reportes():
         # Formatear timestamp
         display_data['Hora'] = pd.to_datetime(display_data['timestamp']).dt.strftime('%H:%M:%S')
         
+        # Agregar columna de usuario
+        display_data['Capturado por'] = display_data['created_by'].fillna('N/A')
+        
         # Configurar columnas principales a mostrar
-        columns_to_show = ['Seleccionar', 'call_sign', 'operator_name', 'qth', 'zona', 'sistema', 'signal_report', 'Hora']
+        columns_to_show = ['Seleccionar', 'call_sign', 'operator_name', 'qth', 'zona', 'sistema', 'signal_report', 'Hora', 'Capturado por']
         column_config = {
             "Seleccionar": st.column_config.CheckboxColumn(
                 "✓",
@@ -1766,7 +1771,8 @@ def registro_reportes():
             'zona': st.column_config.TextColumn("Zona", width="small"),
             'sistema': st.column_config.TextColumn("Sistema", width="medium"),
             'signal_report': st.column_config.TextColumn("Señal", width="small"),
-            'Hora': st.column_config.TextColumn("Hora", width="small")
+            'Hora': st.column_config.TextColumn("Hora", width="small"),
+            'Capturado por': st.column_config.TextColumn("Usuario", width="medium")
         }
         
         # Mostrar tabla de solo lectura con selección para editar
@@ -1776,6 +1782,7 @@ def registro_reportes():
         display_data = recent_reports.copy()
         display_data['Hora'] = pd.to_datetime(display_data['timestamp']).dt.strftime('%H:%M:%S')
         display_data['Seleccionar'] = display_data['id'].isin(st.session_state.selected_reports)
+        display_data['Capturado por'] = display_data['created_by'].fillna('N/A')
         
         # Configuración de columnas para tabla de solo lectura
         column_config = {
@@ -1791,18 +1798,19 @@ def registro_reportes():
             'zona': st.column_config.TextColumn("Zona", width="small"),
             'sistema': st.column_config.TextColumn("Sistema", width="medium"),
             'signal_report': st.column_config.TextColumn("Señal", width="small"),
-            'Hora': st.column_config.TextColumn("Hora", width="small")
+            'Hora': st.column_config.TextColumn("Hora", width="small"),
+            'Capturado por': st.column_config.TextColumn("Usuario", width="medium")
         }
         
         # Mostrar tabla de solo lectura (solo para selección)
-        columns_to_show = ['Seleccionar', 'call_sign', 'operator_name', 'qth', 'zona', 'sistema', 'signal_report', 'Hora']
+        columns_to_show = ['Seleccionar', 'call_sign', 'operator_name', 'qth', 'zona', 'sistema', 'signal_report', 'Hora', 'Capturado por']
         
         selected_df = st.data_editor(
             display_data[columns_to_show],
             column_config=column_config,
             width='stretch',
             hide_index=True,
-            disabled=['call_sign', 'operator_name', 'qth', 'zona', 'sistema', 'signal_report', 'Hora'],  # Solo permitir editar checkboxes
+            disabled=['call_sign', 'operator_name', 'qth', 'zona', 'sistema', 'signal_report', 'Hora', 'Capturado por'],  # Solo permitir editar checkboxes
             key="session_reports_selection_table"
         )
         
@@ -1984,13 +1992,13 @@ def registro_reportes():
                         col_save, col_cancel = st.columns(2)
                         
                         with col_save:
-                            save_individual = st.form_submit_button("💾 Guardar Cambios", type="primary", use_container_width=True)
+                            save_individual = st.form_submit_button("💾 Guardar Cambios")
                         
                         with col_cancel:
-                            cancel_individual = st.form_submit_button("❌ Cancelar", use_container_width=True)
+                            cancel_individual = st.form_submit_button("❌ Cancelar")
                         
                         if save_individual:
-                            # Validar campos
+                            # Validar datos
                             is_valid, errors = validate_all_fields(edit_call_sign, edit_operator_name, edit_qth, edit_ciudad, edit_signal_report, edit_zona, edit_sistema)
                             
                             if is_valid:
@@ -1998,7 +2006,7 @@ def registro_reportes():
                                 needs_confirmation, warning_msg = detect_inconsistent_data(edit_call_sign, edit_qth, edit_zona)
                                 
                                 if needs_confirmation:
-                                    # Guardar para confirmación
+                                    # Guardar datos en session_state para confirmación
                                     pending_key = f"pending_individual_edit_{report['id']}"
                                     st.session_state[pending_key] = {
                                         'report_id': report['id'],
@@ -2069,10 +2077,10 @@ def registro_reportes():
                         col_save, col_cancel = st.columns(2)
                         
                         with col_save:
-                            save_bulk = st.form_submit_button("💾 Actualizar Todos", type="primary", use_container_width=True)
+                            save_bulk = st.form_submit_button("💾 Actualizar Todos")
                         
                         with col_cancel:
-                            cancel_bulk = st.form_submit_button("❌ Cancelar", use_container_width=True)
+                            cancel_bulk = st.form_submit_button("❌ Cancelar")
                         
                         if save_bulk:
                             try:
@@ -2156,7 +2164,6 @@ def registro_reportes():
                     with col_canc:
                         if st.button("❌ Revisar Datos", key=f"cancel_individual_edit_{report_id}", use_container_width=True):
                             del st.session_state[pending_key]
-                            st.session_state.show_bulk_edit = True
                             st.rerun()
                 
                 show_individual_edit_confirmation()

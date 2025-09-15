@@ -1140,10 +1140,16 @@ def show_profile_management():
                     if success:
                         st.success("✅ Contraseña cambiada correctamente")
                         st.info("🔄 Por seguridad, deberás iniciar sesión nuevamente")
-                        if st.button("🚪 Cerrar Sesión"):
-                            auth.logout()
+                        # Marcar para mostrar botón de logout fuera del form
+                        st.session_state.show_logout_button = True
                     else:
                         st.error("❌ Error al cambiar la contraseña")
+    
+    # Botón de logout fuera del formulario
+    if st.session_state.get('show_logout_button', False):
+        if st.button("🚪 Cerrar Sesión"):
+            del st.session_state.show_logout_button
+            auth.logout()
 
 def registro_reportes():
     st.title("📋 Registro de Reportes")
@@ -2794,6 +2800,8 @@ elif page == "🔍 Buscar/Editar":
                                                 observations=edit_observations
                                             )
                                             
+                                            st.session_state.selected_reports = []
+                                            del st.session_state.show_bulk_edit
                                             st.success("✅ Reporte actualizado exitosamente")
                                             st.rerun()
                                             
@@ -3320,14 +3328,14 @@ def show_user_management():
                         else:
                             try:
                                 # Crear usuario
-                                user_id = db.create_user(new_username, new_password, new_full_name, new_email, new_role)
+                                user_id = db.create_user(new_username, new_password, new_role, new_full_name, new_email)
                                 
                                 if user_id:
                                     st.success(f"🎉 ¡Usuario creado exitosamente!")
                                     st.info(f"👤 **Usuario:** {new_username}")
                                     st.info(f"👨‍💼 **Nombre:** {new_full_name}")
                                     st.info(f"📧 **Email:** {new_email}")
-                                    st.info(f"🎭 **Rol:** {new_role.title()}")
+                                    st.info(f"🎭 **Rol:** {new_role}")
                                     
                                     # Enviar email de bienvenida si está configurado
                                     if email_service.is_configured():

@@ -720,8 +720,8 @@ class FMREDatabase:
         
         try:
             # Actualizar con nueva contraseña
-            import bcrypt
-            password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            import hashlib
+            password_hash = hashlib.sha256(new_password.encode()).hexdigest()
             cursor.execute('''
                 UPDATE users 
                 SET password_hash = ?

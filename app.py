@@ -2049,6 +2049,7 @@ def registro_reportes():
                                         del st.session_state.show_bulk_edit
                                         st.success("✅ Reporte actualizado exitosamente")
                                         st.rerun()
+                                        
                                     except Exception as e:
                                         st.error(f"❌ Error al actualizar: {str(e)}")
                             else:
@@ -3477,3 +3478,20 @@ if st.query_params.get('api') == 'call_signs':
     suggestions = get_call_signs_suggestions()
     st.json(suggestions)
     st.stop()
+
+def show_dashboard():
+    st.header("📊 Dashboard")
+    
+    # Limpiar caché automáticamente al acceder al dashboard
+    # Esto resuelve el problema de mensajes de caché obsoletos en el servidor
+    if hasattr(st, 'cache_data'):
+        st.cache_data.clear()
+    if hasattr(st, 'cache_resource'):
+        st.cache_resource.clear()
+    
+    # Limpiar session state relacionado con reportes para forzar actualización
+    keys_to_clear = [k for k in st.session_state.keys() if 'report' in k.lower() or 'dashboard' in k.lower()]
+    for key in keys_to_clear:
+        del st.session_state[key]
+    
+    # Resto del código de la función show_dashboard

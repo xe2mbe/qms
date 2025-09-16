@@ -373,3 +373,83 @@ def validate_hf_fields(sistema, hf_frequency="", hf_band="", hf_mode="", hf_powe
                 errors.append(f"Frecuencia HF: {msg}")
     
     return len(errors) == 0, errors
+
+import streamlit as st
+import sqlite3
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
+import hashlib
+import secrets
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import re
+from typing import Optional
+
+def extract_prefix_from_callsign(call_sign: str) -> Optional[str]:
+    """
+    Extrae el prefijo de un indicativo mexicano para determinar la zona automáticamente.
+    
+    Args:
+        call_sign: Indicativo completo (ej: XE1ABC, XE3DEF, W1ABC, JA1ABC)
+        
+    Returns:
+        Prefijo extraído (ej: XE1, XE3) o 'FOREIGN' para indicativos extranjeros
+    """
+    if not call_sign:
+        return None
+    
+    call_sign = call_sign.upper().strip()
+    
+    # Patrones para indicativos mexicanos
+    mexican_patterns = [
+        r'^(XE[1-3])[A-Z]*$',  # XE1, XE2, XE3 seguido de letras
+        r'^(XF[1-3])[A-Z]*$',  # XF1, XF2, XF3 seguido de letras  
+        r'^(4A[1-3])[A-Z]*$',  # 4A1, 4A2, 4A3 seguido de letras
+        r'^(6D[1-3])[A-Z]*$',  # 6D1, 6D2, 6D3 seguido de letras
+    ]
+    
+    # Verificar si es mexicano
+    for pattern in mexican_patterns:
+        match = re.match(pattern, call_sign)
+        if match:
+            return match.group(1)
+    
+    # Si no es mexicano pero parece un indicativo válido, es extranjero
+    # Patrones básicos para indicativos internacionales
+    foreign_patterns = [
+        r'^[A-Z]{1,2}[0-9][A-Z]{1,4}$',  # Formato típico: W1ABC, JA1ABC, etc.
+        r'^[0-9][A-Z]{1,2}[0-9][A-Z]{1,4}$',  # Formato con número inicial: 9A1ABC
+        r'^[A-Z]{1,2}[0-9]{1,2}[A-Z]{1,4}$',  # Variaciones con más números
+    ]
+    
+    for pattern in foreign_patterns:
+        if re.match(pattern, call_sign):
+            return 'FOREIGN'
+    
+    return None
+
+def get_zone_from_prefix(prefix: str) -> Optional[str]:
+    """
+    Obtiene la zona correspondiente al prefijo mexicano o extranjero.
+    
+    Args:
+        prefix: Prefijo extraído (ej: XE1, XE3, 'FOREIGN')
+        
+    Returns:
+        Zona correspondiente o None si no se encuentra
+    """
+    if not prefix:
+        return None
+    
+    # Mapeo de prefijos a zonas
+    prefix_to_zone = {
+        'XE1': 'XE1', 'XF1': 'XE1', '4A1': 'XE1', '6D1': 'XE1',
+        'XE2': 'XE2', 'XF2': 'XE2', '4A2': 'XE2', '6D2': 'XE2', 
+        'XE3': 'XE3', 'XF3': 'XE3', '4A3': 'XE3', '6D3': 'XE3',
+        'FOREIGN': 'Extranjera'  # Para indicativos extranjeros
+    }
+    
+    return prefix_to_zone.get(prefix.upper())

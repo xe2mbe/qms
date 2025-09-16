@@ -11,7 +11,8 @@ from utils import (
     get_mexican_states, format_timestamp, get_signal_quality_text,
     get_zonas, get_sistemas, validate_call_sign, validate_operator_name, 
     validate_ciudad, validate_estado, validate_signal_report, get_estados_list,
-    validate_call_sign_zone_consistency, detect_inconsistent_data
+    validate_call_sign_zone_consistency, detect_inconsistent_data, extract_prefix_from_callsign, 
+    get_zone_from_prefix
 )
 from exports import FMREExporter
 from auth import AuthManager
@@ -1508,6 +1509,21 @@ def registro_reportes():
     # Usar el valor seleccionado
     call_sign = call_sign_input if call_sign_input else default_call
 
+    # Auto-actualizar zona basada en prefijo del indicativo
+    if call_sign and len(call_sign.strip()) >= 3:
+        prefix = extract_prefix_from_callsign(call_sign.strip())
+        auto_zone = get_zone_from_prefix(prefix) if prefix else None
+        
+        if auto_zone and auto_zone in zonas:
+            # Actualizar el índice de zona automáticamente
+            auto_zona_index = zonas.index(auto_zone)
+            if auto_zona_index != default_zona:
+                default_zona = auto_zona_index
+                # Mostrar mensaje informativo sobre la auto-actualización
+                if prefix == 'FOREIGN':
+                    st.info(f"🌍 **Zona auto-detectada:** {auto_zone} (indicativo extranjero)")
+                else:
+                    st.info(f"🎯 **Zona auto-detectada:** {auto_zone} (basada en prefijo {prefix})")
 
     # Formulario de registro
     with st.form("report_form"):

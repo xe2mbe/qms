@@ -1270,144 +1270,144 @@ def registro_reportes():
     st.markdown("---")
     
     # Selección rápida desde historial
-    st.subheader("⚡ Registro Rápido desde Historial")
+    # st.subheader("⚡ Registro Rápido desde Historial")
     
-    station_history = db.get_station_history(50)  # Aumentar límite para más opciones
+    # station_history = db.get_station_history(50)  # Aumentar límite para más opciones
     
-    if not station_history.empty:
-        # Limpiar selecciones si está marcado
-        if st.session_state.get('clear_selections', False):
-            for key in ['station_zona', 'station_sistema', 'station_all']:
-                if key in st.session_state:
-                    del st.session_state[key]
-            st.session_state.clear_selections = False
+    # if not station_history.empty:
+    #     # Limpiar selecciones si está marcado
+    #     if st.session_state.get('clear_selections', False):
+    #         for key in ['station_zona', 'station_sistema', 'station_all']:
+    #             if key in st.session_state:
+    #                 del st.session_state[key]
+    #         st.session_state.clear_selections = False
         
-        # Crear tabs para categorizar las estaciones
-        tab1, tab2, tab3 = st.tabs(["🌍 Por Zona", "📡 Por Sistema", "📻 Por Indicativo"])
+    #     # Crear tabs para categorizar las estaciones
+    #     tab1, tab2, tab3 = st.tabs(["🌍 Por Zona", "📡 Por Sistema", "📻 Por Indicativo"])
         
-        selected_station = None
+    #     selected_station = None
         
-        with tab1:
-            st.write("**Estaciones agrupadas por Zona:**")
-            # Agrupar por zona
-            zonas_disponibles = station_history['zona'].unique()
-            zona_seleccionada = st.selectbox(
-                "Seleccionar zona:",
-                options=["-- Todas las zonas --"] + list(zonas_disponibles),
-                key="zona_filter"
-            )
+    #     with tab1:
+    #         st.write("**Estaciones agrupadas por Zona:**")
+    #         # Agrupar por zona
+    #         zonas_disponibles = station_history['zona'].unique()
+    #         zona_seleccionada = st.selectbox(
+    #             "Seleccionar zona:",
+    #             options=["-- Todas las zonas --"] + list(zonas_disponibles),
+    #             key="zona_filter"
+    #         )
             
-            if zona_seleccionada != "-- Todas las zonas --":
-                # Filtro inteligente: incluye estaciones que:
-                # 1. Tienen la zona guardada igual a la seleccionada
-                # 2. O tienen indicativo que comienza con la zona seleccionada
-                stations_filtered = station_history[
-                    (station_history['zona'] == zona_seleccionada) | 
-                    (station_history['call_sign'].str.startswith(zona_seleccionada))
-                ].sort_values('call_sign')
+    #         if zona_seleccionada != "-- Todas las zonas --":
+    #             # Filtro inteligente: incluye estaciones que:
+    #             # 1. Tienen la zona guardada igual a la seleccionada
+    #             # 2. O tienen indicativo que comienza con la zona seleccionada
+    #             stations_filtered = station_history[
+    #                 (station_history['zona'] == zona_seleccionada) | 
+    #                 (station_history['call_sign'].str.startswith(zona_seleccionada))
+    #             ].sort_values('call_sign')
                 
-                if not stations_filtered.empty:
-                    station_options = ["-- Seleccionar estación --"]
-                    for _, station in stations_filtered.iterrows():
-                        # Indicar si hay discrepancia entre zona guardada e indicativo
-                        zone_indicator = ""
-                        if station['zona'] != zona_seleccionada and station['call_sign'].startswith(zona_seleccionada):
-                            zone_indicator = f" ⚠️ (Guardada en {station['zona']})"
-                        elif station['zona'] == zona_seleccionada and not station['call_sign'].startswith(zona_seleccionada):
-                            zone_indicator = f" ⚠️ (Indicativo {station['call_sign'][:3]})"
+    #             if not stations_filtered.empty:
+    #                 station_options = ["-- Seleccionar estación --"]
+    #                 for _, station in stations_filtered.iterrows():
+    #                     # Indicar si hay discrepancia entre zona guardada e indicativo
+    #                     zone_indicator = ""
+    #                     if station['zona'] != zona_seleccionada and station['call_sign'].startswith(zona_seleccionada):
+    #                         zone_indicator = f" ⚠️ (Guardada en {station['zona']})"
+    #                     elif station['zona'] == zona_seleccionada and not station['call_sign'].startswith(zona_seleccionada):
+    #                         zone_indicator = f" ⚠️ (Indicativo {station['call_sign'][:3]})"
                         
-                        display_text = f"{station['call_sign']} - {station['operator_name']} - {station.get('estado', 'N/A')} - {station.get('ciudad', station.get('qth', 'N/A'))} - {station['zona']} - {station['sistema']} ({station['use_count']} usos){zone_indicator}"
-                        station_options.append(display_text)
-                else:
-                    station_options = ["-- No hay estaciones en esta zona --"]
+    #                     display_text = f"{station['call_sign']} - {station['operator_name']} - {station.get('estado', 'N/A')} - {station.get('ciudad', station.get('qth', 'N/A'))} - {station['zona']} - {station['sistema']} ({station['use_count']} usos){zone_indicator}"
+    #                     station_options.append(display_text)
+    #             else:
+    #                 station_options = ["-- No hay estaciones en esta zona --"]
                 
-                selected_station = st.selectbox(
-                    "Estaciones en esta zona:",
-                    options=station_options,
-                    key="station_zona"
-                )
+    #             selected_station = st.selectbox(
+    #                 "Estaciones en esta zona:",
+    #                 options=station_options,
+    #                 key="station_zona"
+    #             )
         
-        with tab2:
-            st.write("**Estaciones agrupadas por Sistema:**")
-            # Agrupar por sistema
-            sistemas_disponibles = station_history['sistema'].unique()
-            sistema_seleccionado = st.selectbox(
-                "Seleccionar sistema:",
-                options=["-- Todos los sistemas --"] + list(sistemas_disponibles),
-                key="sistema_filter"
-            )
+    #     with tab2:
+    #         st.write("**Estaciones agrupadas por Sistema:**")
+    #         # Agrupar por sistema
+    #         sistemas_disponibles = station_history['sistema'].unique()
+    #         sistema_seleccionado = st.selectbox(
+    #             "Seleccionar sistema:",
+    #             options=["-- Todos los sistemas --"] + list(sistemas_disponibles),
+    #             key="sistema_filter"
+    #         )
             
-            if sistema_seleccionado != "-- Todos los sistemas --":
-                stations_filtered = station_history[station_history['sistema'] == sistema_seleccionado].sort_values('call_sign')
-                if not stations_filtered.empty:
-                    station_options = ["-- Seleccionar estación --"]
-                    for _, station in stations_filtered.iterrows():
-                        display_text = f"{station['call_sign']} - {station['operator_name']} - {station.get('estado', 'N/A')} - {station.get('ciudad', station.get('qth', 'N/A'))} - {station['zona']} - {station['sistema']} ({station['use_count']} usos)"
-                        station_options.append(display_text)
-                else:
-                    station_options = ["-- No hay estaciones con este sistema --"]
+    #         if sistema_seleccionado != "-- Todos los sistemas --":
+    #             stations_filtered = station_history[station_history['sistema'] == sistema_seleccionado].sort_values('call_sign')
+    #             if not stations_filtered.empty:
+    #                 station_options = ["-- Seleccionar estación --"]
+    #                 for _, station in stations_filtered.iterrows():
+    #                     display_text = f"{station['call_sign']} - {station['operator_name']} - {station.get('estado', 'N/A')} - {station.get('ciudad', station.get('qth', 'N/A'))} - {station['zona']} - {station['sistema']} ({station['use_count']} usos)"
+    #                     station_options.append(display_text)
+    #             else:
+    #                 station_options = ["-- No hay estaciones con este sistema --"]
                 
-                selected_station = st.selectbox(
-                    "Estaciones con este sistema:",
-                    options=station_options,
-                    key="station_sistema"
-                )
+    #             selected_station = st.selectbox(
+    #                 "Estaciones con este sistema:",
+    #                 options=station_options,
+    #                 key="station_sistema"
+    #             )
         
-        with tab3:
-            st.write("**Todas las estaciones ordenadas por uso:**")
-            # Mostrar todas las estaciones ordenadas por frecuencia de uso
-            history_options_all = ["-- Seleccionar estación --"]
-            for _, station in station_history.iterrows():
-                display_text = f"{station['call_sign']} - {station['operator_name']} - {station.get('estado', 'N/A')} - {station.get('ciudad', station.get('qth', 'N/A'))} - {station['zona']} - {station['sistema']} ({station['use_count']} usos)"
-                history_options_all.append(display_text)
+    #     with tab3:
+    #         st.write("**Todas las estaciones ordenadas por uso:**")
+    #         # Mostrar todas las estaciones ordenadas por frecuencia de uso
+    #         history_options_all = ["-- Seleccionar estación --"]
+    #         for _, station in station_history.iterrows():
+    #             display_text = f"{station['call_sign']} - {station['operator_name']} - {station.get('estado', 'N/A')} - {station.get('ciudad', station.get('qth', 'N/A'))} - {station['zona']} - {station['sistema']} ({station['use_count']} usos)"
+    #             history_options_all.append(display_text)
             
-            selected_station = st.selectbox(
-                "Estaciones más utilizadas:",
-                options=history_options_all,
-                key="station_all"
-            )
+    #         selected_station = st.selectbox(
+    #             "Estaciones más utilizadas:",
+    #             options=history_options_all,
+    #             key="station_all"
+    #         )
         
-        # Botón para usar datos (fuera de los tabs)
-        st.markdown("---")
-        col1, col2, col3 = st.columns([2, 1, 2])
+    #     # Botón para usar datos (fuera de los tabs)
+        # st.markdown("---")
+        # col1, col2, col3 = st.columns([2, 1, 2])
         
-        with col2:
-            # Determinar qué estación está seleccionada en cualquier tab
-            current_selection = None
-            if st.session_state.get('station_zona', '').startswith('-- ') == False and st.session_state.get('station_zona'):
-                current_selection = st.session_state.get('station_zona')
-            elif st.session_state.get('station_sistema', '').startswith('-- ') == False and st.session_state.get('station_sistema'):
-                current_selection = st.session_state.get('station_sistema')
-            elif st.session_state.get('station_all', '').startswith('-- ') == False and st.session_state.get('station_all'):
-                current_selection = st.session_state.get('station_all')
+        # with col2:
+        #     # Determinar qué estación está seleccionada en cualquier tab
+        #     current_selection = None
+        #     if st.session_state.get('station_zona', '').startswith('-- ') == False and st.session_state.get('station_zona'):
+        #         current_selection = st.session_state.get('station_zona')
+        #     elif st.session_state.get('station_sistema', '').startswith('-- ') == False and st.session_state.get('station_sistema'):
+        #         current_selection = st.session_state.get('station_sistema')
+        #     elif st.session_state.get('station_all', '').startswith('-- ') == False and st.session_state.get('station_all'):
+        #         current_selection = st.session_state.get('station_all')
             
-            button_disabled = current_selection is None or current_selection.startswith('-- ')
+        #     button_disabled = current_selection is None or current_selection.startswith('-- ')
             
-            if st.button("📋 Usar Datos Seleccionados", disabled=button_disabled, use_container_width=True):
-                if current_selection and not current_selection.startswith('-- '):
-                    # Parse station data
-                    parts = current_selection.split(' - ')
-                    if len(parts) >= 6:  # Now we have estado and ciudad separate
-                        call = parts[0]
-                        name = parts[1]
-                        estado = parts[2]
-                        ciudad = parts[3]
-                        zona = parts[4]
-                        sistema_parts = parts[5].split(' (')[0]  # Remove usage count
+        #     if st.button("📋 Usar Datos Seleccionados", disabled=button_disabled, use_container_width=True):
+        #         if current_selection and not current_selection.startswith('-- '):
+        #             # Parse station data
+        #             parts = current_selection.split(' - ')
+        #             if len(parts) >= 6:  # Now we have estado and ciudad separate
+        #                 call = parts[0]
+        #                 name = parts[1]
+        #                 estado = parts[2]
+        #                 ciudad = parts[3]
+        #                 zona = parts[4]
+        #                 sistema_parts = parts[5].split(' (')[0]  # Remove usage count
                         
-                        # Store in session state
-                        st.session_state.prefill_call = call
-                        st.session_state.prefill_name = name
-                        st.session_state.prefill_estado = estado
-                        st.session_state.prefill_ciudad = ciudad
-                        st.session_state.prefill_zona = zona
-                        st.session_state.prefill_sistema = sistema_parts
+        #                 # Store in session state
+        #                 st.session_state.prefill_call = call
+        #                 st.session_state.prefill_name = name
+        #                 st.session_state.prefill_estado = estado
+        #                 st.session_state.prefill_ciudad = ciudad
+        #                 st.session_state.prefill_zona = zona
+        #                 st.session_state.prefill_sistema = sistema_parts
                         
-                        # Marcar para limpiar selecciones en el próximo rerun
-                        st.session_state.clear_selections = True
+        #                 # Marcar para limpiar selecciones en el próximo rerun
+        #                 st.session_state.clear_selections = True
                         
-                        st.success("✅ Datos cargados. Completa el formulario abajo.")
-                        st.rerun()
+        #                 st.success("✅ Datos cargados. Completa el formulario abajo.")
+        #                 st.rerun()
     
     st.markdown("---")
     

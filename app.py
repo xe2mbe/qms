@@ -994,6 +994,11 @@ session_date = st.sidebar.date_input(
     help="Selecciona la fecha de la sesión de boletín"
 )
 
+# Validar si la fecha de sesión es diferente a la actual
+date_difference = session_date != date.today()
+if date_difference:
+    st.sidebar.warning(f"⚠️ **Capturando con fecha:** {session_date.strftime('%d/%m/%Y')}")
+    st.sidebar.info("Los reportes se guardarán con la fecha seleccionada")
 
 def show_profile_management():
     """Muestra la página de gestión de perfil del usuario"""
@@ -1594,7 +1599,7 @@ def registro_reportes():
                             call_sign, operator_name, estado, ciudad, 
                             signal_report, zona, sistema, 
                             grid_locator="", hf_frequency="", hf_band="", hf_mode="", hf_power="", 
-                            observations=observations, created_by=created_by
+                            observations=observations, session_date=session_date, created_by=created_by
                         )
                         
                         # Limpiar datos precargados después de agregar reporte
@@ -1631,7 +1636,7 @@ def registro_reportes():
                             pending['ciudad'], pending['signal_report'], pending['zona'], 
                             pending['sistema'], 
                             grid_locator="", hf_frequency="", hf_band="", hf_mode="", hf_power="", 
-                            observations=pending['observations'], created_by=created_by
+                            observations=pending['observations'], session_date=session_date, created_by=created_by
                         )
                         
                         # Limpiar datos precargados después de agregar reporte
@@ -3030,8 +3035,8 @@ def show_profile_management():
                     if success:
                         st.success("✅ Contraseña cambiada correctamente")
                         st.info("🔄 Por seguridad, deberás iniciar sesión nuevamente")
-                        if st.button("🚪 Cerrar Sesión"):
-                            auth.logout()
+                        # Marcar para mostrar botón de logout fuera del form
+                        st.session_state.show_logout_button = True
                     else:
                         st.error("❌ Error al cambiar la contraseña")
 

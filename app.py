@@ -1131,6 +1131,9 @@ def show_profile_management():
             auth.logout()
 
 def registro_reportes():
+    """Página de registro de reportes con autocompletado inteligente"""
+    import pandas as pd
+    
     st.title("📋 Registro de Reportes")
     
     # Obtener sistema preferido del usuario y configuración HF
@@ -1284,13 +1287,24 @@ def registro_reportes():
             default_estado_idx = 0
     
     # Campo Indicativo con autocompletado mejorado (fuera del formulario)
+    # Aplicar limpieza de búsqueda si está marcado el flag
+    input_value = "" if st.session_state.get('clear_search', False) else default_call
+    
+    # Usar key dinámico para forzar recreación del widget cuando se limpia
+    widget_key = f"call_sign_input_{st.session_state.get('input_counter', 0)}"
+    
     call_sign_input = st.text_input(
         "📻 Indicativo", 
         placeholder="(Obligatorio) | Ejemplo: XE1ABC",
-        value=default_call, 
+        value=input_value, 
         help="Escribe al menos 2 caracteres para ver sugerencias automáticas",
-        key="call_sign_input"
+        key=widget_key
+
     )
+    
+    # Limpiar el flag después de aplicar para evitar bucles
+    if st.session_state.get('clear_search', False):
+        st.session_state.clear_search = False
 
     # Autocompletado dinámico mejorado - TABLA INLINE PARA CAPTURA MASIVA
     # Solo mostrar tabla si no estamos editando registros de sesión
@@ -1312,7 +1326,7 @@ def registro_reportes():
             bulk_data = []
             for i, suggestion in enumerate(suggestions):
                 bulk_data.append({
-                    'Seleccionar': False,
+                    'Seleccionar': True,
                     'Indicativo': suggestion['call_sign'],
                     'Operador': suggestion['operator_name'],
                     'Estado': suggestion['qth'],
@@ -1326,12 +1340,20 @@ def registro_reportes():
             # Crear DataFrame
             df_bulk = pd.DataFrame(bulk_data)
             
+            # Aplicar cambios de selección desde session_state si existen
+            bulk_selection_key = f"bulk_selection_{st.session_state.get('table_counter', 0)}"
+            if bulk_selection_key in st.session_state:
+                selection_state = st.session_state[bulk_selection_key]
+                for i, selected in enumerate(selection_state):
+                    if i < len(df_bulk):
+                        df_bulk.loc[i, 'Seleccionar'] = selected
+            
             # Configuración de columnas
             column_config = {
                 'Seleccionar': st.column_config.CheckboxColumn("✓", help="Seleccionar para guardar", default=True, width="small"),
                 'Indicativo': st.column_config.TextColumn("Indicativo", disabled=True, width="medium"),
                 'Operador': st.column_config.TextColumn("Operador", width="medium"),
-                'Estado': st.column_config.SelectboxColumn("Estado", options=get_estados_list(), width="medium"),
+                'Estado': st.column_config.TextColumn("Estado", width="medium"),
                 'Ciudad': st.column_config.TextColumn("Ciudad", width="medium"),
                 'Zona': st.column_config.SelectboxColumn("Zona", options=get_zonas(), width="small"),
                 'Sistema': st.column_config.SelectboxColumn("Sistema", options=get_sistemas(), width="medium"),
@@ -1339,13 +1361,24 @@ def registro_reportes():
                 'Observaciones': st.column_config.TextColumn("Observaciones", width="large")
             }
             
-            # Botón de deseleccionar todas  
-            if st.button("❌ Deseleccionar Todas", key="deselect_all_inline"):
-                st.session_state.table_counter = st.session_state.get('table_counter', 0) + 1
-                st.rerun()
-
             # Mostrar tabla editable con la misma altura que el modal
             with st.form("bulk_capture_form_inline"):
+                # Botón dinámico de seleccionar/deseleccionar todas - MOVIDO DENTRO DEL FORMULARIO
+                # Determinar el estado actual de selección para mostrar el botón correcto
+                all_selected = df_bulk['Seleccionar'].all() if not df_bulk.empty else False
+                
+                if all_selected:
+                    button_text = "❌ Deseleccionar Todas"
+                    deselect_all_flag = st.form_submit_button(button_text, use_container_width=True)
+                else:
+                    button_text = "✅ Seleccionar Todas"
+                    deselect_all_flag = st.form_submit_button(button_text, use_container_width=True)
+                
+                # Aplicar cambios ANTES de crear el data_editor
+                if deselect_all_flag:
+                    new_state = not all_selected
+                    df_bulk['Seleccionar'] = new_state
+                
                 edited_df = st.data_editor(
                     df_bulk,
                     column_config=column_config,
@@ -1355,23 +1388,38 @@ def registro_reportes():
                     key=f"bulk_table_{st.session_state.get('table_counter', 0)}"
                 )
                 
-                # Botones de acción
-                col_save, col_cancel, col_info = st.columns([2, 2, 3])
-                
+                # Determinar el estado actual de selección para mostrar el botón correcto
+                all_selected = df_bulk['Seleccionar'].all() if not df_bulk.empty else False
+
+                # Crear tres columnas para los botones
+                col_select, col_save, col_cancel = st.columns([1, 1, 1])
+
+                with col_select:
+                    if all_selected:
+                        button_text = "❌ Deseleccionar Todas"
+                        select_all_clicked = st.form_submit_button(button_text, key="deselect_all_btn", use_container_width=True)
+                    else:
+                        button_text = "✅ Seleccionar Todas"
+                        select_all_clicked = st.form_submit_button(button_text, key="select_all_btn", use_container_width=True)
+
                 with col_save:
-                    save_clicked = st.form_submit_button("💾 Guardar Seleccionadas", type="primary", use_container_width=True)
-                
+                    save_clicked = st.form_submit_button("💾 Agregar Seleccionadas", key="save_bulk_btn", type="primary", use_container_width=True)
+
                 with col_cancel:
-                    cancel_clicked = st.form_submit_button("❌ Cancelar", use_container_width=True)
-                
-                with col_info:
-                    if edited_df is not None:
-                        selected_count = edited_df['Seleccionar'].sum()
-                        st.info(f"📊 {selected_count} estaciones seleccionadas")
+                    cancel_clicked = st.form_submit_button("❌ Cancelar", key="cancel_bulk_btn", use_container_width=True)
+
+                # Aplicar cambios de selección ANTES de crear el data_editor
+                if select_all_clicked:
+                    new_state = not all_selected
+                    df_bulk['Seleccionar'] = new_state
+                # Conteo de estaciones seleccionadas
+                if edited_df is not None:
+                    selected_count = edited_df['Seleccionar'].sum()
+                    st.info(f"📊 {selected_count} estaciones seleccionadas")
                 
                 # Información sobre deselección
-                st.info("💡 **Tip:** Para deseleccionar estaciones, desmarca los checkboxes en la columna '✓'")
-            
+                st.info("💡 **Tip:** Para deseleccionar estaciones individuales, desmarca los checkboxes en la columna '✓'")
+                                
             # Procesar guardado
             if save_clicked:
                 if edited_df is not None:
@@ -1417,6 +1465,7 @@ def registro_reportes():
             # Procesar cancelación/limpiar
             if cancel_clicked:
                 st.session_state.clear_search = True
+                st.session_state.input_counter = st.session_state.get('input_counter', 0) + 1
                 st.rerun()
             
             st.markdown("---")

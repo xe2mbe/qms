@@ -909,3 +909,32 @@ class FMREDatabase:
             })
         
         return formatted_results
+    
+    def diagnose_qth_data(self, pattern):
+        """
+        Función de diagnóstico para verificar datos QTH de estaciones específicas
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        search_pattern = f"{pattern.upper()}%"
+        
+        # Query detallado para diagnóstico
+        cursor.execute('''
+            SELECT call_sign, operator_name, qth, ciudad, zona, sistema, 
+                   timestamp, session_date,
+                   CASE 
+                       WHEN qth IS NULL THEN 'NULL'
+                       WHEN qth = '' THEN 'EMPTY'
+                       WHEN TRIM(qth) = '' THEN 'WHITESPACE'
+                       ELSE 'HAS_DATA'
+                   END as qth_status
+            FROM reports 
+            WHERE call_sign LIKE ? 
+            ORDER BY call_sign ASC, timestamp DESC
+        ''', (search_pattern,))
+        
+        results = cursor.fetchall()
+        conn.close()
+        
+        return results

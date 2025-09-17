@@ -1337,16 +1337,34 @@ def registro_reportes():
                     'Observaciones': ''
                 })
             
-            # Crear DataFrame
-            df_bulk = pd.DataFrame(bulk_data)
+            # Inicializar o recuperar el estado de selección
+            if 'bulk_df_state' not in st.session_state:
+                st.session_state.bulk_df_state = None
             
-            # Aplicar cambios de selección desde session_state si existen
-            bulk_selection_key = f"bulk_selection_{st.session_state.get('table_counter', 0)}"
-            if bulk_selection_key in st.session_state:
-                selection_state = st.session_state[bulk_selection_key]
-                for i, selected in enumerate(selection_state):
-                    if i < len(df_bulk):
-                        df_bulk.loc[i, 'Seleccionar'] = selected
+            # Crear DataFrame solo si no existe o si cambió el indicativo
+            current_call_sign = call_sign_input.upper() if call_sign_input else ""
+            if (st.session_state.bulk_df_state is None or 
+                st.session_state.get('last_call_sign', '') != current_call_sign):
+                
+                # Crear DataFrame nuevo
+                bulk_data = []
+                for i, suggestion in enumerate(suggestions):
+                    bulk_data.append({
+                        'Seleccionar': True,
+                        'Indicativo': suggestion['call_sign'],
+                        'Operador': suggestion['operator_name'],
+                        'Estado': suggestion['qth'],
+                        'Ciudad': suggestion.get('ciudad', ''),
+                        'Zona': suggestion['zona'],
+                        'Sistema': suggestion['sistema'],
+                        'Señal': '59',
+                        'Observaciones': ''
+                    })
+                
+                st.session_state.bulk_df_state = pd.DataFrame(bulk_data)
+                st.session_state.last_call_sign = current_call_sign
+            
+            df_bulk = st.session_state.bulk_df_state.copy()
             
             # Configuración de columnas
             column_config = {
@@ -1361,64 +1379,49 @@ def registro_reportes():
                 'Observaciones': st.column_config.TextColumn("Observaciones", width="large")
             }
             
+            # Botones de selección masiva
+            col_sel, col_desel = st.columns(2)
+            
+            with col_sel:
+                if st.button("✅ Seleccionar Todas", key="select_all_btn", use_container_width=True):
+                    st.session_state.bulk_df_state['Seleccionar'] = True
+                    st.rerun()
+            
+            with col_desel:
+                if st.button("❌ Deseleccionar Todas", key="deselect_all_btn", use_container_width=True):
+                    st.session_state.bulk_df_state['Seleccionar'] = False
+                    st.rerun()
+            
             # Mostrar tabla editable con la misma altura que el modal
             with st.form("bulk_capture_form_inline"):
-                # Botón dinámico de seleccionar/deseleccionar todas - MOVIDO DENTRO DEL FORMULARIO
-                # Determinar el estado actual de selección para mostrar el botón correcto
-                all_selected = df_bulk['Seleccionar'].all() if not df_bulk.empty else False
-                
-                if all_selected:
-                    button_text = "❌ Deseleccionar Todas"
-                    deselect_all_flag = st.form_submit_button(button_text, use_container_width=True)
-                else:
-                    button_text = "✅ Seleccionar Todas"
-                    deselect_all_flag = st.form_submit_button(button_text, use_container_width=True)
-                
-                # Aplicar cambios ANTES de crear el data_editor
-                if deselect_all_flag:
-                    new_state = not all_selected
-                    df_bulk['Seleccionar'] = new_state
-                
                 edited_df = st.data_editor(
                     df_bulk,
                     column_config=column_config,
                     width="stretch",
                     hide_index=True,
                     height=500,
-                    key=f"bulk_table_{st.session_state.get('table_counter', 0)}"
+                    key="bulk_table_editor"
                 )
                 
-                # Determinar el estado actual de selección para mostrar el botón correcto
-                all_selected = df_bulk['Seleccionar'].all() if not df_bulk.empty else False
-
-                # Crear tres columnas para los botones
-                col_select, col_save, col_cancel = st.columns([1, 1, 1])
-
-                with col_select:
-                    if all_selected:
-                        button_text = "❌ Deseleccionar Todas"
-                        select_all_clicked = st.form_submit_button(button_text, key="deselect_all_btn", use_container_width=True)
-                    else:
-                        button_text = "✅ Seleccionar Todas"
-                        select_all_clicked = st.form_submit_button(button_text, key="select_all_btn", use_container_width=True)
+                # Actualizar el estado con los cambios del usuario
+                if edited_df is not None:
+                    st.session_state.bulk_df_state = edited_df.copy()
+                
+                # Crear dos columnas para los botones
+                col_save, col_cancel = st.columns([1, 1])
 
                 with col_save:
                     save_clicked = st.form_submit_button("💾 Agregar Seleccionadas", key="save_bulk_btn", type="primary", use_container_width=True)
 
                 with col_cancel:
                     cancel_clicked = st.form_submit_button("❌ Cancelar", key="cancel_bulk_btn", use_container_width=True)
-
-                # Aplicar cambios de selección ANTES de crear el data_editor
-                if select_all_clicked:
-                    new_state = not all_selected
-                    df_bulk['Seleccionar'] = new_state
                 # Conteo de estaciones seleccionadas
                 if edited_df is not None:
                     selected_count = edited_df['Seleccionar'].sum()
                     st.info(f"📊 {selected_count} estaciones seleccionadas")
                 
                 # Información sobre deselección
-                st.info("💡 **Tip:** Para deseleccionar estaciones individuales, desmarca los checkboxes en la columna '✓'")
+                st.info("💡 **Tip:** Para deseleccionar estaciones individuales, desmarca los checkboxes en la columna '✓'. Usa el botón de arriba para seleccionar/deseleccionar todas.")
                                 
             # Procesar guardado
             if save_clicked:

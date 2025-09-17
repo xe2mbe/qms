@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -11,7 +12,7 @@ from utils import (
     get_mexican_states, format_timestamp, get_signal_quality_text,
     get_zonas, get_sistemas, validate_call_sign, validate_operator_name, 
     validate_ciudad, validate_estado, validate_signal_report, get_estados_list,
-    validate_call_sign_zone_consistency, detect_inconsistent_data
+    validate_call_sign_zone_consistency, detect_inconsistent_data, map_qth_to_estado
 )
 from exports import FMREExporter
 from auth import AuthManager
@@ -601,19 +602,19 @@ def show_user_management():
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        st.write(f"**Nombre completo:** {user.get('full_name', 'No especificado')}")
-                        st.write(f"**Email:** {user.get('email', 'No especificado')}")
+                        st.write(f"**Nombre completo:** {user.get('full_name', 'N/A')}")
+                        st.write(f"**Email:** {user.get('email', 'N/A')}")
                         st.write(f"**Rol:** {user['role']}")
-                        st.write(f"**Creado:** {user.get('created_at', 'No disponible')}")
+                        st.write(f"**Creado:** {user.get('created_at', 'N/A')}")
                     
                     with col2:
                         # Botón para editar usuario
-                        if st.button(f"✏️ Editar", key=f"edit_{user['id']}"):
+                        if st.button(f"✏️ Editar", key=f"edit_user_{user['id']}"):
                             st.session_state[f"editing_user_{user['id']}"] = True
                         
                         # Botón para eliminar usuario (solo si no es admin)
                         if user['username'] != 'admin':
-                            if st.button(f"🗑️ Eliminar", key=f"delete_{user['id']}"):
+                            if st.button(f"🗑️ Eliminar", key=f"delete_user_{user['id']}"):
                                 try:
                                     db.delete_user(user['id'])
                                     st.success(f"Usuario {user['username']} eliminado")
@@ -636,65 +637,63 @@ def show_user_management():
                             
                             # Opción para cambiar contraseña
                             change_password = st.checkbox("Cambiar contraseña")
-                            edit_password = ""
-                            confirm_edit_password = ""
+                            new_password = ""
+                            confirm_new_password = ""
                             
                             if change_password:
-                                edit_password = st.text_input("Nueva contraseña:", type="password", 
-                                                            help="Mínimo 8 caracteres, 1 mayúscula, 1 número, 1 carácter especial")
-                                confirm_edit_password = st.text_input("Confirmar nueva contraseña:", type="password")
+                                new_password = st.text_input("Nueva contraseña:", type="password", 
+                                                           help="Mínimo 8 caracteres, 1 mayúscula, 1 número, 1 carácter especial")
+                                confirm_new_password = st.text_input("Confirmar nueva contraseña:", type="password")
                             
                             col_save, col_cancel = st.columns(2)
                             
                             with col_save:
-                                submit_edit = st.form_submit_button("💾 Guardar Cambios")
+                                save_changes = st.form_submit_button("💾 Guardar Cambios")
                             
                             with col_cancel:
                                 cancel_edit = st.form_submit_button("❌ Cancelar")
                             
-                            if cancel_edit:
-                                st.session_state[f"editing_user_{user['id']}"] = False
-                                st.rerun()
-                            
-                            if submit_edit:
-                                if edit_full_name and edit_email:
+                            if save_changes:
+                                # Validar campos obligatorios
+                                if not edit_full_name or not edit_email:
+                                    st.error("❌ Nombre completo y email son obligatorios")
+                                else:
                                     # Validar contraseña si se va a cambiar
                                     password_valid = True
                                     if change_password:
-                                        if edit_password != confirm_edit_password:
+                                        if new_password != confirm_new_password:
                                             st.error("❌ Las contraseñas no coinciden")
                                             password_valid = False
                                         else:
                                             from utils import validate_password
-                                            is_valid, message = validate_password(edit_password)
+                                            is_valid, message = validate_password(new_password)
                                             if not is_valid:
                                                 st.error(f"❌ {message}")
                                                 password_valid = False
                                     
                                     if password_valid:
                                         try:
-                                            # Actualizar usuario
-                                            update_data = {
-                                                'full_name': edit_full_name,
-                                                'email': edit_email,
-                                                'role': edit_role
-                                            }
+                                            # Actualizar información del usuario
+                                            db.update_user(user['id'], edit_full_name, edit_role, edit_email)
                                             
+                                            # Cambiar contraseña si se solicitó
                                             if change_password:
                                                 import hashlib
-                                                update_data['password'] = hashlib.sha256(edit_password.encode()).hexdigest()
-                                            
-                                            db.update_user(user['id'], **update_data)
+                                                password_hash = hashlib.sha256(new_password.encode()).hexdigest()
+                                                db.change_password(user['username'], password_hash)
                                             
                                             st.success("✅ Usuario actualizado exitosamente")
-                                            st.info(f"**Usuario:** {user['username']}\n**Nombre:** {edit_full_name}\n**Email:** {edit_email}\n**Rol:** {edit_role}")
                                             
-                                            st.session_state[f"editing_user_{user['id']}"] = False
+                                            # Limpiar estado de edición
+                                            del st.session_state[f"editing_user_{user['id']}"]
                                             st.rerun()
+                                            
                                         except Exception as e:
                                             st.error(f"❌ Error al actualizar usuario: {str(e)}")
-                                else:
-                                    st.error("❌ Todos los campos son obligatorios")
+                            else:
+                                # Limpiar estado de edición
+                                del st.session_state[f"editing_user_{user['id']}"]
+                                st.rerun()
         else:
             st.info("No hay usuarios registrados")
     
@@ -717,15 +716,18 @@ def show_user_management():
                     if new_password != confirm_password:
                         st.error("❌ Las contraseñas no coinciden")
                     else:
+                        # Validar fortaleza de la contraseña
                         from utils import validate_password
                         is_valid, message = validate_password(new_password)
+                        
                         if not is_valid:
                             st.error(f"❌ {message}")
                         else:
                             try:
                                 # Crear usuario
-                                user_created = auth.create_user(new_username, new_password, new_role, new_full_name, new_email)
-                                if user_created:
+                                user_id = db.create_user(new_username, new_password, new_role, new_full_name, new_email)
+                                
+                                if user_id:
                                     st.success("✅ Usuario creado exitosamente")
                                     
                                     # Mostrar información del usuario creado
@@ -738,7 +740,7 @@ def show_user_management():
                                     """)
                                     
                                     # Enviar email de bienvenida si está configurado
-                                    try:
+                                    if email_service.is_configured():
                                         user_data = {
                                             'username': new_username,
                                             'full_name': new_full_name,
@@ -750,80 +752,64 @@ def show_user_management():
                                             st.success("📧 Email de bienvenida enviado")
                                         else:
                                             st.warning("⚠️ Usuario creado pero no se pudo enviar el email de bienvenida")
-                                    except Exception as e:
-                                        st.warning(f"⚠️ Usuario creado pero error al enviar email: {str(e)}")
+                                    else:
+                                        st.warning("⚠️ Usuario creado. Configura SMTP para enviar credenciales por email")
                                     
-                                    # Esperar antes de recargar para mostrar mensajes
+                                    # Esperar un momento antes de recargar para mostrar mensajes
                                     import time
-                                    time.sleep(3)
+                                    time.sleep(2)
                                     st.rerun()
                                 else:
-                                    st.error("❌ Error al crear usuario. El nombre de usuario podría ya existir.")
+                                    st.error("❌ Error al crear usuario (posiblemente el usuario ya existe)")
                             except Exception as e:
                                 st.error(f"❌ Error al crear usuario: {str(e)}")
                 else:
-                    st.error("❌ Todos los campos son obligatorios")
+                    st.error("❌ Por favor completa todos los campos")
     
     with tab3:
         st.subheader("🔄 Recuperar Contraseña")
         
         with st.form("password_recovery_form"):
-            recovery_username = st.text_input("Nombre de usuario:")
-            submit_recovery = st.form_submit_button("🔄 Generar Token de Recuperación")
+            recovery_email = st.text_input("Email del usuario:")
+            submit_recovery = st.form_submit_button("📧 Enviar Email de Recuperación")
             
-            if submit_recovery and recovery_username:
-                try:
-                    token = auth.generate_password_reset_token(recovery_username)
-                    if token:
-                        st.success(f"✅ Token de recuperación generado: **{token}**")
-                        st.info("Este token expira en 1 hora y es de un solo uso.")
-                        
-                        # Intentar enviar por email
-                        user = db.get_user_by_username(recovery_username)
-                        if user and user.get('email'):
-                            try:
-                                if email_service.send_password_recovery_email(user, token):
-                                    st.success("📧 Token enviado por email")
-                                else:
-                                    st.warning("⚠️ No se pudo enviar el email. Usa el token mostrado arriba.")
-                            except Exception as e:
-                                st.warning(f"⚠️ Error al enviar email: {str(e)}")
-                    else:
-                        st.error("❌ Usuario no encontrado")
-                except Exception as e:
-                    st.error(f"❌ Error: {str(e)}")
-        
-        st.markdown("---")
-        st.subheader("🔑 Usar Token de Recuperación")
-        
-        with st.form("use_recovery_token_form"):
-            token_input = st.text_input("Token de recuperación:")
-            new_password_recovery = st.text_input("Nueva contraseña:", type="password")
-            confirm_password_recovery = st.text_input("Confirmar nueva contraseña:", type="password")
-            submit_token = st.form_submit_button("🔑 Cambiar Contraseña")
-            
-            if submit_token and token_input and new_password_recovery and confirm_password_recovery:
-                if new_password_recovery != confirm_password_recovery:
-                    st.error("❌ Las contraseñas no coinciden")
-                else:
-                    from utils import validate_password
-                    is_valid, message = validate_password(new_password_recovery)
-                    if not is_valid:
-                        st.error(f"❌ {message}")
-                    else:
+            if submit_recovery:
+                if recovery_email:
+                    if email_service.is_configured():
                         try:
-                            if auth.reset_password_with_token(token_input, new_password_recovery):
-                                st.success("✅ Contraseña cambiada exitosamente")
+                            # Buscar usuario por email
+                            user = db.get_user_by_email(recovery_email)
+                            
+                            if user:
+                                # Generar token y enviar email
+                                if email_service.send_password_reset_email(user):
+                                    st.success("📧 Email de recuperación enviado")
+                                else:
+                                    st.error("❌ Error al enviar email de recuperación")
                             else:
-                                st.error("❌ Token inválido o expirado")
+                                st.error("❌ No se encontró usuario con ese email")
                         except Exception as e:
                             st.error(f"❌ Error: {str(e)}")
+                    else:
+                        st.error("❌ Servicio de email no configurado")
+                else:
+                    st.error("❌ Por favor ingresa un email")
     
     with tab4:
-        st.subheader("⚙️ Configuración de Email SMTP")
+        st.subheader("⚙️ Configuración del Servicio de Email")
+        
+        # Estado actual del servicio
+        if email_service.is_configured():
+            st.success("✅ Servicio de email configurado")
+            st.info(f"Servidor: {email_service.smtp_server}:{email_service.smtp_port}")
+            st.info(f"Usuario: {email_service.smtp_username}")
+        else:
+            st.warning("⚠️ Servicio de email no configurado")
         
         with st.form("smtp_config_form"):
-            smtp_server = st.text_input("Servidor SMTP:", value=email_service.smtp_server or "")
+            st.write("**Configuración SMTP:**")
+            
+            smtp_server = st.text_input("Servidor SMTP:", value=email_service.smtp_server or "smtp.gmail.com")
             smtp_port = st.number_input("Puerto SMTP:", value=email_service.smtp_port or 587, min_value=1, max_value=65535)
             smtp_username = st.text_input("Usuario SMTP:", value=email_service.smtp_username or "")
             smtp_password = st.text_input("Contraseña SMTP:", type="password")
@@ -833,22 +819,16 @@ def show_user_management():
             submit_smtp = st.form_submit_button("💾 Guardar Configuración SMTP")
             
             if submit_smtp:
-                try:
+                if smtp_server and smtp_username and smtp_password:
                     email_service.configure_smtp(
                         smtp_server, smtp_port, smtp_username, 
                         smtp_password if smtp_password else email_service.smtp_password,
                         sender_email, sender_name
                     )
                     st.success("✅ Configuración SMTP guardada")
-                except Exception as e:
-                    st.error(f"❌ Error al guardar configuración: {str(e)}")
-        
-        # Test de conexión
-        if st.button("🧪 Probar Conexión SMTP"):
-            if email_service.test_smtp_connection():
-                st.success("✅ Conexión SMTP exitosa")
-            else:
-                st.error("❌ Error en la conexión SMTP")
+                    st.rerun()
+                else:
+                    st.error("❌ Por favor completa los campos obligatorios")
 
 # Configuración de la página
 st.set_page_config(
@@ -1269,148 +1249,6 @@ def registro_reportes():
     
     st.markdown("---")
     
-    # Selección rápida desde historial
-    # st.subheader("⚡ Registro Rápido desde Historial")
-    
-    # station_history = db.get_station_history(50)  # Aumentar límite para más opciones
-    
-    # if not station_history.empty:
-    #     # Limpiar selecciones si está marcado
-    #     if st.session_state.get('clear_selections', False):
-    #         for key in ['station_zona', 'station_sistema', 'station_all']:
-    #             if key in st.session_state:
-    #                 del st.session_state[key]
-    #         st.session_state.clear_selections = False
-        
-    #     # Crear tabs para categorizar las estaciones
-    #     tab1, tab2, tab3 = st.tabs(["🌍 Por Zona", "📡 Por Sistema", "📻 Por Indicativo"])
-        
-    #     selected_station = None
-        
-    #     with tab1:
-    #         st.write("**Estaciones agrupadas por Zona:**")
-    #         # Agrupar por zona
-    #         zonas_disponibles = station_history['zona'].unique()
-    #         zona_seleccionada = st.selectbox(
-    #             "Seleccionar zona:",
-    #             options=["-- Todas las zonas --"] + list(zonas_disponibles),
-    #             key="zona_filter"
-    #         )
-            
-    #         if zona_seleccionada != "-- Todas las zonas --":
-    #             # Filtro inteligente: incluye estaciones que:
-    #             # 1. Tienen la zona guardada igual a la seleccionada
-    #             # 2. O tienen indicativo que comienza con la zona seleccionada
-    #             stations_filtered = station_history[
-    #                 (station_history['zona'] == zona_seleccionada) | 
-    #                 (station_history['call_sign'].str.startswith(zona_seleccionada))
-    #             ].sort_values('call_sign')
-                
-    #             if not stations_filtered.empty:
-    #                 station_options = ["-- Seleccionar estación --"]
-    #                 for _, station in stations_filtered.iterrows():
-    #                     # Indicar si hay discrepancia entre zona guardada e indicativo
-    #                     zone_indicator = ""
-    #                     if station['zona'] != zona_seleccionada and station['call_sign'].startswith(zona_seleccionada):
-    #                         zone_indicator = f" ⚠️ (Guardada en {station['zona']})"
-    #                     elif station['zona'] == zona_seleccionada and not station['call_sign'].startswith(zona_seleccionada):
-    #                         zone_indicator = f" ⚠️ (Indicativo {station['call_sign'][:3]})"
-                        
-    #                     display_text = f"{station['call_sign']} - {station['operator_name']} - {station.get('estado', 'N/A')} - {station.get('ciudad', station.get('qth', 'N/A'))} - {station['zona']} - {station['sistema']} ({station['use_count']} usos){zone_indicator}"
-    #                     station_options.append(display_text)
-    #             else:
-    #                 station_options = ["-- No hay estaciones en esta zona --"]
-                
-    #             selected_station = st.selectbox(
-    #                 "Estaciones en esta zona:",
-    #                 options=station_options,
-    #                 key="station_zona"
-    #             )
-        
-    #     with tab2:
-    #         st.write("**Estaciones agrupadas por Sistema:**")
-    #         # Agrupar por sistema
-    #         sistemas_disponibles = station_history['sistema'].unique()
-    #         sistema_seleccionado = st.selectbox(
-    #             "Seleccionar sistema:",
-    #             options=["-- Todos los sistemas --"] + list(sistemas_disponibles),
-    #             key="sistema_filter"
-    #         )
-            
-    #         if sistema_seleccionado != "-- Todos los sistemas --":
-    #             stations_filtered = station_history[station_history['sistema'] == sistema_seleccionado].sort_values('call_sign')
-    #             if not stations_filtered.empty:
-    #                 station_options = ["-- Seleccionar estación --"]
-    #                 for _, station in stations_filtered.iterrows():
-    #                     display_text = f"{station['call_sign']} - {station['operator_name']} - {station.get('estado', 'N/A')} - {station.get('ciudad', station.get('qth', 'N/A'))} - {station['zona']} - {station['sistema']} ({station['use_count']} usos)"
-    #                     station_options.append(display_text)
-    #             else:
-    #                 station_options = ["-- No hay estaciones con este sistema --"]
-                
-    #             selected_station = st.selectbox(
-    #                 "Estaciones con este sistema:",
-    #                 options=station_options,
-    #                 key="station_sistema"
-    #             )
-        
-    #     with tab3:
-    #         st.write("**Todas las estaciones ordenadas por uso:**")
-    #         # Mostrar todas las estaciones ordenadas por frecuencia de uso
-    #         history_options_all = ["-- Seleccionar estación --"]
-    #         for _, station in station_history.iterrows():
-    #             display_text = f"{station['call_sign']} - {station['operator_name']} - {station.get('estado', 'N/A')} - {station.get('ciudad', station.get('qth', 'N/A'))} - {station['zona']} - {station['sistema']} ({station['use_count']} usos)"
-    #             history_options_all.append(display_text)
-            
-    #         selected_station = st.selectbox(
-    #             "Estaciones más utilizadas:",
-    #             options=history_options_all,
-    #             key="station_all"
-    #         )
-        
-    #     # Botón para usar datos (fuera de los tabs)
-        # st.markdown("---")
-        # col1, col2, col3 = st.columns([2, 1, 2])
-        
-        # with col2:
-        #     # Determinar qué estación está seleccionada en cualquier tab
-        #     current_selection = None
-        #     if st.session_state.get('station_zona', '').startswith('-- ') == False and st.session_state.get('station_zona'):
-        #         current_selection = st.session_state.get('station_zona')
-        #     elif st.session_state.get('station_sistema', '').startswith('-- ') == False and st.session_state.get('station_sistema'):
-        #         current_selection = st.session_state.get('station_sistema')
-        #     elif st.session_state.get('station_all', '').startswith('-- ') == False and st.session_state.get('station_all'):
-        #         current_selection = st.session_state.get('station_all')
-            
-        #     button_disabled = current_selection is None or current_selection.startswith('-- ')
-            
-        #     if st.button("📋 Usar Datos Seleccionados", disabled=button_disabled, use_container_width=True):
-        #         if current_selection and not current_selection.startswith('-- '):
-        #             # Parse station data
-        #             parts = current_selection.split(' - ')
-        #             if len(parts) >= 6:  # Now we have estado and ciudad separate
-        #                 call = parts[0]
-        #                 name = parts[1]
-        #                 estado = parts[2]
-        #                 ciudad = parts[3]
-        #                 zona = parts[4]
-        #                 sistema_parts = parts[5].split(' (')[0]  # Remove usage count
-                        
-        #                 # Store in session state
-        #                 st.session_state.prefill_call = call
-        #                 st.session_state.prefill_name = name
-        #                 st.session_state.prefill_estado = estado
-        #                 st.session_state.prefill_ciudad = ciudad
-        #                 st.session_state.prefill_zona = zona
-        #                 st.session_state.prefill_sistema = sistema_parts
-                        
-        #                 # Marcar para limpiar selecciones en el próximo rerun
-        #                 st.session_state.clear_selections = True
-                        
-        #                 st.success("✅ Datos cargados. Completa el formulario abajo.")
-        #                 st.rerun()
-    
-    st.markdown("---")
-    
     # Inicializar valores por defecto desde session_state si existen
     default_call = st.session_state.get('prefill_call', "")
     default_name = st.session_state.get('prefill_name', "")
@@ -1446,11 +1284,6 @@ def registro_reportes():
         except ValueError:
             default_estado_idx = 0
     
-    # Obtener sistema preferido del usuario
-    user_preferred_system = "ASL"  # Default
-    if current_user:
-        user_preferred_system = db.get_user_preferred_system(current_user['username']) or "ASL"
-    
     # Campo Indicativo con autocompletado mejorado (fuera del formulario)
     call_sign_input = st.text_input(
         "📻 Indicativo", 
@@ -1460,69 +1293,161 @@ def registro_reportes():
         key="call_sign_input"
     )
 
-    # Autocompletado dinámico mejorado (fuera del formulario)
-    if call_sign_input and len(call_sign_input.strip()) >= 2:
-        with st.spinner("🔍 Buscando sugerencias..."):
-            suggestions = db.search_call_signs_dynamic(call_sign_input.strip(), limit=6)
+    # Autocompletado dinámico mejorado - TABLA INLINE PARA CAPTURA MASIVA
+    # Solo mostrar tabla si no estamos editando registros de sesión
+    if (call_sign_input and len(call_sign_input.strip()) >= 2 and 
+        not st.session_state.get('show_bulk_edit', False) and
+        not st.session_state.get('show_selected_details', False) and
+        not st.session_state.get('confirm_bulk_delete', False) and
+        not st.session_state.get('editing_individual_report', False) and
+        not st.session_state.get('selected_reports', [])):
+        with st.spinner("🔍 Buscando estaciones..."):
+            suggestions = db.search_call_signs_dynamic(call_sign_input.strip(), limit=20)
         
         if suggestions:
-            st.markdown("### 🎯 **Sugerencias Rápidas**")
+            # Mostrar información de resultados encontrados
+            st.info(f"🔍 **{len(suggestions)}** estaciones únicas encontradas para **{call_sign_input.upper()}**")
+            st.info("💡 **Tip:** Selecciona solo las estaciones que se reportaron y guarda todas juntas.")
             
-            # Crear columnas dinámicas
-            cols = st.columns(min(len(suggestions), 3))
-            
+            # Preparar datos para la tabla editable
+            bulk_data = []
             for i, suggestion in enumerate(suggestions):
-                col_idx = i % 3
-                with cols[col_idx]:
-                    # Botón más compacto y atractivo
-                    usage_text = f"({suggestion['use_count']} usos)" if suggestion['use_count'] > 0 else "(nuevo)"
+                bulk_data.append({
+                    'Seleccionar': True,
+                    'Indicativo': suggestion['call_sign'],
+                    'Operador': suggestion['operator_name'],
+                    'Estado': suggestion['qth'],
+                    'Ciudad': suggestion.get('ciudad', ''),
+                    'Zona': suggestion['zona'],
+                    'Sistema': suggestion['sistema'],
+                    'Señal': '59',
+                    'Observaciones': ''
+                })
+            
+            # Crear DataFrame
+            df_bulk = pd.DataFrame(bulk_data)
+            
+            # Configuración de columnas
+            column_config = {
+                'Seleccionar': st.column_config.CheckboxColumn("✓", help="Seleccionar para guardar", default=True, width="small"),
+                'Indicativo': st.column_config.TextColumn("Indicativo", disabled=True, width="medium"),
+                'Operador': st.column_config.TextColumn("Operador", width="medium"),
+                'Estado': st.column_config.SelectboxColumn("Estado", options=get_estados_list(), width="medium"),
+                'Ciudad': st.column_config.TextColumn("Ciudad", width="medium"),
+                'Zona': st.column_config.SelectboxColumn("Zona", options=get_zonas(), width="small"),
+                'Sistema': st.column_config.SelectboxColumn("Sistema", options=get_sistemas(), width="medium"),
+                'Señal': st.column_config.TextColumn("Señal", width="small"),
+                'Observaciones': st.column_config.TextColumn("Observaciones", width="large")
+            }
+            
+            # Botón de deseleccionar todas
+            if st.button("❌ Deseleccionar Todas", key="deselect_all_inline"):
+                st.session_state.deselect_all_flag = True
+                st.rerun()
+            
+            # Aplicar deselección si el flag está activo
+            if st.session_state.get('deselect_all_flag', False):
+                for i in range(len(df_bulk)):
+                    df_bulk.loc[i, 'Seleccionar'] = False
+                st.session_state.deselect_all_flag = False
+
+            # Mostrar tabla editable con la misma altura que el modal
+            with st.form("bulk_capture_form_inline"):
+                edited_df = st.data_editor(
+                    df_bulk,
+                    column_config=column_config,
+                    width="stretch",
+                    hide_index=True,
+                    height=500,
+                    key="bulk_capture_table_inline"
+                )
+                
+                # Botones de acción
+                col_save, col_cancel, col_info = st.columns([2, 2, 3])
+                
+                with col_save:
+                    save_clicked = st.form_submit_button("💾 Guardar Seleccionadas", type="primary", use_container_width=True)
+                
+                with col_cancel:
+                    cancel_clicked = st.form_submit_button("❌ Limpiar Búsqueda", use_container_width=True)
+                
+                with col_info:
+                    if edited_df is not None:
+                        selected_count = edited_df['Seleccionar'].sum()
+                        st.info(f"📊 {selected_count} estaciones seleccionadas")
+                
+                # Información sobre deselección
+                st.info("💡 **Tip:** Para deseleccionar estaciones, desmarca los checkboxes en la columna '✓'")
+            
+            # Procesar guardado
+            if save_clicked:
+                if edited_df is not None:
+                    selected_stations = edited_df[edited_df['Seleccionar'] == True]
                     
-                    button_key = f"quick_select_{suggestion['call_sign']}_{i}"
-                    
-                    if st.button(
-                        f"📻 **{suggestion['call_sign']}**\n{suggestion['operator_name'][:20]}...\n{usage_text}",
-                        key=button_key,
-                        help=f"Operador: {suggestion['operator_name']}\nEstado: {suggestion['qth']}\nZona: {suggestion['zona']}\nSistema: {suggestion['sistema']}",
-                        use_container_width=True
-                    ):
-                        # Autocompletar todos los campos
-                        st.session_state['prefill_call'] = suggestion['call_sign']
-                        st.session_state['prefill_name'] = suggestion['operator_name']
-                        st.session_state['prefill_estado'] = suggestion['qth']
-                        st.session_state['prefill_ciudad'] = suggestion.get('ciudad', '')
-                        st.session_state['prefill_zona'] = suggestion['zona']
-                        st.session_state['prefill_sistema'] = suggestion['sistema']
+                    if len(selected_stations) == 0:
+                        st.error("❌ No has seleccionado ninguna estación para guardar")
+                    else:
+                        success_count = 0
+                        error_count = 0
                         
-                        # Mostrar mensaje de éxito
-                        st.success(f"✅ Datos cargados: {suggestion['call_sign']} - {suggestion['operator_name']}")
+                        for _, row in selected_stations.iterrows():
+                            try:
+                                if not row['Indicativo'] or not row['Operador']:
+                                    st.error(f"❌ {row['Indicativo']}: Faltan campos obligatorios")
+                                    error_count += 1
+                                    continue
+                                
+                                created_by = current_user['username'] if current_user else 'guest'
+                                report_id = db.add_report(
+                                    row['Indicativo'], row['Operador'], row['Estado'],
+                                    row['Ciudad'], row['Señal'], row['Zona'],
+                                    row['Sistema'], grid_locator="", hf_frequency="",
+                                    hf_band="", hf_mode="", hf_power="",
+                                    observations=row['Observaciones'], created_by=created_by
+                                )
+                                success_count += 1
+                                
+                            except Exception as e:
+                                st.error(f"❌ Error guardando {row['Indicativo']}: {str(e)}")
+                                error_count += 1
+                        
+                        if success_count > 0:
+                            st.success(f"✅ {success_count} reportes guardados exitosamente")
+                            
+                        if error_count > 0:
+                            st.warning(f"⚠️ {error_count} reportes tuvieron errores")
+                        
+                        # Limpiar búsqueda después de guardar
                         st.rerun()
-                            # Mostrar debug persistente si existe
-            # Tip mejorado
-            st.info("💡 **Tip:** Haz clic en cualquier sugerencia para autocompletar todos los campos automáticamente")
+            
+            # Procesar cancelación/limpiar
+            if cancel_clicked:
+                st.rerun()
+            
+            st.markdown("---")
 
     # Usar el valor seleccionado
     call_sign = call_sign_input if call_sign_input else default_call
-
-
+    
     # Formulario de registro
     with st.form("report_form"):
         col1, col2 = st.columns(2)
         
         with col1:
             operator_name = st.text_input("👤 Nombre del Operador",placeholder="(Obligatorio) | Ejemplo: Juan Pérez", value=default_name)
-            estado = st.selectbox("🏛️ Estado", estados, index=default_estado_idx, help="Selecciona el estado")
+            estado = st.selectbox("🏛️ Estado", get_estados_list(), index=default_estado_idx, help="Selecciona el estado")
             ciudad = st.text_input("🏙️ Ciudad",placeholder="(Opcional) | Ejemplo: Durangotitlan de los Baches", value=default_ciudad, help="Ejemplo: Monterrey, Guadalajara")
         
         with col2:
-            signal_report = st.text_input("📶 Reporte de Señal",value="59", help="Ejemplo: 5x9, Buena, Regular")
-            zona = st.selectbox("🌍 Zona", zonas, index=default_zona)
+            signal_report = st.text_input("📶 Reporte de Señal",value="59", help="Ejemplo: Buena, Regular, Mala")
+            zona = st.selectbox("🌍 Zona", get_zonas(), index=default_zona)
             # Usar sistema preferido como default si no hay prefill
             if 'prefill_sistema' not in st.session_state:
                 try:
-                    default_sistema = sistemas.index(user_preferred_system)
+                    default_sistema = get_sistemas().index(user_preferred_system)
                 except ValueError:
                     default_sistema = 0
-            sistema = st.selectbox("📡 Sistema", sistemas, index=default_sistema)
+            sistema = st.selectbox("📡 Sistema", get_sistemas(), index=default_sistema)
         
         # Campos HF dinámicos con valores preferidos como default
         hf_frequency = ""
@@ -1766,11 +1691,7 @@ def registro_reportes():
         # Configurar columnas principales a mostrar
         columns_to_show = ['Seleccionar', 'call_sign', 'operator_name', 'qth', 'zona', 'sistema', 'signal_report', 'Hora', 'Capturado por']
         column_config = {
-            "Seleccionar": st.column_config.CheckboxColumn(
-                "✓",
-                help="Seleccionar para acciones masivas",
-                default=False,
-            ),
+            "Seleccionar": st.column_config.CheckboxColumn("✓", help="Seleccionar para acciones masivas", default=False, width="small"),
             'call_sign': st.column_config.TextColumn("Indicativo", width="medium"),
             'operator_name': st.column_config.TextColumn("Operador", width="medium"),
             'qth': st.column_config.TextColumn("QTH", width="medium"),
@@ -1904,7 +1825,6 @@ def registro_reportes():
                             st.write(f"**Indicativo:** {report['call_sign']}")
                             st.write(f"**Operador:** {report['operator_name']}")
                             st.write(f"**QTH:** {report['qth']}")
-                            st.write(f"**Ciudad:** {report.get('ciudad', 'N/A')}")
                         with col_det2:
                             st.write(f"**Zona:** {report['zona']}")
                             st.write(f"**Sistema:** {report['sistema']}")
@@ -1935,17 +1855,19 @@ def registro_reportes():
                         
                         with col1:
                             edit_call_sign = st.text_input(
-                                "Indicativo:",
+                                "Indicativo",
                                 value=report['call_sign'],
-                                help="Ejemplo: XE1ABC"
+                                key=f"bulk_call_{report['id']}",
+                                disabled=True
                             )
-                            
-                            edit_operator_name = st.text_input(
-                                "Nombre del Operador:",
-                                value=report['operator_name']
+                            operator_name = st.text_input(
+                                "Nombre del Operador",
+                                value=report['operator_name'],
+                                key=f"bulk_operator_{report['id']}"
                             )
-                            
-                            # Obtener estados mexicanos
+                        
+                        with col2:
+                            # Obtener índice del estado actual
                             estados_list = get_estados_list()
                             current_qth = report.get('qth', '')
                             if current_qth in estados_list:
@@ -1956,56 +1878,76 @@ def registro_reportes():
                             edit_qth = st.selectbox(
                                 "Estado/QTH:",
                                 estados_list,
-                                index=qth_index
+                                index=qth_index,
+                                key=f"bulk_estado_{report['id']}"
                             )
                             
                             edit_ciudad = st.text_input(
-                                "Ciudad:",
-                                value=report.get('ciudad', '')
-                            )
-                            
-                            edit_grid_locator = st.text_input(
-                                "Grid Locator (opcional):",
-                                value=report.get('grid_locator', ''),
-                                help="Ejemplo: EK09"
+                                "Ciudad",
+                                value=report.get('ciudad', ''),
+                                key=f"bulk_ciudad_{report['id']}"
                             )
                         
-                        with col2:
-                            # Zona
-                            zonas = get_zonas()
-                            current_zona = report['zona']
-                            zona_index = zonas.index(current_zona) if current_zona in zonas else 0
-                            edit_zona = st.selectbox("Zona:", zonas, index=zona_index)
-                            
-                            # Sistema
-                            sistemas = get_sistemas()
-                            current_sistema = report['sistema']
-                            sistema_index = sistemas.index(current_sistema) if current_sistema in sistemas else 0
-                            edit_sistema = st.selectbox("Sistema:", sistemas, index=sistema_index)
-                            
-                            # Reporte de señal
-                            signal_reports = ["59", "58", "57", "56", "55", "54", "53", "52", "51", "Buena", "Regular", "Mala"]
-                            current_signal = report['signal_report']
-                            signal_index = signal_reports.index(current_signal) if current_signal in signal_reports else 0
-                            edit_signal_report = st.selectbox("Reporte de Señal:", signal_reports, index=signal_index)
-                            
-                            edit_observations = st.text_area(
-                                "Observaciones:",
-                                value=report.get('observations', ''),
-                                height=100
-                            )
+                        # Zona
+                        zonas_list = get_zonas()
+                        current_zona = report.get('zona', '')
+                        zona_index = zonas_list.index(current_zona) if current_zona in zonas_list else 0
+                        edit_zona = st.selectbox(
+                            "Zona:",
+                            zonas_list,
+                            index=zona_index,
+                            key=f"bulk_zona_{report['id']}"
+                        )
+                        
+                        # Sistema
+                        sistemas_list = get_sistemas()
+                        current_sistema = report.get('sistema', '')
+                        sistema_index = sistemas_list.index(current_sistema) if current_sistema in sistemas_list else 0
+                        edit_sistema = st.selectbox(
+                            "Sistema:",
+                            sistemas_list,
+                            index=sistema_index,
+                            key=f"bulk_sistema_{report['id']}"
+                        )
+                        
+                        edit_signal_report = st.text_input(
+                            "Reporte de Señal",
+                            value=report.get('signal_report', ''),
+                            key=f"bulk_signal_{report['id']}"
+                        )
+                        
+                        edit_grid_locator = st.text_input(
+                            "Grid Locator (opcional):",
+                            value=report.get('grid_locator', '') or '',
+                            key=f"bulk_grid_locator_{report['id']}",
+                            help="Ejemplo: DL74QB"
+                        )
+                        
+                        edit_observations = st.text_area(
+                            "Observaciones:",
+                            value=report.get('observations', '') or '',
+                            key=f"bulk_obs_{report['id']}",
+                            height=100
+                        )
                         
                         col_save, col_cancel = st.columns(2)
                         
                         with col_save:
-                            save_individual = st.form_submit_button("💾 Guardar Cambios")
+                            save_individual = st.form_submit_button(
+                                f"💾 Guardar Cambios",
+                                type="primary",
+                                use_container_width=True
+                            )
                         
                         with col_cancel:
-                            cancel_individual = st.form_submit_button("❌ Cancelar")
+                            cancel_individual = st.form_submit_button(
+                                "❌ Cancelar",
+                                use_container_width=True
+                            )
                         
                         if save_individual:
                             # Validar datos
-                            is_valid, errors = validate_all_fields(edit_call_sign, edit_operator_name, edit_qth, edit_ciudad, edit_signal_report, edit_zona, edit_sistema)
+                            is_valid, errors = validate_all_fields(edit_call_sign, operator_name, edit_qth, edit_ciudad, edit_signal_report, edit_zona, edit_sistema)
                             
                             if is_valid:
                                 # Verificar inconsistencias
@@ -2017,7 +1959,7 @@ def registro_reportes():
                                     st.session_state[pending_key] = {
                                         'report_id': report['id'],
                                         'call_sign': edit_call_sign,
-                                        'operator_name': edit_operator_name,
+                                        'operator_name': operator_name,
                                         'qth': edit_qth,
                                         'ciudad': edit_ciudad,
                                         'zona': edit_zona,
@@ -2035,7 +1977,7 @@ def registro_reportes():
                                         db.update_report(
                                             int(report['id']),
                                             call_sign=edit_call_sign.upper(),
-                                            operator_name=edit_operator_name,
+                                            operator_name=operator_name,
                                             qth=edit_qth,
                                             ciudad=edit_ciudad.title(),
                                             zona=edit_zona,
@@ -2081,14 +2023,26 @@ def registro_reportes():
                         for _, report in selected_reports_data.iterrows():
                             st.write(f"• {report['call_sign']} - {report['operator_name']}")
                         
-                        col_save, col_cancel = st.columns(2)
+                        col_save, col_cancel, col_info = st.columns([1, 1, 2])
                         
                         with col_save:
-                            save_bulk = st.form_submit_button("💾 Actualizar Todos")
+                            save_bulk = st.form_submit_button(
+                                f"💾 Actualizar Todos",
+                                type="primary",
+                                use_container_width=True
+                            )
                         
                         with col_cancel:
-                            cancel_bulk = st.form_submit_button("❌ Cancelar")
+                            cancel_bulk = st.form_submit_button(
+                                "❌ Cancelar",
+                                use_container_width=True
+                            )
                         
+                        with col_info:
+                            selected_count = len(selected_reports_data)
+                            st.info(f"📊 **{selected_count}** registros seleccionados")
+                        
+                        # Procesar guardado masivo
                         if save_bulk:
                             try:
                                 updated_count = 0
@@ -2124,8 +2078,8 @@ def registro_reportes():
                                 
                             except Exception as e:
                                 st.error(f"❌ Error al actualizar reportes: {str(e)}")
-                        
-                        if cancel_bulk:
+                        else:
+                            # Limpiar estado de edición masiva
                             del st.session_state.show_bulk_edit
                             st.rerun()
             
@@ -2605,7 +2559,7 @@ elif page == "🔍 Buscar/Editar":
         reports_df = db.search_reports(search_term, filters)
         
         if not reports_df.empty:
-            st.subheader(f"Resultados de búsqueda ({len(reports_df)} reportes)")
+            st.subheader(f"Resultados de búsqueda: '{search_term}'")
             
             # Agregar información de debug para el usuario
             st.info(f"🔍 **Debug Info:** Encontrados {len(reports_df)} reportes. Filtros aplicados: {filters}")
@@ -2802,7 +2756,7 @@ elif page == "🔍 Buscar/Editar":
                                             )
                                             
                                             st.session_state.selected_reports = []
-                                            del st.session_state.show_bulk_edit
+                                            del st.session_state[pending_edit_key]
                                             st.success("✅ Reporte actualizado exitosamente")
                                             st.rerun()
                                             
@@ -3030,10 +2984,16 @@ def show_profile_management():
                     if success:
                         st.success("✅ Contraseña cambiada correctamente")
                         st.info("🔄 Por seguridad, deberás iniciar sesión nuevamente")
-                        if st.button("🚪 Cerrar Sesión"):
-                            auth.logout()
+                        # Marcar para mostrar botón de logout fuera del form
+                        st.session_state.show_logout_button = True
                     else:
                         st.error("❌ Error al cambiar la contraseña")
+    
+    # Botón de logout fuera del formulario
+    if st.session_state.get('show_logout_button', False):
+        if st.button("🚪 Cerrar Sesión"):
+            del st.session_state.show_logout_button
+            auth.logout()
 
 def show_motivational_dashboard():
     """Muestra el dashboard de rankings y reconocimientos"""
@@ -3202,21 +3162,18 @@ def show_user_management():
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        st.write(f"**Usuario:** {user['username']}")
-                        st.write(f"**Nombre:** {user.get('full_name', 'N/A')}")
+                        st.write(f"**Nombre completo:** {user.get('full_name', 'N/A')}")
+                        st.write(f"**Email:** {user.get('email', 'N/A')}")
                         st.write(f"**Rol:** {user['role']}")
-                        if user.get('email'):
-                            st.write(f"**Email:** {user['email']}")
                         st.write(f"**Creado:** {user.get('created_at', 'N/A')}")
                     
                     with col2:
                         # Botón para editar usuario
                         if st.button(f"✏️ Editar", key=f"edit_user_{user['id']}"):
                             st.session_state[f"editing_user_{user['id']}"] = True
-                            st.rerun()
                         
-                        # Solo permitir eliminar si no es el usuario actual y no es admin
-                        if user['username'] != current_user['username'] and user['username'] != 'admin':
+                        # Botón para eliminar usuario (solo si no es admin)
+                        if user['username'] != 'admin':
                             if st.button(f"🗑️ Eliminar", key=f"delete_user_{user['id']}"):
                                 try:
                                     db.delete_user(user['id'])
@@ -3225,7 +3182,7 @@ def show_user_management():
                                 except Exception as e:
                                     st.error(f"Error al eliminar usuario: {str(e)}")
                         else:
-                            st.info("No se puede eliminar este usuario")
+                            st.info("👑 Usuario administrador protegido")
                     
                     # Formulario de edición si está activado
                     if st.session_state.get(f"editing_user_{user['id']}", False):
@@ -3293,8 +3250,7 @@ def show_user_management():
                                             
                                         except Exception as e:
                                             st.error(f"❌ Error al actualizar usuario: {str(e)}")
-                            
-                            if cancel_edit:
+                            else:
                                 # Limpiar estado de edición
                                 del st.session_state[f"editing_user_{user['id']}"]
                                 st.rerun()
@@ -3332,11 +3288,16 @@ def show_user_management():
                                 user_id = db.create_user(new_username, new_password, new_role, new_full_name, new_email)
                                 
                                 if user_id:
-                                    st.success(f"🎉 ¡Usuario creado exitosamente!")
-                                    st.info(f"👤 **Usuario:** {new_username}")
-                                    st.info(f"👨‍💼 **Nombre:** {new_full_name}")
-                                    st.info(f"📧 **Email:** {new_email}")
-                                    st.info(f"🎭 **Rol:** {new_role}")
+                                    st.success("✅ Usuario creado exitosamente")
+                                    
+                                    # Mostrar información del usuario creado
+                                    st.info(f"""
+                                    **Usuario creado:**
+                                    - **Nombre de usuario:** {new_username}
+                                    - **Nombre completo:** {new_full_name}
+                                    - **Email:** {new_email}
+                                    - **Rol:** {new_role}
+                                    """)
                                     
                                     # Enviar email de bienvenida si está configurado
                                     if email_service.is_configured():
@@ -3348,7 +3309,7 @@ def show_user_management():
                                         }
                                         
                                         if email_service.send_welcome_email(user_data, new_password):
-                                            st.success("📧 Email de bienvenida enviado correctamente")
+                                            st.success("📧 Email de bienvenida enviado")
                                         else:
                                             st.warning("⚠️ Usuario creado pero no se pudo enviar el email de bienvenida")
                                     else:
@@ -3361,7 +3322,7 @@ def show_user_management():
                                 else:
                                     st.error("❌ Error al crear usuario (posiblemente el usuario ya existe)")
                             except Exception as e:
-                                st.error(f"❌ Error: {str(e)}")
+                                st.error(f"❌ Error al crear usuario: {str(e)}")
                 else:
                     st.error("❌ Por favor completa todos los campos")
     
@@ -3405,7 +3366,7 @@ def show_user_management():
         else:
             st.warning("⚠️ Servicio de email no configurado")
         
-        with st.form("email_config_form"):
+        with st.form("smtp_config_form"):
             st.write("**Configuración SMTP:**")
             
             smtp_server = st.text_input("Servidor SMTP:", value=email_service.smtp_server or "smtp.gmail.com")
@@ -3436,31 +3397,25 @@ import base64
 try:
     with open("assets/LogoFMRE_small.png", "rb") as f:
         logo_data = base64.b64encode(f.read()).decode()
-    st.markdown(
-        f"""
-        <div style='text-align: center; color: #666;'>
-            <div style='display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 5px;'>
-                <img src="data:image/png;base64,{logo_data}" alt="FMRE Logo" style="max-width: 100%; height: auto;">
-                <span style="font-weight: bold;">SIGQ v1.3</span>
-            </div>
-            <div>
-                Federación Mexicana de Radioexperimentadores<br>
-                Desarrollado con ❤️ por los miembros del Radio Club Guadiana A.C.
-            </div>
+    st.markdown("""
+    <div style='text-align: center; color: #666;'>
+        <div style='display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 5px;'>
+            <img src="data:image/png;base64,{logo_data}" alt="FMRE Logo" style="max-width: 100%; height: auto;">
+            <span style="font-weight: bold;">SIGQ v1.3</span>
         </div>
-        """,
-        unsafe_allow_html=True
-    )
-except:
-    st.markdown(
-        """
-        <div style='text-align: center; color: #666;'>
-            📻 FMRE SIR v1.0 | Federación Mexicana de Radioexperimentadores<br>
+        <div>
+            Federación Mexicana de Radioexperimentadores<br>
             Desarrollado con ❤️ por los miembros del Radio Club Guadiana A.C.
         </div>
-        """,
-        unsafe_allow_html=True
-    )
+    </div>
+    """, unsafe_allow_html=True)
+except:
+    st.markdown("""
+    <div style='text-align: center; color: #666;'>
+        📻 FMRE SIR v1.0 | Federación Mexicana de Radioexperimentadores<br>
+        Desarrollado con ❤️ por los miembros del Radio Club Guadiana A.C.
+    </div>
+    """, unsafe_allow_html=True)
 
 # Endpoint API para búsqueda de indicativos
 def get_call_signs_suggestions():

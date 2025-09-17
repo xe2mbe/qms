@@ -866,62 +866,46 @@ class FMREDatabase:
         conn.close()
     
     def search_call_signs_dynamic(self, pattern, limit=10):
-        """Busca indicativos que coincidan con el patrón ingresado para filtros dinámicos"""
-        if not pattern or len(pattern.strip()) < 2:
-            return []
-        
+        """
+        Busca indicativos dinámicamente usando solo la tabla reports.
+        Retorna solo registros únicos por call_sign (el más reciente).
+        """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        # Buscar en reportes recientes y historial de estaciones
-        pattern_upper = pattern.upper().strip()
-        search_pattern = f"{pattern_upper}%"
+        # Preparar patrón de búsqueda
+        if not pattern:
+            return []
+            
+        search_pattern = f"{pattern.upper()}%"
         
-        # Primero buscar en historial de estaciones (más relevante)
+        # Buscar en reports agrupando por call_sign únicamente y tomando el más reciente
         cursor.execute('''
-            SELECT DISTINCT call_sign, operator_name, qth, ciudad, zona, sistema, use_count
-            FROM station_history 
+            SELECT call_sign, operator_name, qth, ciudad, zona, sistema, 
+                   COUNT(*) as report_count,
+                   MAX(timestamp) as last_report
+            FROM reports 
             WHERE call_sign LIKE ? 
-            ORDER BY use_count DESC, call_sign ASC
+            GROUP BY call_sign
+            ORDER BY report_count DESC, last_report DESC, call_sign ASC
             LIMIT ?
         ''', (search_pattern, limit))
         
-        history_results = cursor.fetchall()
-        
-        # Si no hay suficientes resultados, buscar en reportes
-        if len(history_results) < limit:
-            remaining_limit = limit - len(history_results)
-            cursor.execute('''
-                SELECT DISTINCT call_sign, operator_name, qth, ciudad, zona, sistema, 
-                       COUNT(*) as report_count
-                FROM reports 
-                WHERE call_sign LIKE ? 
-                AND call_sign NOT IN (SELECT call_sign FROM station_history WHERE call_sign LIKE ?)
-                GROUP BY call_sign, operator_name, qth, ciudad, zona, sistema
-                ORDER BY report_count DESC, call_sign ASC
-                LIMIT ?
-            ''', (search_pattern, search_pattern, remaining_limit))
-            
-            report_results = cursor.fetchall()
-            
-            # Combinar resultados
-            all_results = history_results + report_results
-        else:
-            all_results = history_results
-        
+        results = cursor.fetchall()
         conn.close()
         
-        # Formatear resultados
+        # Formatear resultados para mantener compatibilidad con el código existente
         formatted_results = []
-        for result in all_results:
+        for row in results:
             formatted_results.append({
-                'call_sign': result[0],
-                'operator_name': result[1],
-                'qth': result[2],
-                'ciudad': result[3] if len(result) > 3 else '',
-                'zona': result[4] if len(result) > 4 else '',
-                'sistema': result[5] if len(result) > 5 else '',
-                'use_count': result[6] if len(result) > 6 else 0
+                'call_sign': row[0],
+                'operator_name': row[1], 
+                'qth': row[2],
+                'ciudad': row[3],
+                'zona': row[4],
+                'sistema': row[5],
+                'use_count': row[6],  # report_count como use_count para compatibilidad
+                'last_used': row[7]   # last_report como last_used
             })
         
         return formatted_results

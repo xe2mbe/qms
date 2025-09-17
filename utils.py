@@ -374,17 +374,8 @@ def validate_hf_fields(sistema, hf_frequency="", hf_band="", hf_mode="", hf_powe
     
     return len(errors) == 0, errors
 
-import streamlit as st
-import sqlite3
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-import hashlib
-import secrets
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+
+
 import re
 from typing import Optional
 
@@ -453,3 +444,31 @@ def get_zone_from_prefix(prefix: str) -> Optional[str]:
     }
     
     return prefix_to_zone.get(prefix.upper())
+
+def map_qth_to_estado(qth_code):
+    """Mapea código QTH a nombre completo del estado"""
+    if not qth_code:
+        return 'Extranjera'
+    
+    qth_clean = qth_code.strip()
+    if not qth_clean:
+        return 'Extranjera'
+    
+    # Si ya es un nombre completo de estado válido, devolverlo tal como está
+    estados_list = get_estados_list()
+    if qth_clean in estados_list:
+        return qth_clean
+    
+    # Intentar mapeo por código de estado mexicano
+    qth_upper = qth_clean.upper()
+    mexican_states = get_mexican_states()
+    if qth_upper in mexican_states:
+        return mexican_states[qth_upper]
+    
+    # Intentar mapeo case-insensitive para nombres de estados
+    for estado in estados_list:
+        if estado.lower() == qth_clean.lower():
+            return estado
+    
+    # Si no coincide con nada, es extranjera
+    return 'Extranjera'

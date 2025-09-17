@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -1313,7 +1312,7 @@ def registro_reportes():
             bulk_data = []
             for i, suggestion in enumerate(suggestions):
                 bulk_data.append({
-                    'Seleccionar': True,
+                    'Seleccionar': False,
                     'Indicativo': suggestion['call_sign'],
                     'Operador': suggestion['operator_name'],
                     'Estado': suggestion['qth'],
@@ -1340,16 +1339,10 @@ def registro_reportes():
                 'Observaciones': st.column_config.TextColumn("Observaciones", width="large")
             }
             
-            # Botón de deseleccionar todas
+            # Botón de deseleccionar todas  
             if st.button("❌ Deseleccionar Todas", key="deselect_all_inline"):
-                st.session_state.deselect_all_flag = True
+                st.session_state.table_counter = st.session_state.get('table_counter', 0) + 1
                 st.rerun()
-            
-            # Aplicar deselección si el flag está activo
-            if st.session_state.get('deselect_all_flag', False):
-                for i in range(len(df_bulk)):
-                    df_bulk.loc[i, 'Seleccionar'] = False
-                st.session_state.deselect_all_flag = False
 
             # Mostrar tabla editable con la misma altura que el modal
             with st.form("bulk_capture_form_inline"):
@@ -1359,7 +1352,7 @@ def registro_reportes():
                     width="stretch",
                     hide_index=True,
                     height=500,
-                    key="bulk_capture_table_inline"
+                    key=f"bulk_table_{st.session_state.get('table_counter', 0)}"
                 )
                 
                 # Botones de acción
@@ -1369,7 +1362,7 @@ def registro_reportes():
                     save_clicked = st.form_submit_button("💾 Guardar Seleccionadas", type="primary", use_container_width=True)
                 
                 with col_cancel:
-                    cancel_clicked = st.form_submit_button("❌ Limpiar Búsqueda", use_container_width=True)
+                    cancel_clicked = st.form_submit_button("❌ Cancelar", use_container_width=True)
                 
                 with col_info:
                     if edited_df is not None:
@@ -1418,10 +1411,12 @@ def registro_reportes():
                             st.warning(f"⚠️ {error_count} reportes tuvieron errores")
                         
                         # Limpiar búsqueda después de guardar
+                        st.session_state.clear_search = True
                         st.rerun()
             
             # Procesar cancelación/limpiar
             if cancel_clicked:
+                st.session_state.clear_search = True
                 st.rerun()
             
             st.markdown("---")

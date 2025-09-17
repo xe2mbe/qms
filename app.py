@@ -1307,6 +1307,9 @@ def registro_reportes():
         st.session_state.clear_search = False
 
     # Autocompletado dinámico mejorado - TABLA INLINE PARA CAPTURA MASIVA
+    # Inicializar suggestions como lista vacía por defecto
+    suggestions = []
+    
     # Solo mostrar tabla si no estamos editando registros de sesión
     if (call_sign_input and len(call_sign_input.strip()) >= 2 and 
         not st.session_state.get('show_bulk_edit', False) and
@@ -1476,6 +1479,31 @@ def registro_reportes():
     # Usar el valor seleccionado
     call_sign = call_sign_input if call_sign_input else default_call
     
+    # Auto-llenar zona y sistema cuando no hay resultados de captura masiva
+    auto_zona_idx = default_zona
+    auto_sistema_idx = default_sistema
+    
+    # Solo auto-llenar si hay un indicativo y NO hay resultados de captura masiva
+    if call_sign and call_sign.strip() and not suggestions:
+        from utils import extract_prefix_from_callsign, get_zone_from_prefix
+        
+        # Extraer zona automáticamente del indicativo
+        prefix = extract_prefix_from_callsign(call_sign.strip())
+        if prefix:
+            auto_zone = get_zone_from_prefix(prefix)
+            if auto_zone:
+                try:
+                    auto_zona_idx = get_zonas().index(auto_zone)
+                except ValueError:
+                    auto_zona_idx = default_zona
+        
+        # Usar sistema preferido del usuario
+        if 'prefill_sistema' not in st.session_state:
+            try:
+                auto_sistema_idx = get_sistemas().index(user_preferred_system)
+            except ValueError:
+                auto_sistema_idx = 0
+    
     # Formulario de registro
     with st.form("report_form"):
         col1, col2 = st.columns(2)
@@ -1487,14 +1515,14 @@ def registro_reportes():
         
         with col2:
             signal_report = st.text_input("📶 Reporte de Señal",value="59", help="Ejemplo: Buena, Regular, Mala")
-            zona = st.selectbox("🌍 Zona", get_zonas(), index=default_zona)
+            zona = st.selectbox("🌍 Zona", get_zonas(), index=auto_zona_idx)
             # Usar sistema preferido como default si no hay prefill
             if 'prefill_sistema' not in st.session_state:
                 try:
                     default_sistema = get_sistemas().index(user_preferred_system)
                 except ValueError:
                     default_sistema = 0
-            sistema = st.selectbox("📡 Sistema", get_sistemas(), index=default_sistema)
+            sistema = st.selectbox("📡 Sistema", get_sistemas(), index=auto_sistema_idx)
         
         # Campos HF dinámicos con valores preferidos como default
         hf_frequency = ""
@@ -2803,7 +2831,9 @@ elif page == "🔍 Buscar/Editar":
                                             )
                                             
                                             st.session_state.selected_reports = []
-                                            del st.session_state[pending_edit_key]
+                                            # Solo eliminar pending_edit_key si existe
+                                            if f"pending_edit_{report['id']}" in st.session_state:
+                                                del st.session_state[f"pending_edit_{report['id']}"]
                                             st.success("✅ Reporte actualizado exitosamente")
                                             st.rerun()
                                             

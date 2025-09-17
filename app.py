@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, date
 import io
+import sqlite3
 
 from database import FMREDatabase
 from utils import (
@@ -952,7 +953,7 @@ if st.sidebar.button("🚪 Cerrar Sesión"):
 st.sidebar.markdown("---")
 
 # Crear menú dinámico basado en el rol del usuario
-menu_options = ["🏠 Registro de Reportes", "📊 Dashboard", "📁 Exportar Datos", "🔍 Buscar/Editar", "🏆 Ranking", "👤 Mi Perfil"]
+menu_options = ["🏠 Registro de Reportes", "📊 Dashboard", "📈 Reportes Avanzados", "📋 Reportes Básicos/Exportar", "🔍 Buscar/Editar", "🏆 Ranking", "👤 Mi Perfil"]
 
 # Solo mostrar opciones de admin si es admin
 if current_user['role'] == 'admin':
@@ -2213,6 +2214,340 @@ def registro_reportes():
         st.info("📝 **Primero agrega algunos reportes para que aparezcan en el historial**")
         st.info("Una vez que tengas reportes, podrás usar la función de registro rápido desde el historial.")
 
+# ==================== FUNCIONES DE REPORTES AVANZADOS ====================
+
+def show_advanced_reports():
+    """Muestra reportes estadísticos avanzados comparativos"""
+    st.header("📊 Reportes Avanzados")
+    st.markdown("### Análisis Comparativo de Sesiones")
+    
+    # Selector de tipo de sesión
+    session_type = st.selectbox(
+        "Tipo de Sesión:",
+        ["Domingos (Boletín en Vivo)", "Miércoles (Retransmisión CREBC)"],
+        help="Selecciona el tipo de sesión para comparar con la anterior del mismo tipo"
+    )
+    
+    # Determinar el día de la semana (0=Lunes, 6=Domingo)
+    target_weekday = 6 if "Domingos" in session_type else 2  # 6=Domingo, 2=Miércoles
+    
+    # Obtener las dos últimas sesiones del tipo seleccionado
+    try:
+        # Consulta para obtener las fechas de sesión del tipo seleccionado
+        conn = sqlite3.connect(db.db_path)
+        
+        # Obtener todas las fechas de sesión únicas del día de la semana correspondiente
+        query = """
+        SELECT DISTINCT DATE(timestamp) as session_date, 
+               COUNT(*) as total_reports,
+               strftime('%w', timestamp) as weekday
+        FROM reports 
+        WHERE strftime('%w', timestamp) = ?
+        GROUP BY DATE(timestamp)
+        ORDER BY session_date DESC
+        LIMIT 2
+        """
+        
+        sessions_df = pd.read_sql_query(query, conn, params=[str(target_weekday)])
+        conn.close()
+        
+        if len(sessions_df) < 2:
+            st.warning(f"⚠️ Se necesitan al menos 2 sesiones de {session_type.lower()} para generar comparativas.")
+            st.info("💡 Los reportes comparativos estarán disponibles después de tener más datos.")
+            return
+        
+        current_session = sessions_df.iloc[0]['session_date']
+        previous_session = sessions_df.iloc[1]['session_date']
+        
+        st.info(f"📅 **Comparando:** {current_session} vs {previous_session}")
+        
+        # Crear pestañas para diferentes tipos de reportes
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "📈 Participación", 
+            "🌍 Geográfico", 
+            "🔧 Técnico", 
+            "📊 Tendencias"
+        ])
+        
+        with tab1:
+            show_participation_report(current_session, previous_session)
+        
+        with tab2:
+            show_geographic_report(current_session, previous_session)
+        
+        with tab3:
+            show_technical_report(current_session, previous_session)
+        
+        with tab4:
+            show_trends_report(current_session, previous_session)
+            
+    except Exception as e:
+        st.error(f"❌ Error al generar reportes: {str(e)}")
+
+def show_participation_report(current_date, previous_date):
+    """Reporte de participación comparativo"""
+    st.subheader("📈 Análisis de Participación")
+    
+    try:
+        conn = sqlite3.connect(db.db_path)
+        
+        # Obtener datos de ambas sesiones
+        current_data = pd.read_sql_query("""
+            SELECT call_sign, operator_name, COUNT(*) as reports_count
+            FROM reports 
+            WHERE DATE(timestamp) = ?
+            GROUP BY call_sign, operator_name
+        """, conn, params=[current_date])
+        
+        previous_data = pd.read_sql_query("""
+            SELECT call_sign, operator_name, COUNT(*) as reports_count
+            FROM reports 
+            WHERE DATE(timestamp) = ?
+            GROUP BY call_sign, operator_name
+        """, conn, params=[previous_date])
+        
+        conn.close()
+        
+        # Métricas principales
+        col1, col2, col3, col4 = st.columns(4)
+        
+        current_total = len(current_data)
+        previous_total = len(previous_data)
+        growth_rate = ((current_total - previous_total) / previous_total * 100) if previous_total > 0 else 0
+        
+        with col1:
+            st.metric("Total Reportes Actuales", current_total)
+        
+        with col2:
+            st.metric("Total Reportes Anteriores", previous_total)
+        
+        with col3:
+            st.metric("Estaciones Únicas Actuales", len(current_data))
+        
+        with col4:
+            st.metric("Crecimiento", f"{growth_rate:+.1f}%", 
+                     delta=f"{current_total - previous_total:+d}")
+        
+        # Nuevas estaciones
+        current_stations = set(current_data['call_sign'])
+        previous_stations = set(previous_data['call_sign'])
+        new_stations = current_stations - previous_stations
+        regular_stations = current_stations & previous_stations
+        
+        st.markdown("---")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("🆕 Nuevas Estaciones")
+            if new_stations:
+                for station in sorted(new_stations):
+                    operator = current_data[current_data['call_sign'] == station]['operator_name'].iloc[0]
+                    st.write(f"• **{station}** - {operator}")
+            else:
+                st.info("No hay estaciones nuevas en esta sesión")
+        
+        with col2:
+            st.subheader("🔄 Estaciones Regulares")
+            st.metric("Participación Consistente", len(regular_stations))
+            if len(regular_stations) > 0:
+                retention_rate = (len(regular_stations) / len(previous_stations)) * 100
+                st.metric("Tasa de Retención", f"{retention_rate:.1f}%")
+        
+    except Exception as e:
+        st.error(f"❌ Error en reporte de participación: {str(e)}")
+
+def show_geographic_report(current_date, previous_date):
+    """Reporte geográfico comparativo"""
+    st.subheader("🌍 Análisis Geográfico")
+    
+    try:
+        conn = sqlite3.connect(db.db_path)
+        
+        # Datos por zona
+        current_zones = pd.read_sql_query("""
+            SELECT zona, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
+            FROM reports 
+            WHERE DATE(timestamp) = ?
+            GROUP BY zona
+            ORDER BY total_reports DESC
+        """, conn, params=[current_date])
+        
+        previous_zones = pd.read_sql_query("""
+            SELECT zona, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
+            FROM reports 
+            WHERE DATE(timestamp) = ?
+            GROUP BY zona
+            ORDER BY total_reports DESC
+        """, conn, params=[previous_date])
+        
+        # Datos por estado
+        current_states = pd.read_sql_query("""
+            SELECT qth as estado, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
+            FROM reports 
+            WHERE DATE(timestamp) = ?
+            GROUP BY qth
+            ORDER BY total_reports DESC
+            LIMIT 10
+        """, conn, params=[current_date])
+        
+        conn.close()
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📊 Distribución por Zonas - Actual")
+            if not current_zones.empty:
+                st.dataframe(current_zones, use_container_width=True)
+            else:
+                st.info("No hay datos de zonas para la sesión actual")
+        
+        with col2:
+            st.subheader("📊 Distribución por Zonas - Anterior")
+            if not previous_zones.empty:
+                st.dataframe(previous_zones, use_container_width=True)
+            else:
+                st.info("No hay datos de zonas para la sesión anterior")
+        
+        st.markdown("---")
+        
+        st.subheader("🏛️ Top 10 Estados Más Activos - Sesión Actual")
+        if not current_states.empty:
+            st.dataframe(current_states, use_container_width=True)
+        else:
+            st.info("No hay datos de estados disponibles")
+            
+    except Exception as e:
+        st.error(f"❌ Error en reporte geográfico: {str(e)}")
+
+def show_technical_report(current_date, previous_date):
+    """Reporte técnico comparativo"""
+    st.subheader("🔧 Análisis Técnico")
+    
+    try:
+        conn = sqlite3.connect(db.db_path)
+        
+        # Sistemas utilizados
+        current_systems = pd.read_sql_query("""
+            SELECT sistema, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
+            FROM reports 
+            WHERE DATE(timestamp) = ?
+            GROUP BY sistema
+            ORDER BY total_reports DESC
+        """, conn, params=[current_date])
+        
+        previous_systems = pd.read_sql_query("""
+            SELECT sistema, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
+            FROM reports 
+            WHERE DATE(timestamp) = ?
+            GROUP BY sistema
+            ORDER BY total_reports DESC
+        """, conn, params=[previous_date])
+        
+        # Calidad de señales
+        current_signals = pd.read_sql_query("""
+            SELECT signal_report, COUNT(*) as count
+            FROM reports 
+            WHERE DATE(timestamp) = ?
+            GROUP BY signal_report
+            ORDER BY count DESC
+        """, conn, params=[current_date])
+        
+        conn.close()
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📡 Sistemas - Actual")
+            if not current_systems.empty:
+                st.dataframe(current_systems, use_container_width=True)
+            else:
+                st.info("No hay datos de sistemas para la sesión actual")
+        
+        with col2:
+            st.subheader("📡 Sistemas - Anterior")
+            if not previous_systems.empty:
+                st.dataframe(previous_systems, use_container_width=True)
+            else:
+                st.info("No hay datos de sistemas para la sesión anterior")
+        
+        st.markdown("---")
+        
+        st.subheader("📶 Distribución de Calidad de Señales - Actual")
+        if not current_signals.empty:
+            st.bar_chart(current_signals.set_index('signal_report')['count'])
+        else:
+            st.info("No hay datos de señales disponibles")
+            
+    except Exception as e:
+        st.error(f"❌ Error en reporte técnico: {str(e)}")
+
+def show_trends_report(current_date, previous_date):
+    """Reporte de tendencias comparativo"""
+    st.subheader("📊 Análisis de Tendencias")
+    
+    try:
+        conn = sqlite3.connect(db.db_path)
+        
+        # Top estaciones reportadas
+        current_top = pd.read_sql_query("""
+            SELECT call_sign, operator_name, COUNT(*) as times_reported
+            FROM reports 
+            WHERE DATE(timestamp) = ?
+            GROUP BY call_sign, operator_name
+            ORDER BY times_reported DESC
+            LIMIT 10
+        """, conn, params=[current_date])
+        
+        previous_top = pd.read_sql_query("""
+            SELECT call_sign, operator_name, COUNT(*) as times_reported
+            FROM reports 
+            WHERE DATE(timestamp) = ?
+            GROUP BY call_sign, operator_name
+            ORDER BY times_reported DESC
+            LIMIT 10
+        """, conn, params=[previous_date])
+        
+        # Actividad por hora
+        current_hourly = pd.read_sql_query("""
+            SELECT strftime('%H', timestamp) as hour, COUNT(*) as reports
+            FROM reports 
+            WHERE DATE(timestamp) = ?
+            GROUP BY strftime('%H', timestamp)
+            ORDER BY hour
+        """, conn, params=[current_date])
+        
+        conn.close()
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("🏆 Top 10 Estaciones - Actual")
+            if not current_top.empty:
+                st.dataframe(current_top, use_container_width=True)
+            else:
+                st.info("No hay datos disponibles para la sesión actual")
+        
+        with col2:
+            st.subheader("🏆 Top 10 Estaciones - Anterior")
+            if not previous_top.empty:
+                st.dataframe(previous_top, use_container_width=True)
+            else:
+                st.info("No hay datos disponibles para la sesión anterior")
+        
+        st.markdown("---")
+        
+        st.subheader("⏰ Actividad por Hora - Sesión Actual")
+        if not current_hourly.empty:
+            st.line_chart(current_hourly.set_index('hour')['reports'])
+        else:
+            st.info("No hay datos de actividad horaria disponibles")
+            
+    except Exception as e:
+        st.error(f"❌ Error en reporte de tendencias: {str(e)}")
+
+# ==================== NAVEGACIÓN PRINCIPAL ====================
+
 # Página: Registro de Reportes
 if page == "🏠 Registro de Reportes":
     registro_reportes()
@@ -2220,7 +2555,7 @@ if page == "🏠 Registro de Reportes":
 # Página: Dashboard
 elif page == "📊 Dashboard":
     st.header("Dashboard de Estadísticas")
-
+    
     # Obtener estadísticas
     stats = db.get_statistics(session_date.strftime('%Y-%m-%d'))
 
@@ -2490,9 +2825,13 @@ elif page == "📻 Historial de Estaciones":
     else:
         st.info("No hay estaciones en el historial aún.")
 
-# Página: Exportar Datos
-elif page == "📁 Exportar Datos":
-    st.header("Exportar Datos")
+# Página: Reportes Avanzados
+elif page == "📈 Reportes Avanzados":
+    show_advanced_reports()
+
+# Página: Reportes Básicos/Exportar
+elif page == "📋 Reportes Básicos/Exportar":
+    st.header("📋 Reportes Básicos y Exportación")
     
     # Opciones de exportación
     col1, col2 = st.columns(2)
@@ -3516,19 +3855,3 @@ if st.query_params.get('api') == 'call_signs':
     st.json(suggestions)
     st.stop()
 
-def show_dashboard():
-    st.header("📊 Dashboard")
-    
-    # Limpiar caché automáticamente al acceder al dashboard
-    # Esto resuelve el problema de mensajes de caché obsoletos en el servidor
-    if hasattr(st, 'cache_data'):
-        st.cache_data.clear()
-    if hasattr(st, 'cache_resource'):
-        st.cache_resource.clear()
-    
-    # Limpiar session state relacionado con reportes para forzar actualización
-    keys_to_clear = [k for k in st.session_state.keys() if 'report' in k.lower() or 'dashboard' in k.lower()]
-    for key in keys_to_clear:
-        del st.session_state[key]
-    
-    # Resto del código de la función show_dashboard

@@ -598,7 +598,7 @@ def show_user_management():
         
         if users is not None and len(users) > 0:
             for user in users:
-                with st.expander(f"👤 {user['username']} ({user['role']})"):
+                with st.expander(f"👤 {user['username']} ({user['role']})", expanded=st.session_state.get(f"editing_user_{user['id']}", False)):
                     col1, col2 = st.columns(2)
                     
                     with col1:
@@ -690,8 +690,8 @@ def show_user_management():
                                             
                                         except Exception as e:
                                             st.error(f"❌ Error al actualizar usuario: {str(e)}")
-                            else:
-                                # Limpiar estado de edición
+                            elif cancel_edit:
+                                # Cancelar edición
                                 del st.session_state[f"editing_user_{user['id']}"]
                                 st.rerun()
         else:
@@ -725,7 +725,7 @@ def show_user_management():
                         else:
                             try:
                                 # Crear usuario
-                                user_id = db.create_user(new_username, new_password, new_role, new_full_name, new_email)
+                                user_id = auth.create_user(new_username, new_password, role=new_role, full_name=new_full_name, email=new_email)
                                 
                                 if user_id:
                                     st.success("✅ Usuario creado exitosamente")
@@ -3636,7 +3636,7 @@ def show_user_management():
         
         if users is not None and len(users) > 0:
             for user in users:
-                with st.expander(f"👤 {user['username']} ({user['role']})"):
+                with st.expander(f"👤 {user['username']} ({user['role']})", expanded=st.session_state.get(f"editing_user_{user['id']}", False)):
                     col1, col2 = st.columns(2)
                     
                     with col1:
@@ -3728,8 +3728,8 @@ def show_user_management():
                                             
                                         except Exception as e:
                                             st.error(f"❌ Error al actualizar usuario: {str(e)}")
-                            else:
-                                # Limpiar estado de edición
+                            elif cancel_edit:
+                                # Cancelar edición
                                 del st.session_state[f"editing_user_{user['id']}"]
                                 st.rerun()
         else:
@@ -3763,7 +3763,7 @@ def show_user_management():
                         else:
                             try:
                                 # Crear usuario
-                                user_id = db.create_user(new_username, new_password, new_role, new_full_name, new_email)
+                                user_id = auth.create_user(new_username, new_password, role=new_role, full_name=new_full_name, email=new_email)
                                 
                                 if user_id:
                                     st.success("✅ Usuario creado exitosamente")

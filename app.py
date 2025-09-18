@@ -984,6 +984,10 @@ def show_profile_management():
     """Muestra la página de gestión de perfil del usuario"""
     st.header("👤 Mi Perfil")
     st.markdown("### Gestiona tu información personal")
+    # Mostrar mensaje persistente tras actualización
+    if st.session_state.get('profile_updated'):
+        st.success("✅ Información actualizada correctamente")
+        del st.session_state['profile_updated']
     
     # Obtener información actual del usuario
     user_info = db.get_user_by_username(current_user['username'])
@@ -1061,9 +1065,9 @@ def show_profile_management():
             
             if submitted:
                 # Validar datos
-                if not new_full_name.strip():
+                if not new_full_name or not new_full_name.strip():
                     st.error("❌ El nombre completo es obligatorio")
-                elif not new_email.strip():
+                elif not new_email or not new_email.strip():
                     st.error("❌ El correo electrónico es obligatorio")
                 elif '@' not in new_email:
                     st.error("❌ Ingresa un correo electrónico válido")
@@ -1076,7 +1080,8 @@ def show_profile_management():
                     )
                     
                     if success:
-                        st.success("✅ Información actualizada correctamente")
+                        # Guardar bandera de éxito y recargar
+                        st.session_state['profile_updated'] = True
                         st.rerun()
                     else:
                         st.error("❌ Error al actualizar la información")
@@ -3321,6 +3326,10 @@ def show_profile_management():
     """Muestra la página de gestión de perfil del usuario"""
     st.header("👤 Mi Perfil")
     st.markdown("### Gestiona tu información personal")
+    # Mostrar mensaje persistente tras actualización
+    if st.session_state.get('profile_updated'):
+        st.success("✅ Información actualizada correctamente")
+        del st.session_state['profile_updated']
     
     # Obtener información actual del usuario
     user_info = db.get_user_by_username(current_user['username'])
@@ -3398,9 +3407,9 @@ def show_profile_management():
             
             if submitted:
                 # Validar datos
-                if not new_full_name.strip():
+                if not new_full_name or not new_full_name.strip():
                     st.error("❌ El nombre completo es obligatorio")
-                elif not new_email.strip():
+                elif not new_email or not new_email.strip():
                     st.error("❌ El correo electrónico es obligatorio")
                 elif '@' not in new_email:
                     st.error("❌ Ingresa un correo electrónico válido")
@@ -3413,7 +3422,8 @@ def show_profile_management():
                     )
                     
                     if success:
-                        st.success("✅ Información actualizada correctamente")
+                        # Guardar bandera de éxito y recargar
+                        st.session_state['profile_updated'] = True
                         st.rerun()
                     else:
                         st.error("❌ Error al actualizar la información")

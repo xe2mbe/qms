@@ -1442,6 +1442,7 @@ def registro_reportes():
                     else:
                         success_count = 0
                         error_count = 0
+                        saved_items = []
                         
                         for _, row in selected_stations.iterrows():
                             try:
@@ -1459,16 +1460,27 @@ def registro_reportes():
                                     observations=row['Observaciones'], created_by=created_by
                                 )
                                 success_count += 1
+                                saved_items.append({
+                                    'Indicativo': row['Indicativo'],
+                                    'Operador': row['Operador'],
+                                    'Estado': row['Estado'],
+                                    'Ciudad': row['Ciudad'],
+                                    'Zona': row['Zona'],
+                                    'Sistema': row['Sistema']
+                                })
                                 
                             except Exception as e:
                                 st.error(f"❌ Error guardando {row['Indicativo']}: {str(e)}")
                                 error_count += 1
                         
+                        # Preparar resumen de la operación para mostrar en un modal
                         if success_count > 0:
-                            st.success(f"✅ {success_count} reportes guardados exitosamente")
-                            
-                        if error_count > 0:
-                            st.warning(f"⚠️ {error_count} reportes tuvieron errores")
+                            st.session_state.save_summary = {
+                                'count': success_count,
+                                'errors': error_count,
+                                'items': saved_items
+                            }
+                            st.session_state.show_save_summary = True
                         
                         # Limpiar búsqueda después de guardar
                         st.session_state.clear_search = True
@@ -1608,7 +1620,20 @@ def registro_reportes():
                             if key in st.session_state:
                                 del st.session_state[key]
                         
-                        st.success(f"✅ Reporte agregado exitosamente (ID: {report_id})")
+                        # Guardar resumen en sesión para mostrar modal
+                        st.session_state.save_summary = {
+                            'count': 1,
+                            'errors': 0,
+                            'items': [{
+                                'Indicativo': call_sign,
+                                'Operador': operator_name,
+                                'Estado': estado,
+                                'Ciudad': ciudad,
+                                'Zona': zona,
+                                'Sistema': sistema
+                            }]
+                        }
+                        st.session_state.show_save_summary = True
                         st.rerun()
                         
                     except Exception as e:
@@ -1645,10 +1670,23 @@ def registro_reportes():
                             if key in st.session_state:
                                 del st.session_state[key]
                         
+                        # Preparar resumen en sesión
+                        st.session_state.save_summary = {
+                            'count': 1,
+                            'errors': 0,
+                            'items': [{
+                                'Indicativo': pending['call_sign'],
+                                'Operador': pending['operator_name'],
+                                'Estado': pending['estado'],
+                                'Ciudad': pending['ciudad'],
+                                'Zona': pending['zona'],
+                                'Sistema': pending['sistema']
+                            }]
+                        }
+                        st.session_state.show_save_summary = True
+                        
                         # Limpiar pending_report
                         del st.session_state.pending_report
-                        
-                        st.success(f"✅ Reporte agregado exitosamente (ID: {report_id})")
                         st.rerun()
                         
                     except Exception as e:
@@ -1661,7 +1699,26 @@ def registro_reportes():
                     st.rerun()
         
         show_confirmation_dialog()
-    
+        
+    # Mostrar modal con resumen de registros guardados
+    if st.session_state.get('show_save_summary', False) and 'save_summary' in st.session_state:
+        summary = st.session_state.save_summary
+        @st.dialog("✅ Registros Agregados Exitosamente")
+        def show_save_summary_dialog():
+            st.success(f"👤 {(current_user['full_name'] if current_user else 'Usuario')} — se guardaron {summary['count']} registro(s) exitosamente.")
+            if summary.get('errors', 0):
+                st.warning(f"{summary['errors']} registro(s) presentaron errores y no se guardaron.")
+            
+            # Botón de cierre enfocado dentro de formulario
+            with st.form('close_summary_form'):
+                close_clicked = st.form_submit_button('Cerrar', type='primary', use_container_width=True)
+            
+            if close_clicked:
+                del st.session_state['show_save_summary']
+                del st.session_state['save_summary']
+                st.rerun()
+        show_save_summary_dialog()
+
     # Mostrar reportes recientes de la sesión actual
     st.subheader(f"Reportes de la Sesión - {session_date.strftime('%d/%m/%Y')}")
     

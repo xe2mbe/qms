@@ -97,7 +97,7 @@ class AuthManager:
                 username = st.text_input("Usuario", placeholder="Ingresa tu usuario")
                 password = st.text_input("Contraseña", type="password", placeholder="Ingresa tu contraseña")
                 
-                login_submitted = st.form_submit_button("🚪 Iniciar Sesión", use_container_width=True)
+                login_submitted = st.form_submit_button("🚪 Iniciar Sesión", width='stretch')
                 
                 if login_submitted:
                     if username and password:
@@ -132,10 +132,10 @@ class AuthManager:
                 col_reg, col_cancel = st.columns(2)
                 
                 with col_reg:
-                    register_submitted = st.form_submit_button("✅ Registrar", use_container_width=True)
+                    register_submitted = st.form_submit_button("✅ Registrar", width='stretch')
                 
                 with col_cancel:
-                    cancel_submitted = st.form_submit_button("❌ Cancelar", use_container_width=True)
+                    cancel_submitted = st.form_submit_button("❌ Cancelar", width='stretch')
                 
                 if register_submitted:
                     if all([new_username, new_password, confirm_password, full_name]):

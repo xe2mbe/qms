@@ -85,7 +85,7 @@ def show_db_admin():
                             st.success(f"✅ Consulta ejecutada exitosamente. {len(result_df)} filas devueltas.")
                             
                             if not result_df.empty:
-                                st.dataframe(result_df, use_container_width=True)
+                                st.dataframe(result_df, width='stretch')
                                 
                                 # Opción para descargar resultados
                                 csv = result_df.to_csv(index=False)
@@ -324,7 +324,7 @@ def show_db_admin():
             
             if not top_calls_df.empty:
                 st.markdown("**🏆 Top 10 Indicativos:**")
-                st.dataframe(top_calls_df, use_container_width=True)
+                st.dataframe(top_calls_df, width='stretch')
             
             # Actividad por zona
             zone_stats_df = pd.read_sql_query("""
@@ -336,7 +336,7 @@ def show_db_admin():
             
             if not zone_stats_df.empty:
                 st.markdown("**🌍 Actividad por Zona:**")
-                st.dataframe(zone_stats_df, use_container_width=True)
+                st.dataframe(zone_stats_df, width='stretch')
             
             conn.close()
         
@@ -1392,12 +1392,12 @@ def registro_reportes():
             col_sel, col_desel = st.columns(2)
             
             with col_sel:
-                if st.button("✅ Seleccionar Todas", key="select_all_btn", use_container_width=True):
+                if st.button("✅ Seleccionar Todas", key="select_all_btn", width='stretch'):
                     st.session_state.bulk_df_state['Seleccionar'] = True
                     st.rerun()
             
             with col_desel:
-                if st.button("❌ Deseleccionar Todas", key="deselect_all_btn", use_container_width=True):
+                if st.button("❌ Deseleccionar Todas", key="deselect_all_btn", width='stretch'):
                     st.session_state.bulk_df_state['Seleccionar'] = False
                     st.rerun()
             
@@ -1420,10 +1420,10 @@ def registro_reportes():
                 col_save, col_cancel = st.columns([1, 1])
 
                 with col_save:
-                    save_clicked = st.form_submit_button("💾 Agregar Seleccionadas", key="save_bulk_btn", type="primary", use_container_width=True)
+                    save_clicked = st.form_submit_button("💾 Agregar Seleccionadas", key="save_bulk_btn", type="primary", width='stretch')
 
                 with col_cancel:
-                    cancel_clicked = st.form_submit_button("❌ Cancelar", key="cancel_bulk_btn", use_container_width=True)
+                    cancel_clicked = st.form_submit_button("❌ Cancelar", key="cancel_bulk_btn", width='stretch')
                 # Conteo de estaciones seleccionadas
                 if edited_df is not None:
                     selected_count = edited_df['Seleccionar'].sum()
@@ -1579,7 +1579,7 @@ def registro_reportes():
             height=100
         )
         
-        submitted = st.form_submit_button("📝 Agregar Reporte", use_container_width=True)
+        submitted = st.form_submit_button("📝 Agregar Reporte", width='stretch')
         
         if submitted:
             # Validar campos
@@ -1653,7 +1653,7 @@ def registro_reportes():
             col_confirm, col_cancel = st.columns(2)
             
             with col_confirm:
-                if st.button("✅ Continuar y Guardar", key="confirm_save_modal", type="primary", use_container_width=True):
+                if st.button("✅ Continuar y Guardar", key="confirm_save_modal", type="primary", width='stretch'):
                     try:
                         created_by = current_user['username'] if current_user else 'guest'
                         # Agregar a la base de datos
@@ -1693,7 +1693,7 @@ def registro_reportes():
                         st.error(f"❌ Error al agregar reporte: {str(e)}")
             
             with col_cancel:
-                if st.button("❌ Cancelar y Editar", key="cancel_save_modal", use_container_width=True):
+                if st.button("❌ Cancelar y Editar", key="cancel_save_modal", width='stretch'):
                     # Limpiar pending_report
                     del st.session_state.pending_report
                     st.rerun()
@@ -1711,7 +1711,7 @@ def registro_reportes():
             
             # Botón de cierre enfocado dentro de formulario
             with st.form('close_summary_form'):
-                close_clicked = st.form_submit_button('Cerrar', type='primary', use_container_width=True)
+                close_clicked = st.form_submit_button('Cerrar', type='primary', width='stretch')
             
             if close_clicked:
                 del st.session_state['show_save_summary']
@@ -1921,7 +1921,7 @@ def registro_reportes():
                 col_confirm, col_cancel = st.columns(2)
                 
                 with col_confirm:
-                    if st.button("🗑️ Sí, Eliminar Todos", key="confirm_bulk_delete_modal", type="primary", use_container_width=True):
+                    if st.button("🗑️ Sí, Eliminar Todos", key="confirm_bulk_delete_modal", type="primary", width='stretch'):
                         try:
                             deleted_count = 0
                             
@@ -1943,7 +1943,7 @@ def registro_reportes():
                             st.rerun()
                 
                 with col_cancel:
-                    if st.button("❌ Cancelar", key="cancel_bulk_delete_modal", use_container_width=True):
+                    if st.button("❌ Cancelar", key="cancel_bulk_delete_modal", width='stretch'):
                         del st.session_state.confirm_bulk_delete
                         st.rerun()
             
@@ -1975,7 +1975,7 @@ def registro_reportes():
                         if 'observations' in report and pd.notna(report['observations']) and report['observations']:
                             st.write(f"**Observaciones:** {report['observations']}")
                 
-                if st.button("❌ Cerrar", key="close_selected_details", use_container_width=True):
+                if st.button("❌ Cerrar", key="close_selected_details", width='stretch'):
                     del st.session_state.show_selected_details
                     st.rerun()
         
@@ -2074,13 +2074,13 @@ def registro_reportes():
                             save_individual = st.form_submit_button(
                                 f"💾 Guardar Cambios",
                                 type="primary",
-                                use_container_width=True
+                                width='stretch'
                             )
                         
                         with col_cancel:
                             cancel_individual = st.form_submit_button(
                                 "❌ Cancelar",
-                                use_container_width=True
+                                width='stretch'
                             )
                         
                         if save_individual:
@@ -2167,13 +2167,13 @@ def registro_reportes():
                             save_bulk = st.form_submit_button(
                                 f"💾 Actualizar Todos",
                                 type="primary",
-                                use_container_width=True
+                                width='stretch'
                             )
                         
                         with col_cancel:
                             cancel_bulk = st.form_submit_button(
                                 "❌ Cancelar",
-                                use_container_width=True
+                                width='stretch'
                             )
                         
                         with col_info:
@@ -2236,7 +2236,7 @@ def registro_reportes():
                     col_conf, col_canc = st.columns(2)
                     
                     with col_conf:
-                        if st.button("✅ Continuar y Actualizar", key=f"confirm_individual_edit_{report_id}", type="primary", use_container_width=True):
+                        if st.button("✅ Continuar y Actualizar", key=f"confirm_individual_edit_{report_id}", type="primary", width='stretch'):
                             try:
                                 # Actualizar reporte
                                 db.update_report(
@@ -2261,7 +2261,7 @@ def registro_reportes():
                                 st.error(f"❌ Error al actualizar reporte: {str(e)}")
                     
                     with col_canc:
-                        if st.button("❌ Revisar Datos", key=f"cancel_individual_edit_{report_id}", use_container_width=True):
+                        if st.button("❌ Revisar Datos", key=f"cancel_individual_edit_{report_id}", width='stretch'):
                             del st.session_state[pending_key]
                             st.rerun()
                 
@@ -2455,14 +2455,14 @@ def show_geographic_report(current_date, previous_date):
         with col1:
             st.subheader("📊 Distribución por Zonas - Actual")
             if not current_zones.empty:
-                st.dataframe(current_zones, use_container_width=True)
+                st.dataframe(current_zones, width='stretch')
             else:
                 st.info("No hay datos de zonas para la sesión actual")
         
         with col2:
             st.subheader("📊 Distribución por Zonas - Anterior")
             if not previous_zones.empty:
-                st.dataframe(previous_zones, use_container_width=True)
+                st.dataframe(previous_zones, width='stretch')
             else:
                 st.info("No hay datos de zonas para la sesión anterior")
         
@@ -2470,7 +2470,7 @@ def show_geographic_report(current_date, previous_date):
         
         st.subheader("🏛️ Top 10 Estados Más Activos - Sesión Actual")
         if not current_states.empty:
-            st.dataframe(current_states, use_container_width=True)
+            st.dataframe(current_states, width='stretch')
         else:
             st.info("No hay datos de estados disponibles")
             
@@ -2517,14 +2517,14 @@ def show_technical_report(current_date, previous_date):
         with col1:
             st.subheader("📡 Sistemas - Actual")
             if not current_systems.empty:
-                st.dataframe(current_systems, use_container_width=True)
+                st.dataframe(current_systems, width='stretch')
             else:
                 st.info("No hay datos de sistemas para la sesión actual")
         
         with col2:
             st.subheader("📡 Sistemas - Anterior")
             if not previous_systems.empty:
-                st.dataframe(previous_systems, use_container_width=True)
+                st.dataframe(previous_systems, width='stretch')
             else:
                 st.info("No hay datos de sistemas para la sesión anterior")
         
@@ -2581,14 +2581,14 @@ def show_trends_report(current_date, previous_date):
         with col1:
             st.subheader("🏆 Top 10 Estaciones - Actual")
             if not current_top.empty:
-                st.dataframe(current_top, use_container_width=True)
+                st.dataframe(current_top, width='stretch')
             else:
                 st.info("No hay datos disponibles para la sesión actual")
         
         with col2:
             st.subheader("🏆 Top 10 Estaciones - Anterior")
             if not previous_top.empty:
-                st.dataframe(previous_top, use_container_width=True)
+                st.dataframe(previous_top, width='stretch')
             else:
                 st.info("No hay datos disponibles para la sesión anterior")
         
@@ -2672,7 +2672,7 @@ elif page == "📊 Dashboard":
                 color_continuous_scale='Blues'
             )
             fig_zona.update_layout(showlegend=False)
-            st.plotly_chart(fig_zona, use_container_width=True)
+            st.plotly_chart(fig_zona, width='stretch')
         else:
             st.info("No hay datos de zonas disponibles")
     
@@ -2687,7 +2687,7 @@ elif page == "📊 Dashboard":
                 names='sistema',
                 title="Distribución por Sistemas"
             )
-            st.plotly_chart(fig_sistema, use_container_width=True)
+            st.plotly_chart(fig_sistema, width='stretch')
         else:
             st.info("No hay datos de sistemas disponibles")
     
@@ -2707,7 +2707,7 @@ elif page == "📊 Dashboard":
                 labels={'region': 'Estado', 'count': 'Participantes'}
             )
             fig_region.update_layout(showlegend=False)
-            st.plotly_chart(fig_region, use_container_width=True)
+            st.plotly_chart(fig_region, width='stretch')
         else:
             st.info("No hay datos de regiones disponibles")
     
@@ -2725,7 +2725,7 @@ elif page == "📊 Dashboard":
                 names='quality_text',
                 title="Calidad de Señales Reportadas"
             )
-            st.plotly_chart(fig_quality, use_container_width=True)
+            st.plotly_chart(fig_quality, width='stretch')
         else:
             st.info("No hay datos de calidad de señal disponibles")
     
@@ -2742,7 +2742,7 @@ elif page == "📊 Dashboard":
             labels={'call_sign': 'Indicativo', 'reports_count': 'Reportes'}
         )
         fig_active.update_layout(showlegend=False)
-        st.plotly_chart(fig_active, use_container_width=True)
+        st.plotly_chart(fig_active, width='stretch')
     
     # Actividad por hora
     if not stats['by_hour'].empty:
@@ -2756,7 +2756,7 @@ elif page == "📊 Dashboard":
             labels={'hour': 'Hora', 'count': 'Número de Reportes'}
         )
         fig_hour.update_traces(mode='lines+markers')
-        st.plotly_chart(fig_hour, use_container_width=True)
+        st.plotly_chart(fig_hour, width='stretch')
 
 # Página: Gestión de Reportes
 elif page == "📋 Gestión de Reportes":
@@ -2859,7 +2859,7 @@ elif page == "📻 Historial de Estaciones":
             
             st.dataframe(
                 display_history,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True
             )
             
@@ -2876,7 +2876,7 @@ elif page == "📻 Historial de Estaciones":
                     labels={'call_sign': 'Indicativo', 'use_count': 'Número de Usos'}
                 )
                 fig_stations.update_layout(showlegend=False)
-                st.plotly_chart(fig_stations, use_container_width=True)
+                st.plotly_chart(fig_stations, width='stretch')
         else:
             st.info("No se encontraron estaciones en el historial con ese criterio de búsqueda.")
     else:
@@ -2917,7 +2917,7 @@ elif page == "📋 Reportes Básicos/Exportar":
             help="Exportar datos de todas las fechas"
         )
     
-    if st.button("📥 Generar Exportación", use_container_width=True):
+    if st.button("📥 Generar Exportación", width='stretch'):
         try:
             # Obtener datos
             if all_sessions:
@@ -3260,7 +3260,7 @@ elif page == "🔍 Buscar/Editar":
                             col_conf, col_canc = st.columns(2)
                             
                             with col_conf:
-                                if st.button("✅ Continuar y Actualizar", key=f"confirm_edit_modal_{report['id']}", type="primary", use_container_width=True):
+                                if st.button("✅ Continuar y Actualizar", key=f"confirm_edit_modal_{report['id']}", type="primary", width='stretch'):
                                     try:
                                         # Actualizar reporte
                                         db.update_report(
@@ -3285,7 +3285,7 @@ elif page == "🔍 Buscar/Editar":
                                         st.error(f"❌ Error al actualizar reporte: {str(e)}")
                             
                             with col_canc:
-                                if st.button("❌ Revisar Datos", key=f"cancel_edit_modal_{report['id']}", use_container_width=True):
+                                if st.button("❌ Revisar Datos", key=f"cancel_edit_modal_{report['id']}", width='stretch'):
                                     del st.session_state[pending_edit_key]
                                     st.rerun()
                         
@@ -3863,6 +3863,7 @@ def show_user_management():
                         smtp_password if smtp_password else email_service.smtp_password,
                         sender_email, sender_name
                     )
+                    
                     st.success("✅ Configuración SMTP guardada")
                     st.rerun()
                 else:
@@ -3875,10 +3876,10 @@ import base64
 try:
     with open("assets/LogoFMRE_small.png", "rb") as f:
         logo_data = base64.b64encode(f.read()).decode()
-    st.markdown("""
+    st.markdown(f"""
     <div style='text-align: center; color: #666;'>
         <div style='display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 5px;'>
-            <img src="data:image/png;base64,{logo_data}" alt="FMRE Logo" style="max-width: 100%; height: auto;">
+            <img src="data:image/png;base64,{logo_data}" alt="FMRE Logo" style="max-height:40px; width:auto;">
             <span style="font-weight: bold;">SIGQ v1.3</span>
         </div>
         <div>

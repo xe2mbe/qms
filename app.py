@@ -2437,17 +2437,18 @@ def show_advanced_reports():
         # Cerrar la conexión a la base de datos
         conn.close()
         
+        # Mostrar pestañas con los diferentes reportes
         with tab1:
-            show_participation_report(current_date_str, previous_date_str)
+            show_participation_report(current_date_str, previous_date_str, bulletin1, bulletin2, fecha1, fecha2)
         
         with tab2:
-            show_geographic_report(current_date_str, previous_date_str)
+            show_geographic_report(current_date_str, previous_date_str, bulletin1, bulletin2, fecha1, fecha2)
         
         with tab3:
-            show_technical_report(current_date_str, previous_date_str)
+            show_technical_report(current_date_str, previous_date_str, bulletin1, bulletin2, fecha1, fecha2)
         
         with tab4:
-            show_trends_report(current_date_str, previous_date_str)
+            show_trends_report(current_date_str, previous_date_str, bulletin1, bulletin2, fecha1, fecha2)
             
         conn.close()
             
@@ -2456,8 +2457,18 @@ def show_advanced_reports():
         if 'conn' in locals():
             conn.close()
 
-def show_participation_report(current_date, previous_date):
-    """Reporte de participación comparativo"""
+def show_participation_report(current_date, previous_date, bulletin1, bulletin2, fecha1, fecha2):
+    """
+    Muestra el reporte de participación comparativo entre dos boletines
+    
+    Args:
+        current_date (str): Fecha del boletín actual en formato YYYY-MM-DD
+        previous_date (str): Fecha del boletín anterior en formato YYYY-MM-DD
+        bulletin1 (int): Número del boletín actual
+        bulletin2 (int): Número del boletín anterior
+        fecha1 (datetime.date): Fecha del boletín actual
+        fecha2 (datetime.date): Fecha del boletín anterior
+    """
     st.subheader("📈 Análisis de Participación")
     
     try:
@@ -2481,7 +2492,7 @@ def show_participation_report(current_date, previous_date):
         conn.close()
         
         # Métricas principales
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns(3)
         
         # Calcular total de reportes (no solo estaciones únicas)
         current_total_reports = current_data['reports_count'].sum() if not current_data.empty else 0
@@ -2495,29 +2506,23 @@ def show_participation_report(current_date, previous_date):
         growth_rate = ((current_unique - previous_unique) / previous_unique * 100) if previous_unique > 0 else 0
         
         with col1:
-            st.metric("📊 Total Reportes", 
-                    f"{current_total_reports:,}",
-                    help="Número total de reportes en la sesión actual")
+            st.metric(f"📊 Boletín #{bulletin1} - {fecha1.strftime('%d/%m')}", 
+                    f"{current_total_reports:,} reportes",
+                    help=f"Total de reportes en el boletín actual ({fecha1.strftime('%d/%m/%Y')})")
             st.caption(f"{current_unique:,} estaciones únicas")
         
         with col2:
-            st.metric("📊 Reportes Anteriores", 
-                     f"{previous_total_reports:,}",
+            st.metric(f"📊 Boletín #{bulletin2} - {fecha2.strftime('%d/%m')}", 
+                     f"{previous_total_reports:,} reportes",
                      delta=f"{current_total_reports - previous_total_reports:+,} reportes",
-                     help="Número total de reportes en la sesión anterior")
+                     help=f"Total de reportes en el boletín anterior ({fecha2.strftime('%d/%m/%Y')})")
             st.caption(f"{previous_unique:,} estaciones únicas")
         
         with col3:
-            st.metric("📈 Crecimiento Estaciones", 
-                     f"{growth_rate:+.1f}%",
-                     delta=f"{current_unique - previous_unique:+,}",
-                     help="Crecimiento en el número de estaciones únicas")
-        
-        with col4:
-            avg_reports = current_total_reports / current_unique if current_unique > 0 else 0
-            st.metric("📊 Promedio por Estación", 
-                     f"{avg_reports:.1f}",
-                     help="Promedio de reportes por estación en la sesión actual")
+            st.metric("📈 Crecimiento de Estaciones", 
+                     f"{current_unique:,} vs {previous_unique:,}",
+                     delta=f"{current_unique - previous_unique:+d} ({growth_rate:+.1f}%)",
+                     help=f"Comparación de estaciones únicas entre boletines")
         
         # Nuevas estaciones
         current_stations = set(current_data['call_sign'])
@@ -2548,8 +2553,18 @@ def show_participation_report(current_date, previous_date):
     except Exception as e:
         st.error(f"❌ Error en reporte de participación: {str(e)}")
 
-def show_geographic_report(current_date, previous_date):
-    """Reporte geográfico comparativo"""
+def show_geographic_report(current_date, previous_date, bulletin1, bulletin2, fecha1, fecha2):
+    """
+    Muestra el reporte geográfico comparativo entre dos boletines
+    
+    Args:
+        current_date (str): Fecha del boletín actual en formato YYYY-MM-DD
+        previous_date (str): Fecha del boletín anterior en formato YYYY-MM-DD
+        bulletin1 (int): Número del boletín actual
+        bulletin2 (int): Número del boletín anterior
+        fecha1 (datetime.date): Fecha del boletín actual
+        fecha2 (datetime.date): Fecha del boletín anterior
+    """
     st.subheader("🌍 Análisis Geográfico")
     
     try:
@@ -2557,52 +2572,70 @@ def show_geographic_report(current_date, previous_date):
         
         # Datos por zona
         current_zones = pd.read_sql_query("""
-            SELECT zona, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
+            SELECT zona, COUNT(DISTINCT call_sign) as estaciones_unicas, COUNT(*) as total_reportes
             FROM reports 
             WHERE DATE(session_date) = ?
             GROUP BY zona
-            ORDER BY total_reports DESC
+            ORDER BY total_reportes DESC
         """, conn, params=[current_date])
         
         previous_zones = pd.read_sql_query("""
-            SELECT zona, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
+            SELECT zona, COUNT(DISTINCT call_sign) as estaciones_unicas, COUNT(*) as total_reportes
             FROM reports 
             WHERE DATE(session_date) = ?
             GROUP BY zona
-            ORDER BY total_reports DESC
+            ORDER BY total_reportes DESC
         """, conn, params=[previous_date])
         
         # Datos por estado
         current_states = pd.read_sql_query("""
-            SELECT qth as estado, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
+            SELECT qth as estado, COUNT(DISTINCT call_sign) as estaciones_unicas, COUNT(*) as total_reportes
             FROM reports 
             WHERE DATE(session_date) = ?
             GROUP BY qth
-            ORDER BY total_reports DESC
+            ORDER BY total_reportes DESC
             LIMIT 10
         """, conn, params=[current_date])
         
+        # Obtener totales para mostrar en los títulos
+        total_current_reports = current_zones['total_reportes'].sum() if not current_zones.empty else 0
+        total_previous_reports = previous_zones['total_reportes'].sum() if not previous_zones.empty else 0
+        
         conn.close()
+        
+        # Métricas principales
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric(f"📊 Boletín #{bulletin1} - {fecha1.strftime('%d/%m')}", 
+                     f"{total_current_reports:,} reportes")
+        
+        with col2:
+            st.metric(f"📊 Boletín #{bulletin2} - {fecha2.strftime('%d/%m')}",
+                     f"{total_previous_reports:,} reportes",
+                     delta=f"{total_current_reports - total_previous_reports:+,} reportes")
+        
+        st.markdown("---")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("📊 Distribución por Zonas - Actual")
+            st.subheader(f"📊 Zonas - Boletín #{bulletin1}")
             if not current_zones.empty:
                 st.dataframe(current_zones, width='stretch')
             else:
-                st.info("No hay datos de zonas para la sesión actual")
+                st.info(f"No hay datos de zonas para el boletín #{bulletin1}")
         
         with col2:
-            st.subheader("📊 Distribución por Zonas - Anterior")
+            st.subheader(f"📊 Zonas - Boletín #{bulletin2}")
             if not previous_zones.empty:
                 st.dataframe(previous_zones, width='stretch')
             else:
-                st.info("No hay datos de zonas para la sesión anterior")
+                st.info(f"No hay datos de zonas para el boletín #{bulletin2}")
         
         st.markdown("---")
         
-        st.subheader("🏛️ Top 10 Estados Más Activos - Sesión Actual")
+        st.subheader(f"🏛️ Top 10 Estados - Boletín #{bulletin1}")
         if not current_states.empty:
             st.dataframe(current_states, width='stretch')
         else:
@@ -2611,8 +2644,18 @@ def show_geographic_report(current_date, previous_date):
     except Exception as e:
         st.error(f"❌ Error en reporte geográfico: {str(e)}")
 
-def show_technical_report(current_date, previous_date):
-    """Reporte técnico comparativo"""
+def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fecha1, fecha2):
+    """
+    Muestra el reporte técnico comparativo entre dos boletines
+    
+    Args:
+        current_date (str): Fecha del boletín actual en formato YYYY-MM-DD
+        previous_date (str): Fecha del boletín anterior en formato YYYY-MM-DD
+        bulletin1 (int): Número del boletín actual
+        bulletin2 (int): Número del boletín anterior
+        fecha1 (datetime.date): Fecha del boletín actual
+        fecha2 (datetime.date): Fecha del boletín anterior
+    """
     st.subheader("🔧 Análisis Técnico")
     
     try:
@@ -2620,61 +2663,100 @@ def show_technical_report(current_date, previous_date):
         
         # Sistemas utilizados
         current_systems = pd.read_sql_query("""
-            SELECT sistema, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
+            SELECT 
+                COALESCE(sistema, 'No especificado') as sistema, 
+                COUNT(DISTINCT call_sign) as estaciones_unicas, 
+                COUNT(*) as total_reportes,
+                ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM reports WHERE DATE(session_date) = ?), 1) as porcentaje
             FROM reports 
             WHERE DATE(session_date) = ?
             GROUP BY sistema
-            ORDER BY total_reports DESC
-        """, conn, params=[current_date])
+            ORDER BY total_reportes DESC
+        """, conn, params=[current_date, current_date])
         
         previous_systems = pd.read_sql_query("""
-            SELECT sistema, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
+            SELECT 
+                COALESCE(sistema, 'No especificado') as sistema, 
+                COUNT(DISTINCT call_sign) as estaciones_unicas, 
+                COUNT(*) as total_reportes,
+                ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM reports WHERE DATE(session_date) = ?), 1) as porcentaje
             FROM reports 
             WHERE DATE(session_date) = ?
             GROUP BY sistema
-            ORDER BY total_reports DESC
-        """, conn, params=[previous_date])
+            ORDER BY total_reportes DESC
+        """, conn, params=[previous_date, previous_date])
         
         # Calidad de señales
         current_signals = pd.read_sql_query("""
-            SELECT signal_report, COUNT(*) as count
+            SELECT 
+                COALESCE(signal_report, 'No especificado') as reporte_señal, 
+                COUNT(*) as total,
+                ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM reports WHERE DATE(session_date) = ?), 1) as porcentaje
             FROM reports 
             WHERE DATE(session_date) = ?
             GROUP BY signal_report
-            ORDER BY count DESC
-        """, conn, params=[current_date])
+            ORDER BY total DESC
+        """, conn, params=[current_date, current_date])
+        
+        # Obtener totales para mostrar en los títulos
+        total_current_reports = current_systems['total_reportes'].sum() if not current_systems.empty else 0
+        total_previous_reports = previous_systems['total_reportes'].sum() if not previous_systems.empty else 0
         
         conn.close()
+        
+        # Métricas principales
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric(f"📡 Boletín #{bulletin1} - {fecha1.strftime('%d/%m')}", 
+                     f"{total_current_reports:,} reportes")
+        
+        with col2:
+            st.metric(f"📡 Boletín #{bulletin2} - {fecha2.strftime('%d/%m')}",
+                     f"{total_previous_reports:,} reportes",
+                     delta=f"{total_current_reports - total_previous_reports:+,} reportes")
+        
+        st.markdown("---")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("📡 Sistemas - Actual")
+            st.subheader(f"📡 Sistemas - Boletín #{bulletin1}")
             if not current_systems.empty:
                 st.dataframe(current_systems, width='stretch')
             else:
-                st.info("No hay datos de sistemas para la sesión actual")
+                st.info(f"No hay datos de sistemas para el boletín #{bulletin1}")
         
         with col2:
-            st.subheader("📡 Sistemas - Anterior")
+            st.subheader(f"📡 Sistemas - Boletín #{bulletin2}")
             if not previous_systems.empty:
                 st.dataframe(previous_systems, width='stretch')
             else:
-                st.info("No hay datos de sistemas para la sesión anterior")
+                st.info(f"No hay datos de sistemas para el boletín #{bulletin2}")
         
         st.markdown("---")
         
-        st.subheader("📶 Distribución de Calidad de Señales - Actual")
+        st.subheader(f"📶 Calidad de Señales - Boletín #{bulletin1}")
         if not current_signals.empty:
-            st.bar_chart(current_signals.set_index('signal_report')['count'])
+            st.dataframe(current_signals, width='stretch')
         else:
-            st.info("No hay datos de señales disponibles")
+            st.info("No hay datos de calidad de señales disponibles")
             
     except Exception as e:
         st.error(f"❌ Error en reporte técnico: {str(e)}")
 
-def show_trends_report(current_date, previous_date):
-    """Reporte de tendencias comparativo"""
+def show_trends_report(current_date, previous_date, bulletin1, bulletin2, fecha1, fecha2):
+    """
+    Muestra el reporte de tendencias comparativo entre dos boletines
+    
+    Args:
+        current_date (str): Fecha del boletín actual en formato YYYY-MM-DD
+        previous_date (str): Fecha del boletín anterior en formato YYYY-MM-DD
+        bulletin1 (int): Número del boletín actual
+        bulletin2 (int): Número del boletín anterior
+        fecha1 (datetime.date): Fecha del boletín actual
+        fecha2 (datetime.date): Fecha del boletín anterior
+    """
     st.subheader("📊 Análisis de Tendencias")
     
     try:
@@ -2682,55 +2764,97 @@ def show_trends_report(current_date, previous_date):
         
         # Top estaciones reportadas
         current_top = pd.read_sql_query("""
-            SELECT call_sign, operator_name, COUNT(*) as times_reported
+            SELECT 
+                call_sign as 'Indicativo', 
+                operator_name as 'Operador', 
+                COUNT(*) as 'Reportes',
+                COUNT(*) * 100.0 / (SELECT COUNT(*) FROM reports WHERE DATE(session_date) = ?) as 'Porcentaje'
             FROM reports 
             WHERE DATE(session_date) = ?
             GROUP BY call_sign, operator_name
-            ORDER BY times_reported DESC
+            ORDER BY COUNT(*) DESC
             LIMIT 10
-        """, conn, params=[current_date])
+        """, conn, params=[current_date, current_date])
         
         previous_top = pd.read_sql_query("""
-            SELECT call_sign, operator_name, COUNT(*) as times_reported
+            SELECT 
+                call_sign as 'Indicativo', 
+                operator_name as 'Operador', 
+                COUNT(*) as 'Reportes',
+                COUNT(*) * 100.0 / (SELECT COUNT(*) FROM reports WHERE DATE(session_date) = ?) as 'Porcentaje'
             FROM reports 
             WHERE DATE(session_date) = ?
             GROUP BY call_sign, operator_name
-            ORDER BY times_reported DESC
+            ORDER BY COUNT(*) DESC
             LIMIT 10
-        """, conn, params=[previous_date])
+        """, conn, params=[previous_date, previous_date])
         
         # Actividad por hora
         current_hourly = pd.read_sql_query("""
-            SELECT strftime('%H', timestamp) as hour, COUNT(*) as reports
+            SELECT 
+                strftime('%H:00', timestamp) as 'Hora', 
+                COUNT(*) as 'Reportes',
+                COUNT(*) * 100.0 / (SELECT COUNT(*) FROM reports WHERE DATE(session_date) = ?) as 'Porcentaje'
             FROM reports 
             WHERE DATE(session_date) = ?
             GROUP BY strftime('%H', timestamp)
-            ORDER BY hour
-        """, conn, params=[current_date])
+            ORDER BY Hora
+        """, conn, params=[current_date, current_date])
+        
+        # Obtener totales para mostrar en los títulos
+        total_current_reports = current_top['Reportes'].sum() if not current_top.empty else 0
+        total_previous_reports = previous_top['Reportes'].sum() if not previous_top.empty else 0
         
         conn.close()
+        
+        # Métricas principales
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric(f"🏆 Boletín #{bulletin1} - {fecha1.strftime('%d/%m')}", 
+                     f"{total_current_reports:,} reportes")
+        
+        with col2:
+            st.metric(f"🏆 Boletín #{bulletin2} - {fecha2.strftime('%d/%m')}",
+                     f"{total_previous_reports:,} reportes",
+                     delta=f"{total_current_reports - total_previous_reports:+,} reportes")
+        
+        st.markdown("---")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("🏆 Top 10 Estaciones - Actual")
+            st.subheader(f"🏆 Top 10 Estaciones - Boletín #{bulletin1}")
             if not current_top.empty:
                 st.dataframe(current_top, width='stretch')
             else:
-                st.info("No hay datos disponibles para la sesión actual")
+                st.info(f"No hay datos disponibles para el boletín #{bulletin1}")
         
         with col2:
-            st.subheader("🏆 Top 10 Estaciones - Anterior")
+            st.subheader(f"🏆 Top 10 Estaciones - Boletín #{bulletin2}")
             if not previous_top.empty:
                 st.dataframe(previous_top, width='stretch')
             else:
-                st.info("No hay datos disponibles para la sesión anterior")
+                st.info(f"No hay datos disponibles para el boletín #{bulletin2}")
         
         st.markdown("---")
         
-        st.subheader("⏰ Actividad por Hora - Sesión Actual")
+        st.subheader(f"⏰ Actividad por Hora - Boletín #{bulletin1}")
         if not current_hourly.empty:
-            st.line_chart(current_hourly.set_index('hour')['reports'])
+            # Crear gráfico de barras para la actividad por hora
+            fig = px.bar(
+                current_hourly, 
+                x='Hora', 
+                y='Reportes',
+                text='Reportes',
+                title=f"Distribución de Actividad por Hora - Boletín #{bulletin1}"
+            )
+            fig.update_traces(texttemplate='%{text:.0f}', textposition='outside')
+            fig.update_layout(showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Mostrar tabla con porcentajes
+            st.dataframe(current_hourly, width='stretch')
         else:
             st.info("No hay datos de actividad horaria disponibles")
             

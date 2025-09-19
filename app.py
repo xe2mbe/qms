@@ -3157,114 +3157,143 @@ def show_trends_report(current_date, previous_date, bulletin1, bulletin2, fecha1
             # 4.3 Evolución de Cobertura Geográfica por Zona
             st.subheader("🌍 Evolución de la Participación por Zona (Últimos 12 Boletines)")
             
-            # Obtener las columnas de zonas dinámicamente
-            zonas_columns = ['reportes_xe1', 'reportes_xe2', 'reportes_xe3', 'reportes_extranjera']
-            
-            # Verificar qué columnas existen realmente en los datos
-            zonas_existentes = [col for col in zonas_columns if col in historical_data.columns]
-            
-            if zonas_existentes:
-                # Crear una copia del DataFrame para el gráfico
-                plot_zonas = historical_data[['fecha'] + zonas_existentes].copy()
+            try:
+                # Obtener los datos de zonas directamente de la base de datos
+                conn = sqlite3.connect('fmre_reports.db')
                 
-                # Rellenar valores NaN con 0 para asegurar que todas las series tengan la misma longitud
-                plot_zonas.fillna(0, inplace=True)
+                # Primero, obtener las zonas únicas
+                zonas_query = """
+                SELECT DISTINCT zona 
+                FROM reports 
+                WHERE zona IS NOT NULL 
+                ORDER BY zona
+                """
+                zonas_unicas = pd.read_sql_query(zonas_query, conn)['zona'].tolist()
                 
-                # Crear gráfico de líneas para la evolución por zona
-                fig_cobertura = px.line(
-                    plot_zonas,
-                    x='fecha',
-                    y=zonas_existentes,
-                    title='Evolución de la Participación por Zona',
-                    labels={'fecha': 'Fecha', 'value': 'Número de Reportes', 'variable': 'Zona'},
-                    markers=True,
-                    color_discrete_sequence=px.colors.qualitative.Set2
-                )
-                    
-                # Mejorar formato del gráfico
-                fig_cobertura.update_layout(
-                    xaxis_title='Fecha del Boletín',
-                    yaxis_title='Número de Reportes',
-                    legend_title='Zonas',
-                    hovermode='x unified',
-                    height=500,
-                    legend=dict(
-                        orientation="h",
-                        yanchor="bottom",
-                        y=1.02,
-                        xanchor="right",
-                        x=1
+                if not zonas_unicas:
+                    st.warning("No se encontraron datos de zonas en la base de datos.")
+                    conn.close()
+                    return
+                
+                # Crear subconsultas para contar por zona
+                subconsultas = []
+                for zona in zonas_unicas:
+                    subconsultas.append(
+                        f"SUM(CASE WHEN zona = '{zona}' THEN 1 ELSE 0 END) as reportes_{zona.lower()}"
                     )
+                
+                subconsultas_sql = ',\n                '.join(subconsultas)
+                
+                # Consulta principal para obtener la evolución por zona
+                query = f"""
+                WITH fechas_boletines AS (
+                    SELECT DISTINCT DATE(session_date) as fecha
+                    FROM reports
+                    WHERE DATE(session_date) >= date('now', '-12 months')
+                    ORDER BY DATE(session_date) DESC
+                    LIMIT 12
                 )
+                SELECT 
+                    DATE(r.session_date) as fecha,
+                    {subconsultas_sql}
+                FROM reports r
+                WHERE DATE(r.session_date) IN (SELECT fecha FROM fechas_boletines)
+                GROUP BY DATE(r.session_date)
+                ORDER BY DATE(r.session_date)
+                """
                 
-                # Renombrar las etiquetas de la leyenda
-                zona_names = {
-                    'reportes_xe1': 'Zona 1 (Noroeste)',
-                    'reportes_xe2': 'Zona 2 (Noreste)',
-                    'reportes_xe3': 'Zona 3 (Centro)',
-                    'reportes_extranjera': 'Extranjera'
-                }
-                
-                for trace in fig_cobertura.data:
-                    trace.name = zona_names.get(trace.name, trace.name.replace('reportes_', '').upper())
-                    trace.hovertemplate = '<b>%{y} reportes</b><br>%{x|%d/%m/%Y}<extra></extra>'
-            else:
-                # Si no hay datos de zonas, mostrar un mensaje
-                st.warning("No se encontraron datos de zonas para mostrar.")
+                # Ejecutar la consulta
+                zonas_data = pd.read_sql_query(query, conn)
+                conn.close()
+
+                if not zonas_data.empty:
+                    # Obtener las columnas de zonas (excluyendo 'fecha')
+                    zona_columns = [col for col in zonas_data.columns if col != 'fecha']
+                    
+                    # Crear un mapa de colores para las zonas
+                    colors = px.colors.qualitative.Plotly
+                    color_map = {col: colors[i % len(colors)] for i, col in enumerate(zona_columns)}
+                    
+                    # Crear el gráfico de líneas para la evolución de zonas
+                    fig_zonas_evol = px.line(
+                        zonas_data,
+                        x='fecha',
+                        y=zona_columns,
+                        title='Evolución de la Participación por Zona',
+                        labels={'fecha': 'Fecha', 'value': 'Número de Reportes', 'variable': 'Zona'},
+                        markers=True,
+                        color_discrete_map=color_map
+                    )
+                    
+                    # Mejorar formato del gráfico
+                    fig_zonas_evol.update_layout(
+                        xaxis_title='Fecha del Boletín',
+                        yaxis_title='Número de Reportes',
+                        legend_title='Zona',
+                        hovermode='x unified',
+                        height=500,
+                        legend=dict(
+                            orientation="h",
+                            yanchor="bottom",
+                            y=1.02,
+                            xanchor="right",
+                            x=1
+                        )
+                    )
+                    
+                    # Mejorar el tooltip
+                    fig_zonas_evol.update_traces(
+                        hovertemplate='<b>%{y} reportes</b><br>%{x|%d/%m/%Y}<extra></extra>'
+                    )
+                    
+                    # Renombrar las etiquetas de la leyenda
+                    fig_zonas_evol.for_each_trace(lambda t: t.update(name=t.name.replace('reportes_', '').upper()))
+                    
+                    st.plotly_chart(fig_zonas_evol, use_container_width=True)
+                    
+                    # Agregar tabla resumen debajo del gráfico
+                    st.subheader("📊 Resumen de Participación por Zona")
+                    
+                    # Calcular totales por zona
+                    resumen = zonas_data[zona_columns].sum().reset_index()
+                    resumen.columns = ['Zona', 'Total Reportes']
+                    resumen['Zona'] = resumen['Zona'].str.replace('reportes_', '').str.upper()
+                    resumen = resumen.sort_values('Total Reportes', ascending=False)
+                    
+                    # Mostrar métricas principales
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.metric("🌍 Zonas Activas", len(zona_columns))
+                    
+                    with col2:
+                        total_reportes = resumen['Total Reportes'].sum()
+                        st.metric("📊 Total de Reportes", total_reportes)
+                    
+                    # Mostrar tabla con los totales
+                    st.dataframe(
+                        resumen,
+                        column_config={
+                            'Zona': 'Zona',
+                            'Total Reportes': st.column_config.NumberColumn(
+                                'Total Reportes',
+                                help='Número total de reportes en los últimos 12 boletines',
+                                format='%d'
+                            )
+                        },
+                        hide_index=True,
+                        use_container_width=True
+                    )
+                else:
+                    st.warning("No se encontraron datos de zonas para mostrar.")
+                    return
+
+            except Exception as e:
+                st.error(f"Error al cargar los datos de zonas: {str(e)}")
+                if 'conn' in locals():
+                    conn.close()
                 return
-            
-            # Mejorar formato del gráfico
-            fig_cobertura.update_layout(
-                xaxis_title='Fecha del Boletín',
-                yaxis_title='Cantidad',
-                legend_title='Métrica',
-                hovermode='x unified',
-                height=500,
-                legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=1.02,
-                    xanchor="right",
-                    x=1
-                )
-            )
-            
-            # Renombrar las etiquetas de la leyenda
-            fig_cobertura.for_each_trace(
-                lambda t: t.update(name='Zonas' if t.name == 'zonas_unicas' else 'Estados')
-            )
-            
-            # Agregar anotaciones para los puntos máximos
-            max_zonas = historical_data['zonas_unicas'].max()
-            max_zonas_date = historical_data.loc[historical_data['zonas_unicas'].idxmax(), 'fecha']
-            
-            max_estados = historical_data['estados_unicos'].max()
-            max_estados_date = historical_data.loc[historical_data['estados_unicos'].idxmax(), 'fecha']
-            
-            fig_cobertura.add_annotation(
-                x=max_zonas_date,
-                y=max_zonas,
-                text=f"Máx: {max_zonas} zonas",
-                showarrow=True,
-                arrowhead=1,
-                ax=0,
-                ay=-40,
-                bgcolor='rgba(148, 103, 189, 0.3)'
-            )
-            
-            fig_cobertura.add_annotation(
-                x=max_estados_date,
-                y=max_estados,
-                text=f"Máx: {max_estados} estados",
-                showarrow=True,
-                arrowhead=1,
-                ax=0,
-                ay=-80,
-                bgcolor='rgba(140, 86, 75, 0.3)'
-            )
-            
-            st.plotly_chart(fig_cobertura, use_container_width=True)
-        
+                
         # Sección de resumen eliminada según solicitud del usuario
     except Exception as e:
         st.error(f"❌ Error en reporte de tendencias: {str(e)}")

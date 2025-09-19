@@ -1415,27 +1415,32 @@ def registro_reportes():
                 'Observaciones': st.column_config.TextColumn("Observaciones", width="large")
             }
             
-            # Botones de selección masiva
-            col_sel, col_desel = st.columns(2)
-            
-            with col_sel:
-                if st.button("✅ Seleccionar Todas", key="select_all_btn", width='stretch'):
-                    st.session_state.bulk_df_state['Seleccionar'] = True
-                    st.rerun()
-            
-            with col_desel:
-                if st.button("❌ Deseleccionar Todas", key="deselect_all_btn", width='stretch'):
-                    st.session_state.bulk_df_state['Seleccionar'] = False
-                    st.rerun()
-            
-            # Mostrar tabla editable con la misma altura que el modal
+            # Mostrar tabla editable dentro del formulario
             with st.form("bulk_capture_form_inline"):
+                # Botones superiores
+                col1_top, col2_top, col3_top, col4_top = st.columns([2, 1.5, 1.5, 1])
+                
+                with col1_top:
+                    save_clicked_top = st.form_submit_button("💾 Agregar Seleccionadas", type="primary", use_container_width=True)
+                
+                with col2_top:
+                    select_all_clicked_top = st.form_submit_button("✅ Seleccionar Todas", use_container_width=True)
+                
+                with col3_top:
+                    deselect_all_clicked_top = st.form_submit_button("❌ Deseleccionar Todas", use_container_width=True)
+                
+                with col4_top:
+                    cancel_clicked_top = st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True)
+                
+                st.markdown("---")  # Línea divisoria
+                
+                # Tabla editable
                 edited_df = st.data_editor(
                     df_bulk,
                     column_config=column_config,
                     width="stretch",
                     hide_index=True,
-                    height=500,
+                    height=400,
                     key="bulk_table_editor"
                 )
                 
@@ -1443,21 +1448,51 @@ def registro_reportes():
                 if edited_df is not None:
                     st.session_state.bulk_df_state = edited_df.copy()
                 
-                # Crear dos columnas para los botones
-                col_save, col_cancel = st.columns([1, 1])
-
-                with col_save:
-                    save_clicked = st.form_submit_button("💾 Agregar Seleccionadas", key="save_bulk_btn", type="primary", width='stretch')
-
-                with col_cancel:
-                    cancel_clicked = st.form_submit_button("❌ Cancelar", key="cancel_bulk_btn", width='stretch')
-                # Conteo de estaciones seleccionadas
+                # Contador de estaciones seleccionadas
                 if edited_df is not None:
                     selected_count = edited_df['Seleccionar'].sum()
                     st.info(f"📊 {selected_count} estaciones seleccionadas")
                 
+                # Botones inferiores
+                st.markdown("---")  # Línea divisoria
+                
+                col1_bottom, col2_bottom, col3_bottom, col4_bottom = st.columns([2, 1.5, 1.5, 1])
+                
+                with col1_bottom:
+                    save_clicked_bottom = st.form_submit_button("💾 Agregar Seleccionadas", key="save_bottom_btn", type="primary", use_container_width=True)
+                
+                with col2_bottom:
+                    select_all_clicked_bottom = st.form_submit_button("✅ Seleccionar Todas", key="select_all_bottom_btn", use_container_width=True)
+                
+                with col3_bottom:
+                    deselect_all_clicked_bottom = st.form_submit_button("❌ Deseleccionar Todas", key="deselect_all_bottom_btn", use_container_width=True)
+                
+                with col4_bottom:
+                    cancel_clicked_bottom = st.form_submit_button("❌ Cancelar", key="cancel_bottom_btn", type="secondary", use_container_width=True)
+                
+                # Procesar clics en los botones
+                save_clicked = save_clicked_top or save_clicked_bottom
+                select_all_clicked = select_all_clicked_top or select_all_clicked_bottom
+                deselect_all_clicked = deselect_all_clicked_top or deselect_all_clicked_bottom
+                cancel_clicked = cancel_clicked_top or cancel_clicked_bottom
+                
+                # Procesar acciones de los botones
+                if select_all_clicked:
+                    st.session_state.bulk_df_state['Seleccionar'] = True
+                    st.rerun()
+                
+                if deselect_all_clicked:
+                    st.session_state.bulk_df_state['Seleccionar'] = False
+                    st.rerun()
+                
+                # El botón de cancelación se procesa fuera del formulario
+                if cancel_clicked:
+                    st.session_state.clear_search = True
+                    st.session_state.input_counter = st.session_state.get('input_counter', 0) + 1
+                    st.rerun()
+                
                 # Información sobre deselección
-                st.info("💡 **Tip:** Para deseleccionar estaciones individuales, desmarca los checkboxes en la columna '✓'. Usa el botón de arriba para seleccionar/deseleccionar todas.")
+                st.info("💡 **Tip:** Para deseleccionar estaciones individuales, desmarca los checkboxes en la columna '✓'.")
                                 
             # Procesar guardado
             if save_clicked:

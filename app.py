@@ -410,6 +410,39 @@ def show_db_admin():
                 except Exception as e:
                     st.error(f"❌ Error: {str(e)}")
             
+            if st.button("🌍 Normalizar QTH"):
+                try:
+                    conn = sqlite3.connect(db.db_path)
+                    cursor = conn.cursor()
+                    
+                    # Obtener registros con QTH
+                    cursor.execute("SELECT id, qth FROM reports WHERE qth IS NOT NULL AND qth != ''")
+                    records = cursor.fetchall()
+                    
+                    updated_count = 0
+                    
+                    # Actualizar cada registro
+                    for record_id, qth in records:
+                        if qth and qth.strip():
+                            new_qth = qth.title()
+                            if new_qth != qth:
+                                cursor.execute(
+                                    "UPDATE reports SET qth = ? WHERE id = ?",
+                                    (new_qth, record_id)
+                                )
+                                updated_count += 1
+                    
+                    conn.commit()
+                    conn.close()
+                    
+                    st.success(f"✅ {updated_count} registros de QTH normalizados a formato título.")
+                    
+                except Exception as e:
+                    st.error(f"❌ Error al normalizar QTH: {str(e)}")
+                    if 'conn' in locals():
+                        conn.rollback()
+                        conn.close()
+            
             if st.button("🔄 Optimizar base de datos (VACUUM)"):
                 try:
                     conn = sqlite3.connect(db.db_path)
@@ -2542,15 +2575,28 @@ def show_participation_report(current_date, previous_date, bulletin1, bulletin2,
         growth_rate = ((current_unique - previous_unique) / previous_unique * 100) if previous_unique > 0 else 0
         
         with col1:
+            # Calcular diferencia en reportes
+            reports_diff = current_total_reports - previous_total_reports
+            reports_diff_str = f"+{reports_diff}" if reports_diff > 0 else str(reports_diff)
+            
+            # Mostrar métrica principal con el delta
             st.metric(f"📊 Boletín #{bulletin1} - {fecha1.strftime('%d/%m')}", 
                     f"{current_total_reports:,} reportes",
+                    delta=f"{reports_diff_str} reportes vs boletín anterior",
+                    delta_color="normal",
                     help=f"Total de reportes en el boletín actual ({fecha1.strftime('%d/%m/%Y')})")
-            st.caption(f"{current_unique:,} estaciones únicas")
+            
+            # Mostrar comparación de estaciones únicas
+            #unique_diff = current_unique - previous_unique
+            #unique_diff_str = f"+{unique_diff}" if unique_diff > 0 else str(unique_diff)
+            #st.caption(f"""
+            #    {current_unique:,} estaciones únicas  
+            #    <span style='color: green; font-weight: bold;'>{unique_diff_str} vs boletín anterior</span>
+            #""", unsafe_allow_html=True)
         
         with col2:
             st.metric(f"📊 Boletín #{bulletin2} - {fecha2.strftime('%d/%m')}", 
                      f"{previous_total_reports:,} reportes",
-                     delta=f"{current_total_reports - previous_total_reports:+,} reportes",
                      help=f"Total de reportes en el boletín anterior ({fecha2.strftime('%d/%m/%Y')})")
             st.caption(f"{previous_unique:,} estaciones únicas")
         
@@ -2559,8 +2605,15 @@ def show_participation_report(current_date, previous_date, bulletin1, bulletin2,
                      f"{current_unique:,} vs {previous_unique:,}",
                      delta=f"{current_unique - previous_unique:+d} ({growth_rate:+.1f}%)",
                      help=f"Comparación de estaciones únicas entre boletines")
+            # Mostrar comparación de estaciones únicas
+            unique_diff = current_unique - previous_unique
+            unique_diff_str = f"+{unique_diff}" if unique_diff > 0 else str(unique_diff)
+            st.caption(f"""
+                {current_unique:,} estaciones únicas  
+                <span style='color: green; font-weight: bold;'>{unique_diff_str} vs boletín anterior</span>
+                """, unsafe_allow_html=True)
         
-        # Nuevas estaciones
+        # Análisis de estaciones
         current_stations = set(current_data['call_sign'])
         previous_stations = set(previous_data['call_sign'])
         new_stations = current_stations - previous_stations
@@ -2568,23 +2621,106 @@ def show_participation_report(current_date, previous_date, bulletin1, bulletin2,
         
         st.markdown("---")
         
-        col1, col2 = st.columns(2)
+        # Mostrar métricas principales
+        col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.subheader("🆕 Nuevas Estaciones")
-            if new_stations:
-                for station in sorted(new_stations):
-                    operator = current_data[current_data['call_sign'] == station]['operator_name'].iloc[0]
-                    st.write(f"• **{station}** - {operator}")
-            else:
-                st.info("No hay estaciones nuevas en esta sesión")
+            st.metric("📊 Total Estaciones", f"{len(current_stations):,}", 
+                     delta=f"{len(current_stations) - len(previous_stations):+d} vs anterior")
         
         with col2:
-            st.subheader("🔄 Estaciones Regulares")
-            st.metric("Participación Consistente", len(regular_stations))
-            if len(regular_stations) > 0:
-                retention_rate = (len(regular_stations) / len(previous_stations)) * 100
-                st.metric("Tasa de Retención", f"{retention_rate:.1f}%")
+            st.metric("🆕 Nuevas Estaciones", len(new_stations), 
+                     delta=f"{len(new_stations) - (len(current_stations) - len(previous_stations)):+.0f}")
+        
+        with col3:
+            retention_rate = (len(regular_stations) / len(previous_stations) * 100) if previous_stations else 0
+            st.metric("🔄 Tasa de Retención", f"{retention_rate:.1f}%")
+        
+        # Crear dos columnas para las tablas
+        col_tabla1, col_tabla2 = st.columns(2)
+        
+        with col_tabla1:
+            st.markdown("### 🆕 Detalle de Nuevas Estaciones")
+            if new_stations:
+                # Crear DataFrame para la tabla
+                new_stations_data = []
+                for station in sorted(new_stations):
+                    operator = current_data[current_data['call_sign'] == station]['operator_name'].iloc[0]
+                    reports = current_data[current_data['call_sign'] == station]['reports_count'].iloc[0]
+                    new_stations_data.append({
+                        'Indicativo': station,
+                        'Operador': operator,
+                        'Reportes': reports
+                    })
+                
+                # Mostrar tabla estilizada
+                st.dataframe(
+                    pd.DataFrame(new_stations_data),
+                    column_config={
+                        "Indicativo": "Indicativo",
+                        "Operador": "Operador",
+                        "Reportes": st.column_config.NumberColumn(
+                            "Reportes",
+                            help="Número de reportes en este boletín",
+                            format="%d"
+                        )
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    height=min(300, 35 * len(new_stations_data) + 40)
+                )
+            else:
+                st.info("🌟 ¡Excelente noticia! No hay estaciones nuevas en este boletín.")
+        
+        with col_tabla2:
+            st.markdown("### 🔄 Estaciones que no Repitieron")
+            missing_stations = previous_stations - current_stations
+            missing_count = len(missing_stations)
+            
+            if missing_stations:
+                # Crear DataFrame para la tabla
+                missing_stations_data = []
+                for station in sorted(missing_stations):
+                    operator = previous_data[previous_data['call_sign'] == station]['operator_name'].iloc[0] if not previous_data[previous_data['call_sign'] == station].empty else 'N/A'
+                    reports = previous_data[previous_data['call_sign'] == station]['reports_count'].iloc[0] if not previous_data[previous_data['call_sign'] == station].empty else 0
+                    missing_stations_data.append({
+                        'Indicativo': station,
+                        'Operador': operator,
+                        'Reportes': reports
+                    })
+                
+                # Mostrar tabla estilizada
+                st.dataframe(
+                    pd.DataFrame(missing_stations_data),
+                    column_config={
+                        "Indicativo": "Indicativo",
+                        "Operador": "Operador",
+                        "Reportes": st.column_config.NumberColumn(
+                            "Reportes en Anterior",
+                            help="Número de reportes en el boletín anterior",
+                            format="%d"
+                        )
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    height=min(300, 35 * len(missing_stations_data) + 40)
+                )
+            else:
+                st.info("🌟 ¡Excelente! Todas las estaciones del boletín anterior reportaron en este boletín.")
+        
+        # Mostrar métricas de retención
+        st.markdown("### 🔄 Métricas de Retención")
+        retention_col1, retention_col2 = st.columns(2)
+        
+        with retention_col1:
+            st.metric("Estaciones Regulares", len(regular_stations), 
+                     delta=f"{len(regular_stations) - len(previous_stations):+d} vs total anterior")
+        
+        with retention_col2:
+            missing_percentage = (missing_count / len(previous_stations) * 100) if previous_stations else 0
+            st.metric("Estaciones que no repitieron", 
+                     f"{missing_count:,}",
+                     delta=f"{missing_percentage:.1f}% del total anterior" if previous_stations else None)
         
     except Exception as e:
         st.error(f"❌ Error en reporte de participación: {str(e)}")
@@ -2644,26 +2780,103 @@ def show_geographic_report(current_date, previous_date, bulletin1, bulletin2, fe
         
         with col1:
             st.metric(f"📊 Boletín #{bulletin1} - {fecha1.strftime('%d/%m')}", 
-                     f"{total_current_reports:,} reportes")
-        
+                     f"{total_current_reports:,} reportes",
+                     delta=f"{total_current_reports - total_previous_reports:+,} reportes")
+
         with col2:
             st.metric(f"📊 Boletín #{bulletin2} - {fecha2.strftime('%d/%m')}",
-                     f"{total_previous_reports:,} reportes",
-                     delta=f"{total_current_reports - total_previous_reports:+,} reportes")
+                     f"{total_previous_reports:,} reportes")
+        #             delta=f"{total_current_reports - total_previous_reports:+,} reportes")
         
         st.markdown("---")
         
+        # Gráfico de barras agrupadas para comparación entre boletines
+        st.subheader("📊 Comparación de Sistemas entre Boletines")
+        
+        if not current_zones.empty or not previous_zones.empty:
+            # Preparar datos para el gráfico combinado
+            df_comparison = pd.concat([
+                current_zones.assign(Boletín=f'#{bulletin1} - {fecha1.strftime("%d/%m")}'),
+                previous_zones.assign(Boletín=f'#{bulletin2} - {fecha2.strftime("%d/%m")}')
+            ])
+            
+            # Crear gráfico de barras agrupadas
+            fig = px.bar(
+                df_comparison,
+                x='zona',
+                y='total_reportes',
+                color='Boletín',
+                barmode='group',
+                title=f'Comparación de Reportes por Zona',
+                labels={
+                    'zona': 'Zona',
+                    'total_reportes': 'Total de Reportes',
+                    'Boletín': 'Boletín'
+                },
+                hover_data=['estaciones_unicas'],
+                text='total_reportes',
+                color_discrete_sequence=px.colors.qualitative.Plotly
+            )
+            
+            # Mejorar el diseño del gráfico
+            fig.update_traces(
+                textposition='outside',
+                hovertemplate='<b>%{x}</b><br>' +
+                            'Boletín: %{customdata[1]}<br>' +
+                            'Reportes: %{y}<br>' +
+                            'Estaciones Únicas: %{customdata[0]}<br>' +
+                            '<extra></extra>'
+            )
+            
+            fig.update_layout(
+                xaxis_tickangle=-45,
+                yaxis_title='Número de Reportes',
+                legend_title='Boletín',
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                ),
+                margin=dict(t=60, b=100, l=50, r=50),
+                height=500
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("No hay datos suficientes para mostrar la comparación")
+        
+        st.markdown("---")
+        
+        # Tablas de zonas
+        st.subheader("📊 Detalle por Zona")
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader(f"📊 Zonas - Boletín #{bulletin1}")
+            # Métrica para el boletín actual
+            total_current = current_zones['total_reportes'].sum() if not current_zones.empty else 0
+            st.metric(
+                f"📊 Boletín #{bulletin1} - {fecha1.strftime('%d/%m')}",
+                f"{total_current:,} reportes",
+                help=f"Total de reportes: {total_current:,}"
+            )
             if not current_zones.empty:
                 st.dataframe(current_zones, width='stretch')
             else:
                 st.info(f"No hay datos de zonas para el boletín #{bulletin1}")
         
         with col2:
-            st.subheader(f"📊 Zonas - Boletín #{bulletin2}")
+            # Métrica para el boletín anterior
+            total_previous = previous_zones['total_reportes'].sum() if not previous_zones.empty else 0
+            delta = (total_current - total_previous) if (not current_zones.empty and not previous_zones.empty) else None
+            
+            st.metric(
+                f"📊 Boletín #{bulletin2} - {fecha2.strftime('%d/%m')}",
+                f"{total_previous:,} reportes",
+                #delta=f"{delta:+,} reportes" if delta is not None else None,
+                help=f"Total de reportes: {total_previous:,}"
+            )
             if not previous_zones.empty:
                 st.dataframe(previous_zones, width='stretch')
             else:
@@ -2746,12 +2959,13 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
         
         with col1:
             st.metric(f"📡 Boletín #{bulletin1} - {fecha1.strftime('%d/%m')}", 
-                     f"{total_current_reports:,} reportes")
+                     f"{total_current_reports:,} reportes",
+                     delta=f"{total_current_reports - total_previous_reports:+,} reportes")
         
         with col2:
             st.metric(f"📡 Boletín #{bulletin2} - {fecha2.strftime('%d/%m')}",
-                     f"{total_previous_reports:,} reportes",
-                     delta=f"{total_current_reports - total_previous_reports:+,} reportes")
+                     f"{total_previous_reports:,} reportes")
+        #             delta=f"{total_current_reports - total_previous_reports:+,} reportes")
         
         st.markdown("---")
         

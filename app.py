@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import io
 import sqlite3
 
@@ -19,6 +19,27 @@ from auth import AuthManager
 from email_service import EmailService
 import secrets
 import string
+
+def get_bulletin_number(target_date):
+    """
+    Calcula el número de boletín basado en la fecha.
+    El primer domingo del año es el boletín 1, el segundo el 2, etc.
+    """
+    # Obtener el primer día del año
+    first_day = date(target_date.year, 1, 1)
+    
+    # Encontrar el primer domingo del año
+    first_sunday = first_day + timedelta(days=(6 - first_day.weekday() + 1) % 7)
+    
+    # Si el primer día del año es domingo, es el boletín 1
+    if first_day.weekday() == 6:  # 6 es domingo
+        first_sunday = first_day
+    
+    # Calcular la diferencia en semanas y sumar 1 para el número de boletín
+    week_diff = (target_date - first_sunday).days // 7 + 1
+    
+    # Asegurarnos de que el boletín no sea negativo o cero
+    return max(1, week_diff)
 
 # Definir funciones antes de usarlas
 def show_db_admin():
@@ -2283,45 +2304,123 @@ def show_advanced_reports():
     st.header("📊 Reportes Avanzados")
     st.markdown("### Análisis Comparativo de Sesiones")
     
-    # Selector de tipo de sesión
-    session_type = st.selectbox(
-        "Tipo de Sesión:",
-        ["Domingos (Boletín en Vivo)", "Miércoles (Retransmisión CREBC)"],
-        help="Selecciona el tipo de sesión para comparar con la anterior del mismo tipo"
-    )
-    
-    # Determinar el día de la semana (0=Lunes, 6=Domingo)
-    target_weekday = 6 if "Domingos" in session_type else 2  # 6=Domingo, 2=Miércoles
-    
-    # Obtener las dos últimas sesiones del tipo seleccionado
     try:
-        # Consulta para obtener las fechas de sesión del tipo seleccionado
+        # Obtener todas las fechas con reportes
         conn = sqlite3.connect(db.db_path)
         
-        # Obtener todas las fechas de sesión únicas del día de la semana correspondiente
-        query = """
-        SELECT DISTINCT DATE(timestamp) as session_date, 
-               COUNT(*) as total_reports,
-               strftime('%w', timestamp) as weekday
-        FROM reports 
-        WHERE strftime('%w', timestamp) = ?
-        GROUP BY DATE(timestamp)
-        ORDER BY session_date DESC
-        LIMIT 2
+        # Consulta para obtener fechas únicas con reportes
+        dates_query = """
+        SELECT DISTINCT DATE(session_date) as report_date
+        FROM reports
+        ORDER BY report_date DESC
         """
         
-        sessions_df = pd.read_sql_query(query, conn, params=[str(target_weekday)])
-        conn.close()
+        dates_df = pd.read_sql_query(dates_query, conn)
         
-        if len(sessions_df) < 2:
-            st.warning(f"⚠️ Se necesitan al menos 2 sesiones de {session_type.lower()} para generar comparativas.")
+        if len(dates_df) < 2:
+            st.warning("⚠️ Se necesitan al menos 2 fechas con reportes para generar comparativas.")
             st.info("💡 Los reportes comparativos estarán disponibles después de tener más datos.")
+            conn.close()
             return
+            
+        # Convertir a lista de fechas
+        available_dates = pd.to_datetime(dates_df['report_date']).dt.date.tolist()
         
-        current_session = sessions_df.iloc[0]['session_date']
-        previous_session = sessions_df.iloc[1]['session_date']
+        # Encontrar automáticamente los dos últimos domingos con reportes
+        last_sundays = []
+        for date in available_dates:
+            if date.weekday() == 6:  # 6 es domingo
+                if len(last_sundays) < 2 and date not in last_sundays:
+                    last_sundays.append(date)
+                    if len(last_sundays) == 2:
+                        break
         
-        st.info(f"📅 **Comparando:** {current_session} vs {previous_session}")
+        # Si no hay suficientes domingos, usar las dos fechas más recientes
+        if len(last_sundays) < 2:
+            last_sundays = available_dates[:2]
+        
+        # Ordenar las fechas (más antigua primero)
+        last_sundays = sorted(last_sundays)
+        
+        # Selector de fechas
+        st.markdown("### Seleccione las fechas a comparar")
+        
+        # Crear dos columnas para los selectores de fecha
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            fecha1 = st.selectbox(
+                "Primera fecha:",
+                options=available_dates,
+                index=available_dates.index(last_sundays[0]) if last_sundays[0] in available_dates else 0,
+                format_func=lambda d: d.strftime('%d/%m/%Y')
+            )
+        
+        with col2:
+            # Filtrar fechas posteriores a la primera seleccionada
+            available_dates_second = [d for d in available_dates if d != fecha1]
+            
+            # Encontrar la segunda fecha más cercana a la primera
+            second_date_index = 0
+            if len(available_dates_second) > 0:
+                if last_sundays[1] in available_dates_second and last_sundays[1] != fecha1:
+                    second_date_index = available_dates_second.index(last_sundays[1])
+                elif len(available_dates_second) > 0:
+                    # Encontrar la fecha más cercana a la primera seleccionada
+                    date_diffs = [abs((d - fecha1).days) for d in available_dates_second]
+                    second_date_index = date_diffs.index(min(d for d in date_diffs if d > 0))
+            
+            fecha2 = st.selectbox(
+                "Segunda fecha:",
+                options=available_dates_second,
+                index=second_date_index,
+                format_func=lambda d: d.strftime('%d/%m/%Y')
+            )
+        
+        # Asegurarse de que fecha1 sea la más reciente
+        if fecha1 < fecha2:
+            fecha1, fecha2 = fecha2, fecha1
+        
+        # Obtener datos de ambas fechas para mostrar en la comparación
+        current_data = pd.read_sql_query(
+            "SELECT * FROM reports WHERE DATE(session_date) = ?", 
+            conn, 
+            params=[fecha1.strftime('%Y-%m-%d')]
+        )
+        
+        previous_data = pd.read_sql_query(
+            "SELECT * FROM reports WHERE DATE(session_date) = ?", 
+            conn, 
+            params=[fecha2.strftime('%Y-%m-%d')]
+        )
+        
+        # Obtener números de boletín para ambas fechas
+        bulletin1 = get_bulletin_number(fecha1)
+        bulletin2 = get_bulletin_number(fecha2)
+        
+        # Mostrar información de comparación con formato mejorado
+        st.markdown(f"""
+        <div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin: 10px 0;'>
+            <h3 style='margin: 0 0 10px 0; color: #1f77b4;'>📅 Comparación de Boletines</h3>
+            <div style='display: flex; justify-content: space-between;'>
+                <div style='text-align: center; padding: 10px; background: white; border-radius: 8px; flex: 1; margin: 0 5px;'>
+                    <div style='font-weight: bold; font-size: 1.2em;'>Boletín #{bulletin1}</div>
+                    <div style='color: #666;'>{fecha1.strftime('%d/%m/%Y')}</div>
+                    <div style='color: #888; font-size: 0.9em;'>{fecha1.strftime('%A').capitalize()}</div>
+                </div>
+                <div style='display: flex; align-items: center; justify-content: center; font-size: 1.5em; color: #666;'>vs</div>
+                <div style='text-align: center; padding: 10px; background: white; border-radius: 8px; flex: 1; margin: 0 5px;'>
+                    <div style='font-weight: bold; font-size: 1.2em;'>Boletín #{bulletin2}</div>
+                    <div style='color: #666;'>{fecha2.strftime('%d/%m/%Y')}</div>
+                    <div style='color: #888; font-size: 0.9em;'>{fecha2.strftime('%A').capitalize()}</div>
+                </div>
+            </div>
+            <div style='margin-top: 10px; font-size: 0.9em; color: #666;'>
+                <span style='display: inline-block; margin-right: 15px;'>📅 Diferencia: {abs((fecha1 - fecha2).days)} días</span>
+                <span>📊 Total de reportes: {len(current_data)} vs {len(previous_data)}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         
         # Crear pestañas para diferentes tipos de reportes
         tab1, tab2, tab3, tab4 = st.tabs([
@@ -2331,20 +2430,31 @@ def show_advanced_reports():
             "📊 Tendencias"
         ])
         
+        # Convertir fechas a string en formato YYYY-MM-DD para las consultas
+        current_date_str = fecha1.strftime('%Y-%m-%d')
+        previous_date_str = fecha2.strftime('%Y-%m-%d')
+        
+        # Cerrar la conexión a la base de datos
+        conn.close()
+        
         with tab1:
-            show_participation_report(current_session, previous_session)
+            show_participation_report(current_date_str, previous_date_str)
         
         with tab2:
-            show_geographic_report(current_session, previous_session)
+            show_geographic_report(current_date_str, previous_date_str)
         
         with tab3:
-            show_technical_report(current_session, previous_session)
+            show_technical_report(current_date_str, previous_date_str)
         
         with tab4:
-            show_trends_report(current_session, previous_session)
+            show_trends_report(current_date_str, previous_date_str)
+            
+        conn.close()
             
     except Exception as e:
         st.error(f"❌ Error al generar reportes: {str(e)}")
+        if 'conn' in locals():
+            conn.close()
 
 def show_participation_report(current_date, previous_date):
     """Reporte de participación comparativo"""
@@ -2357,14 +2467,14 @@ def show_participation_report(current_date, previous_date):
         current_data = pd.read_sql_query("""
             SELECT call_sign, operator_name, COUNT(*) as reports_count
             FROM reports 
-            WHERE DATE(timestamp) = ?
+            WHERE DATE(session_date) = ?
             GROUP BY call_sign, operator_name
         """, conn, params=[current_date])
         
         previous_data = pd.read_sql_query("""
             SELECT call_sign, operator_name, COUNT(*) as reports_count
             FROM reports 
-            WHERE DATE(timestamp) = ?
+            WHERE DATE(session_date) = ?
             GROUP BY call_sign, operator_name
         """, conn, params=[previous_date])
         
@@ -2373,22 +2483,41 @@ def show_participation_report(current_date, previous_date):
         # Métricas principales
         col1, col2, col3, col4 = st.columns(4)
         
-        current_total = len(current_data)
-        previous_total = len(previous_data)
-        growth_rate = ((current_total - previous_total) / previous_total * 100) if previous_total > 0 else 0
+        # Calcular total de reportes (no solo estaciones únicas)
+        current_total_reports = current_data['reports_count'].sum() if not current_data.empty else 0
+        previous_total_reports = previous_data['reports_count'].sum() if not previous_data.empty else 0
+        
+        # Contar estaciones únicas
+        current_unique = len(current_data)
+        previous_unique = len(previous_data)
+        
+        # Calcular tasa de crecimiento
+        growth_rate = ((current_unique - previous_unique) / previous_unique * 100) if previous_unique > 0 else 0
         
         with col1:
-            st.metric("Total Reportes Actuales", current_total)
+            st.metric("📊 Total Reportes", 
+                    f"{current_total_reports:,}",
+                    help="Número total de reportes en la sesión actual")
+            st.caption(f"{current_unique:,} estaciones únicas")
         
         with col2:
-            st.metric("Total Reportes Anteriores", previous_total)
+            st.metric("📊 Reportes Anteriores", 
+                     f"{previous_total_reports:,}",
+                     delta=f"{current_total_reports - previous_total_reports:+,} reportes",
+                     help="Número total de reportes en la sesión anterior")
+            st.caption(f"{previous_unique:,} estaciones únicas")
         
         with col3:
-            st.metric("Estaciones Únicas Actuales", len(current_data))
+            st.metric("📈 Crecimiento Estaciones", 
+                     f"{growth_rate:+.1f}%",
+                     delta=f"{current_unique - previous_unique:+,}",
+                     help="Crecimiento en el número de estaciones únicas")
         
         with col4:
-            st.metric("Crecimiento", f"{growth_rate:+.1f}%", 
-                     delta=f"{current_total - previous_total:+d}")
+            avg_reports = current_total_reports / current_unique if current_unique > 0 else 0
+            st.metric("📊 Promedio por Estación", 
+                     f"{avg_reports:.1f}",
+                     help="Promedio de reportes por estación en la sesión actual")
         
         # Nuevas estaciones
         current_stations = set(current_data['call_sign'])
@@ -2430,7 +2559,7 @@ def show_geographic_report(current_date, previous_date):
         current_zones = pd.read_sql_query("""
             SELECT zona, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
             FROM reports 
-            WHERE DATE(timestamp) = ?
+            WHERE DATE(session_date) = ?
             GROUP BY zona
             ORDER BY total_reports DESC
         """, conn, params=[current_date])
@@ -2438,7 +2567,7 @@ def show_geographic_report(current_date, previous_date):
         previous_zones = pd.read_sql_query("""
             SELECT zona, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
             FROM reports 
-            WHERE DATE(timestamp) = ?
+            WHERE DATE(session_date) = ?
             GROUP BY zona
             ORDER BY total_reports DESC
         """, conn, params=[previous_date])
@@ -2447,7 +2576,7 @@ def show_geographic_report(current_date, previous_date):
         current_states = pd.read_sql_query("""
             SELECT qth as estado, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
             FROM reports 
-            WHERE DATE(timestamp) = ?
+            WHERE DATE(session_date) = ?
             GROUP BY qth
             ORDER BY total_reports DESC
             LIMIT 10
@@ -2493,7 +2622,7 @@ def show_technical_report(current_date, previous_date):
         current_systems = pd.read_sql_query("""
             SELECT sistema, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
             FROM reports 
-            WHERE DATE(timestamp) = ?
+            WHERE DATE(session_date) = ?
             GROUP BY sistema
             ORDER BY total_reports DESC
         """, conn, params=[current_date])
@@ -2501,7 +2630,7 @@ def show_technical_report(current_date, previous_date):
         previous_systems = pd.read_sql_query("""
             SELECT sistema, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
             FROM reports 
-            WHERE DATE(timestamp) = ?
+            WHERE DATE(session_date) = ?
             GROUP BY sistema
             ORDER BY total_reports DESC
         """, conn, params=[previous_date])
@@ -2510,7 +2639,7 @@ def show_technical_report(current_date, previous_date):
         current_signals = pd.read_sql_query("""
             SELECT signal_report, COUNT(*) as count
             FROM reports 
-            WHERE DATE(timestamp) = ?
+            WHERE DATE(session_date) = ?
             GROUP BY signal_report
             ORDER BY count DESC
         """, conn, params=[current_date])
@@ -2555,7 +2684,7 @@ def show_trends_report(current_date, previous_date):
         current_top = pd.read_sql_query("""
             SELECT call_sign, operator_name, COUNT(*) as times_reported
             FROM reports 
-            WHERE DATE(timestamp) = ?
+            WHERE DATE(session_date) = ?
             GROUP BY call_sign, operator_name
             ORDER BY times_reported DESC
             LIMIT 10
@@ -2564,7 +2693,7 @@ def show_trends_report(current_date, previous_date):
         previous_top = pd.read_sql_query("""
             SELECT call_sign, operator_name, COUNT(*) as times_reported
             FROM reports 
-            WHERE DATE(timestamp) = ?
+            WHERE DATE(session_date) = ?
             GROUP BY call_sign, operator_name
             ORDER BY times_reported DESC
             LIMIT 10
@@ -2574,7 +2703,7 @@ def show_trends_report(current_date, previous_date):
         current_hourly = pd.read_sql_query("""
             SELECT strftime('%H', timestamp) as hour, COUNT(*) as reports
             FROM reports 
-            WHERE DATE(timestamp) = ?
+            WHERE DATE(session_date) = ?
             GROUP BY strftime('%H', timestamp)
             ORDER BY hour
         """, conn, params=[current_date])

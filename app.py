@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from datetime import datetime, date, timedelta
 import io
 import sqlite3
+import numpy as np
 
 from database import FMREDatabase
 from utils import (
@@ -3058,46 +3059,109 @@ def show_trends_report(current_date, previous_date, bulletin1, bulletin2, fecha1
             # 4.1 Evolución de Participación
             st.subheader("📈 Evolución de la Participación (Últimos 12 Boletines)")
             
-            # Crear gráfico de líneas para la tendencia
-            fig_tendencia = px.line(
-                historical_data,
-                x='fecha',
-                y=['total_reportes', 'estaciones_unicas'],
-                title='Evolución de la Participación',
-                labels={'fecha': 'Fecha', 'value': 'Cantidad', 'variable': 'Métrica'},
-                markers=True,
-                color_discrete_sequence=px.colors.qualitative.Plotly
+            # Crear figura manualmente para más control
+            fig_tendencia = go.Figure()
+            
+            # Añadir línea de total de reportes
+            fig_tendencia.add_trace(
+                go.Scatter(
+                    x=historical_data['fecha'],
+                    y=historical_data['total_reportes'],
+                    name='Total Reportes',
+                    mode='lines+markers+text',
+                    text=historical_data['total_reportes'].astype(str),
+                    textposition='top center',
+                    textfont=dict(size=10),
+                    line=dict(width=2.5, color=px.colors.qualitative.Plotly[0]),
+                    marker=dict(size=8, color=px.colors.qualitative.Plotly[0]),
+                    hovertemplate='<b>Total Reportes</b><br>%{y} reportes<br>%{x|%d/%m/%Y}<extra></extra>',
+                    showlegend=True
+                )
+            )
+            
+            # Añadir línea de estaciones únicas
+            fig_tendencia.add_trace(
+                go.Scatter(
+                    x=historical_data['fecha'],
+                    y=historical_data['estaciones_unicas'],
+                    name='Estaciones Únicas',
+                    mode='lines+markers+text',
+                    text=historical_data['estaciones_unicas'].astype(str),
+                    textposition='top center',
+                    textfont=dict(size=10),
+                    line=dict(width=2.5, color=px.colors.qualitative.Plotly[1]),
+                    marker=dict(size=8, color=px.colors.qualitative.Plotly[1]),
+                    hovertemplate='<b>Estaciones Únicas</b><br>%{y} estaciones<br>%{x|%d/%m/%Y}<extra></extra>',
+                    showlegend=True
+                )
             )
             
             # Mejorar formato del gráfico
             fig_tendencia.update_layout(
+                title='Evolución de la Participación',
                 xaxis_title='Fecha del Boletín',
                 yaxis_title='Cantidad',
                 legend_title='Métricas',
                 hovermode='x unified',
-                height=500,
+                height=550,
                 legend=dict(
                     orientation="h",
                     yanchor="bottom",
                     y=1.02,
                     xanchor="right",
-                    x=1
+                    x=1,
+                    bgcolor='rgba(255, 255, 255, 0.8)'
+                ),
+                margin=dict(l=50, r=50, t=80, b=80)
+            )
+            
+            # Añadir etiquetas al final de cada línea
+            for trace in fig_tendencia.data:
+                if len(trace.x) > 0:  # Asegurarse de que hay datos
+                    last_x = trace.x[-1]
+                    last_y = trace.y[-1]
+                    
+                    fig_tendencia.add_annotation(
+                        x=last_x,
+                        y=last_y,
+                        text=f"{trace.name}: {last_y}",
+                        showarrow=False,
+                        xshift=15,
+                        yshift=5,
+                        font=dict(
+                            size=11,
+                            color=trace.line.color,
+                            family='Arial, bold'
+                        ),
+                        align='left',
+                        bgcolor='rgba(255, 255, 255, 0.8)',
+                        borderpad=3,
+                        bordercolor=trace.line.color,
+                        borderwidth=1
+                    )
+            
+            # Calcular y añadir tendencia para total de reportes
+            if len(historical_data) > 1:
+                x = range(len(historical_data))
+                y = historical_data['total_reportes'].values
+                z = np.polyfit(x, y, 1)
+                p = np.poly1d(z)
+                
+                fig_tendencia.add_trace(
+                    go.Scatter(
+                        x=historical_data['fecha'],
+                        y=p(x),
+                        name='Tendencia Reportes',
+                        mode='lines',
+                        line=dict(
+                            color=px.colors.qualitative.Plotly[0],
+                            width=2,
+                            dash='dot'
+                        ),
+                        showlegend=True,
+                        hoverinfo='skip'
+                    )
                 )
-            )
-            
-            # Agregar anotaciones para los puntos máximos
-            max_reports = historical_data['total_reportes'].max()
-            max_date = historical_data.loc[historical_data['total_reportes'].idxmax(), 'fecha']
-            
-            fig_tendencia.add_annotation(
-                x=max_date,
-                y=max_reports,
-                text=f"Máximo: {max_reports} reportes",
-                showarrow=True,
-                arrowhead=1,
-                ax=0,
-                ay=-40
-            )
             
             st.plotly_chart(fig_tendencia, use_container_width=True)
             
@@ -3116,41 +3180,97 @@ def show_trends_report(current_date, previous_date, bulletin1, bulletin2, fecha1
             colors = px.colors.qualitative.Plotly
             color_map = {col: colors[i % len(colors)] for i, col in enumerate(system_columns)}
             
-            # Crear una copia del DataFrame para el gráfico
-            plot_data = historical_data[['fecha'] + system_columns].copy()
+            # Crear figura manualmente para más control
+            fig_sistemas_evol = go.Figure()
             
-            # Rellenar valores NaN con 0 para asegurar que todas las series tengan la misma longitud
-            plot_data.fillna(0, inplace=True)
-            
-            # Crear gráfico de líneas para la evolución de sistemas
-            fig_sistemas_evol = px.line(
-                plot_data,
-                x='fecha',
-                y=system_columns,
-                title='Evolución de Sistemas por Tipo',
-                labels={'fecha': 'Fecha', 'value': 'Número de Reportes', 'variable': 'Sistema'},
-                markers=True,
-                color_discrete_map=color_map
-            )
+            # Añadir una línea para cada sistema
+            for i, col in enumerate(system_columns):
+                sistema_nombre = col.replace('reportes_', '').upper()
+                
+                fig_sistemas_evol.add_trace(
+                    go.Scatter(
+                        x=historical_data['fecha'],
+                        y=historical_data[col],
+                        name=sistema_nombre,
+                        mode='lines+markers+text',
+                        text=historical_data[col].astype(str),
+                        textposition='top center',
+                        textfont=dict(size=9),
+                        line=dict(width=2.5, color=colors[i % len(colors)]),
+                        marker=dict(size=8, color=colors[i % len(colors)]),
+                        hovertemplate=f'<b>{sistema_nombre}</b><br>%{{y}} reportes<br>%{{x|%d/%m/%Y}}<extra></extra>',
+                        showlegend=True
+                    )
+                )
+                
+                # Calcular y añadir tendencia para este sistema
+                if len(historical_data) > 1 and historical_data[col].sum() > 0:
+                    x = range(len(historical_data))
+                    y = historical_data[col].values
+                    z = np.polyfit(x, y, 1)
+                    p = np.poly1d(z)
+                    
+                    fig_sistemas_evol.add_trace(
+                        go.Scatter(
+                            x=historical_data['fecha'],
+                            y=p(x),
+                            name=f'Tendencia {sistema_nombre}',
+                            mode='lines',
+                            line=dict(
+                                color=colors[i % len(colors)],
+                                width=1.5,
+                                dash='dot'
+                            ),
+                            showlegend=False,
+                            hoverinfo='skip'
+                        )
+                    )
             
             # Mejorar formato del gráfico
             fig_sistemas_evol.update_layout(
+                title='Evolución de Sistemas por Tipo',
                 xaxis_title='Fecha del Boletín',
                 yaxis_title='Número de Reportes',
                 legend_title='Sistema',
                 hovermode='x unified',
-                height=500,
+                height=600,
                 legend=dict(
                     orientation="h",
                     yanchor="bottom",
                     y=1.02,
                     xanchor="right",
-                    x=1
-                )
+                    x=1,
+                    bgcolor='rgba(255, 255, 255, 0.8)'
+                ),
+                margin=dict(l=50, r=50, t=80, b=80)
             )
             
-            # Renombrar las etiquetas de la leyenda
-            fig_sistemas_evol.for_each_trace(lambda t: t.update(name=t.name.replace('reportes_', '').upper()))
+            # Añadir etiquetas al final de cada línea
+            for trace in fig_sistemas_evol.data:
+                if 'Tendencia' not in trace.name and len(trace.x) > 0:  # Solo para líneas principales, no tendencias
+                    last_x = trace.x[-1]
+                    last_y = trace.y[-1]
+                    
+                    # Solo mostrar etiqueta si hay un valor
+                    if last_y > 0:
+                        fig_sistemas_evol.add_annotation(
+                            x=last_x,
+                            y=last_y,
+                            text=f"{trace.name}: {int(last_y) if last_y == int(last_y) else last_y}",
+                            showarrow=False,
+                            xshift=15,
+                            yshift=5,
+                            font=dict(
+                                size=10,
+                                color=trace.line.color,
+                                family='Arial, bold'
+                            ),
+                            align='left',
+                            bgcolor='rgba(255, 255, 255, 0.8)',
+                            borderpad=2,
+                            bordercolor=trace.line.color,
+                            borderwidth=1
+                        )
             
             st.plotly_chart(fig_sistemas_evol, use_container_width=True)
             

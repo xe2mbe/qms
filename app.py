@@ -3215,39 +3215,72 @@ def show_trends_report(current_date, previous_date, bulletin1, bulletin2, fecha1
                     color_map = {col: colors[i % len(colors)] for i, col in enumerate(zona_columns)}
                     
                     # Crear el gráfico de líneas para la evolución de zonas
-                    fig_zonas_evol = px.line(
-                        zonas_data,
-                        x='fecha',
-                        y=zona_columns,
-                        title='Evolución de la Participación por Zona',
-                        labels={'fecha': 'Fecha', 'value': 'Número de Reportes', 'variable': 'Zona'},
-                        markers=True,
-                        color_discrete_map=color_map
-                    )
+                    fig_zonas_evol = go.Figure()
                     
-                    # Mejorar formato del gráfico
+                    # Añadir cada zona como una traza separada
+                    for col in zona_columns:
+                        zone_name = col.replace('reportes_', '').upper()
+                        fig_zonas_evol.add_trace(
+                            go.Scatter(
+                                x=zonas_data['fecha'],
+                                y=zonas_data[col],
+                                name=zone_name,
+                                mode='lines+markers+text',
+                                text=zonas_data[col].astype(str),
+                                textposition='top center',
+                                textfont=dict(size=10),
+                                line=dict(width=2.5),
+                                marker=dict(size=8),
+                                hovertemplate='<b>' + zone_name + '</b><br>%{y} reportes<br>%{x|%d/%m/%Y}<extra></extra>'
+                            )
+                        )
+                    
+                    # Configurar el diseño del gráfico
                     fig_zonas_evol.update_layout(
+                        title='Evolución de la Participación por Zona',
                         xaxis_title='Fecha del Boletín',
                         yaxis_title='Número de Reportes',
                         legend_title='Zona',
                         hovermode='x unified',
-                        height=500,
+                        height=600,  # Aumentar altura para mejor visualización
                         legend=dict(
                             orientation="h",
                             yanchor="bottom",
                             y=1.02,
                             xanchor="right",
-                            x=1
-                        )
+                            x=1,
+                            title_font=dict(size=12),
+                            font=dict(size=10)
+                        ),
+                        margin=dict(l=50, r=50, t=80, b=80)  # Ajustar márgenes
                     )
                     
-                    # Mejorar el tooltip
-                    fig_zonas_evol.update_traces(
-                        hovertemplate='<b>%{y} reportes</b><br>%{x|%d/%m/%Y}<extra></extra>'
-                    )
                     
-                    # Renombrar las etiquetas de la leyenda
-                    fig_zonas_evol.for_each_trace(lambda t: t.update(name=t.name.replace('reportes_', '').upper()))
+                    # Renombrar las etiquetas de la leyenda y añadir anotaciones
+                    for trace in fig_zonas_evol.data:
+                        # Obtener el nombre de la zona (sin el prefijo 'reportes_')
+                        zone_name = trace.name.replace('reportes_', '').upper()
+                        trace.name = zone_name
+                        
+                        # Añadir etiquetas al final de cada línea
+                        if len(trace.x) > 0:  # Asegurarse de que hay datos
+                            last_x = trace.x[-1]
+                            last_y = trace.y[-1]
+                            
+                            # Solo mostrar la etiqueta si hay un valor
+                            if last_y > 0:
+                                fig_zonas_evol.add_annotation(
+                                    x=last_x,
+                                    y=last_y,
+                                    text=zone_name,
+                                    showarrow=False,
+                                    xshift=10,  # Desplazar un poco a la derecha
+                                    font=dict(
+                                        size=11,
+                                        color=trace.line.color
+                                    ),
+                                    yshift=5
+                                )
                     
                     st.plotly_chart(fig_zonas_evol, use_container_width=True)
                     

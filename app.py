@@ -2646,7 +2646,7 @@ def show_geographic_report(current_date, previous_date, bulletin1, bulletin2, fe
 
 def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fecha1, fecha2):
     """
-    Muestra el reporte técnico comparativo entre dos boletines
+    Muestra el reporte técnico comparativo entre dos boletines con visualizaciones mejoradas
     
     Args:
         current_date (str): Fecha del boletín actual en formato YYYY-MM-DD
@@ -2661,7 +2661,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
     try:
         conn = sqlite3.connect(db.db_path)
         
-        # Sistemas utilizados
+        # Sistemas utilizados - Datos actuales
         current_systems = pd.read_sql_query("""
             SELECT 
                 COALESCE(sistema, 'No especificado') as sistema, 
@@ -2674,6 +2674,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
             ORDER BY total_reportes DESC
         """, conn, params=[current_date, current_date])
         
+        # Sistemas utilizados - Datos anteriores
         previous_systems = pd.read_sql_query("""
             SELECT 
                 COALESCE(sistema, 'No especificado') as sistema, 
@@ -2686,7 +2687,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
             ORDER BY total_reportes DESC
         """, conn, params=[previous_date, previous_date])
         
-        # Calidad de señales
+        # Calidad de señales - Datos actuales
         current_signals = pd.read_sql_query("""
             SELECT 
                 COALESCE(signal_report, 'No especificado') as reporte_señal, 
@@ -2718,36 +2719,187 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
         
         st.markdown("---")
         
+        # Sección de Sistemas
+        st.subheader("📡 Distribución de Sistemas")
+        
+        if not current_systems.empty or not previous_systems.empty:
+            # Preparar datos para el gráfico comparativo
+            if not current_systems.empty:
+                current_systems['boletin'] = f'Boletín #{bulletin1}'
+            if not previous_systems.empty:
+                previous_systems['boletin'] = f'Boletín #{bulletin2}'
+            
+            # Combinar datos para el gráfico
+            combined_systems = pd.concat([current_systems, previous_systems])
+            
+            # Crear gráfico de barras agrupadas
+            fig_sistemas = px.bar(
+                combined_systems,
+                x='sistema',
+                y='porcentaje',
+                color='boletin',
+                barmode='group',
+                title=f'Comparación de Sistemas - Boletín #{bulletin1} vs #{bulletin2}',
+                labels={'sistema': 'Sistema', 'porcentaje': 'Porcentaje (%)', 'boletin': 'Boletín'},
+                text='porcentaje',
+                color_discrete_sequence=px.colors.qualitative.Plotly
+            )
+            
+            # Mejorar formato del gráfico
+            fig_sistemas.update_traces(
+                texttemplate='%{text:.1f}%',
+                textposition='outside',
+                marker_line_color='rgba(0,0,0,0.5)',
+                marker_line_width=0.5
+            )
+            
+            fig_sistemas.update_layout(
+                xaxis_tickangle=-45,
+                yaxis_title='Porcentaje de Reportes (%)',
+                legend_title='Boletín',
+                height=500
+            )
+            
+            st.plotly_chart(fig_sistemas, use_container_width=True)
+        
+        # Mostrar tablas de sistemas
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader(f"📡 Sistemas - Boletín #{bulletin1}")
+            st.subheader(f"📋 Detalle - Boletín #{bulletin1}")
             if not current_systems.empty:
-                st.dataframe(current_systems, width='stretch')
+                st.dataframe(
+                    current_systems[['sistema', 'estaciones_unicas', 'total_reportes', 'porcentaje']]
+                    .rename(columns={
+                        'sistema': 'Sistema',
+                        'estaciones_unicas': 'Estaciones Únicas',
+                        'total_reportes': 'Total Reportes',
+                        'porcentaje': '% del Total'
+                    }),
+                    width='stretch',
+                    hide_index=True
+                )
             else:
                 st.info(f"No hay datos de sistemas para el boletín #{bulletin1}")
         
         with col2:
-            st.subheader(f"📡 Sistemas - Boletín #{bulletin2}")
+            st.subheader(f"📋 Detalle - Boletín #{bulletin2}")
             if not previous_systems.empty:
-                st.dataframe(previous_systems, width='stretch')
+                st.dataframe(
+                    previous_systems[['sistema', 'estaciones_unicas', 'total_reportes', 'porcentaje']]
+                    .rename(columns={
+                        'sistema': 'Sistema',
+                        'estaciones_unicas': 'Estaciones Únicas',
+                        'total_reportes': 'Total Reportes',
+                        'porcentaje': '% del Total'
+                    }),
+                    width='stretch',
+                    hide_index=True
+                )
             else:
                 st.info(f"No hay datos de sistemas para el boletín #{bulletin2}")
         
         st.markdown("---")
         
+        # Sección de Calidad de Señales
         st.subheader(f"📶 Calidad de Señales - Boletín #{bulletin1}")
+        
         if not current_signals.empty:
-            st.dataframe(current_signals, width='stretch')
+            # Crear gráfico de dona para la calidad de señales
+            fig_señales = px.pie(
+                current_signals,
+                values='total',
+                names='reporte_señal',
+                hole=0.4,
+                title=f'Distribución de Calidad de Señales - Boletín #{bulletin1}',
+                labels={'reporte_señal': 'Calidad de Señal', 'total': 'Cantidad'}
+            )
+            
+            # Mejorar formato del gráfico
+            fig_señales.update_traces(
+                textposition='inside',
+                textinfo='percent+label',
+                marker=dict(line=dict(color='#FFFFFF', width=1))
+            )
+            
+            fig_señales.update_layout(
+                showlegend=False,
+                height=500
+            )
+            
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                st.plotly_chart(fig_señales, use_container_width=True)
+            
+            with col2:
+                st.write("### Detalle de Calidad")
+                st.dataframe(
+                    current_signals.rename(columns={
+                        'reporte_señal': 'Calidad',
+                        'total': 'Cantidad',
+                        'porcentaje': '% del Total'
+                    }),
+                    width='stretch',
+                    hide_index=True
+                )
         else:
             st.info("No hay datos de calidad de señales disponibles")
+        
+        # Agregar análisis de tendencia en la calidad de señales si hay datos históricos
+        try:
+            conn = sqlite3.connect(db.db_path)
+            
+            # Obtener datos históricos de calidad de señales
+            historical_signals = pd.read_sql_query("""
+                SELECT 
+                    DATE(session_date) as fecha,
+                    signal_report as calidad,
+                    COUNT(*) as total
+                FROM reports 
+                WHERE DATE(session_date) BETWEEN date(?, '-30 days') AND ?
+                GROUP BY DATE(session_date), signal_report
+                ORDER BY DATE(session_date)
+            """, conn, params=[current_date, current_date])
+            
+            if not historical_signals.empty:
+                st.markdown("---")
+                st.subheader("📈 Tendencia de Calidad de Señales (Últimos 30 días)")
+                
+                # Crear gráfico de líneas para la tendencia
+                fig_tendencia = px.line(
+                    historical_signals,
+                    x='fecha',
+                    y='total',
+                    color='calidad',
+                    title='Evolución de la Calidad de Señales',
+                    labels={'fecha': 'Fecha', 'total': 'Número de Reportes', 'calidad': 'Calidad'},
+                    markers=True
+                )
+                
+                fig_tendencia.update_layout(
+                    xaxis_title='Fecha',
+                    yaxis_title='Número de Reportes',
+                    legend_title='Calidad de Señal',
+                    hovermode='x unified'
+                )
+                
+                st.plotly_chart(fig_tendencia, use_container_width=True)
+                
+        except Exception as e:
+            st.warning(f"No se pudo cargar el análisis de tendencia: {str(e)}")
+        finally:
+            if 'conn' in locals():
+                conn.close()
             
     except Exception as e:
         st.error(f"❌ Error en reporte técnico: {str(e)}")
+        if 'conn' in locals():
+            conn.close()
 
 def show_trends_report(current_date, previous_date, bulletin1, bulletin2, fecha1, fecha2):
     """
-    Muestra el reporte de tendencias comparativo entre dos boletines
+    Muestra el reporte de tendencias comparativo entre dos boletines con visualizaciones avanzadas
     
     Args:
         current_date (str): Fecha del boletín actual en formato YYYY-MM-DD
@@ -2762,104 +2914,362 @@ def show_trends_report(current_date, previous_date, bulletin1, bulletin2, fecha1
     try:
         conn = sqlite3.connect(db.db_path)
         
-        # Top estaciones reportadas
-        current_top = pd.read_sql_query("""
+        # ===== 1. OBTENER DATOS HISTÓRICOS =====
+        # Primero, obtener la lista de sistemas únicos en los datos
+        sistemas_unicos = pd.read_sql_query(
+            "SELECT DISTINCT sistema FROM reports WHERE sistema IS NOT NULL AND sistema != ''", 
+            conn
+        )['sistema'].tolist()
+        
+        # Si no hay sistemas, usar una lista por defecto
+        if not sistemas_unicos:
+            sistemas_unicos = ['FM', 'DMR', 'YSF', 'HF', 'ASL']
+        
+        # Crear la parte dinámica de la consulta para contar por sistema
+        subconsultas_sistemas = []
+        for sistema in sistemas_unicos:
+            subconsultas_sistemas.append(
+                f"(SELECT COUNT(*) FROM reports r2 WHERE DATE(r2.session_date) = DATE(r.session_date) AND r2.sistema = '{sistema}') as reportes_{sistema.lower()}"
+            )
+        
+        subconsultas_sql = ',\n                    '.join(subconsultas_sistemas)
+        
+        # Crear subconsultas para contar por zona
+        zonas = ['XE1', 'XE2', 'XE3', 'Extranjera']
+        subconsultas_zonas = []
+        for zona in zonas:
+            subconsultas_zonas.append(
+                f"SUM(CASE WHEN r.zona = '{zona}' THEN 1 ELSE 0 END) as reportes_{zona.lower()}"
+            )
+        
+        subconsultas_zonas_sql = ',\n                '.join(subconsultas_zonas)
+        
+        # Consulta principal con sistemas y zonas dinámicas
+        query = f"""
+            WITH fechas_boletines AS (
+                SELECT DISTINCT DATE(session_date) as fecha
+                FROM reports
+                WHERE DATE(session_date) <= ?
+                ORDER BY DATE(session_date) DESC
+                LIMIT 12
+            )
+            SELECT 
+                DATE(r.session_date) as fecha,
+                COUNT(DISTINCT r.call_sign) as estaciones_unicas,
+                COUNT(*) as total_reportes,
+                COUNT(DISTINCT r.zona) as zonas_unicas,
+                COUNT(DISTINCT r.qth) as estados_unicos,
+                ROUND(AVG(CASE WHEN r.signal_report = 3 THEN 1 ELSE 0 END) * 100, 1) as porcentaje_buenas_señales,
+                {subconsultas_sql},
+                {subconsultas_zonas_sql}
+            FROM reports r
+            WHERE DATE(r.session_date) IN (SELECT fecha FROM fechas_boletines)
+            GROUP BY DATE(r.session_date)
+            ORDER BY DATE(r.session_date)
+        """
+        
+        # Ejecutar la consulta
+        historical_data = pd.read_sql_query(query, conn, params=[current_date])
+        
+        # Obtener datos del boletín actual y anterior para comparación
+        current_data = pd.read_sql_query("""
             SELECT 
                 call_sign as 'Indicativo', 
-                operator_name as 'Operador', 
-                COUNT(*) as 'Reportes',
-                COUNT(*) * 100.0 / (SELECT COUNT(*) FROM reports WHERE DATE(session_date) = ?) as 'Porcentaje'
+                operator_name as 'Operador',
+                zona as 'Zona',
+                qth as 'Estado',
+                sistema as 'Sistema',
+                signal_report as 'Señal',
+                strftime('%H:00', timestamp) as 'Hora'
             FROM reports 
             WHERE DATE(session_date) = ?
-            GROUP BY call_sign, operator_name
-            ORDER BY COUNT(*) DESC
-            LIMIT 10
-        """, conn, params=[current_date, current_date])
+        """, conn, params=[current_date])
         
-        previous_top = pd.read_sql_query("""
+        previous_data = pd.read_sql_query("""
             SELECT 
                 call_sign as 'Indicativo', 
-                operator_name as 'Operador', 
-                COUNT(*) as 'Reportes',
-                COUNT(*) * 100.0 / (SELECT COUNT(*) FROM reports WHERE DATE(session_date) = ?) as 'Porcentaje'
+                operator_name as 'Operador',
+                zona as 'Zona',
+                qth as 'Estado',
+                sistema as 'Sistema',
+                signal_report as 'Señal',
+                strftime('%H:00', timestamp) as 'Hora'
             FROM reports 
             WHERE DATE(session_date) = ?
-            GROUP BY call_sign, operator_name
-            ORDER BY COUNT(*) DESC
-            LIMIT 10
-        """, conn, params=[previous_date, previous_date])
+        """, conn, params=[previous_date])
         
-        # Actividad por hora
-        current_hourly = pd.read_sql_query("""
-            SELECT 
-                strftime('%H:00', timestamp) as 'Hora', 
-                COUNT(*) as 'Reportes',
-                COUNT(*) * 100.0 / (SELECT COUNT(*) FROM reports WHERE DATE(session_date) = ?) as 'Porcentaje'
-            FROM reports 
-            WHERE DATE(session_date) = ?
-            GROUP BY strftime('%H', timestamp)
-            ORDER BY Hora
-        """, conn, params=[current_date, current_date])
-        
-        # Obtener totales para mostrar en los títulos
-        total_current_reports = current_top['Reportes'].sum() if not current_top.empty else 0
-        total_previous_reports = previous_top['Reportes'].sum() if not previous_top.empty else 0
-        
+        # Cerrar conexión a la base de datos
         conn.close()
         
-        # Métricas principales
-        col1, col2 = st.columns(2)
+        # ===== 2. CALCULAR MÉTRICAS PRINCIPALES =====
+        # Calcular totales
+        total_current_reports = len(current_data) if not current_data.empty else 0
+        total_previous_reports = len(previous_data) if not previous_data.empty else 0
         
-        with col1:
-            st.metric(f"🏆 Boletín #{bulletin1} - {fecha1.strftime('%d/%m')}", 
-                     f"{total_current_reports:,} reportes")
-        
-        with col2:
-            st.metric(f"🏆 Boletín #{bulletin2} - {fecha2.strftime('%d/%m')}",
-                     f"{total_previous_reports:,} reportes",
-                     delta=f"{total_current_reports - total_previous_reports:+,} reportes")
-        
-        st.markdown("---")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader(f"🏆 Top 10 Estaciones - Boletín #{bulletin1}")
-            if not current_top.empty:
-                st.dataframe(current_top, width='stretch')
-            else:
-                st.info(f"No hay datos disponibles para el boletín #{bulletin1}")
-        
-        with col2:
-            st.subheader(f"🏆 Top 10 Estaciones - Boletín #{bulletin2}")
-            if not previous_top.empty:
-                st.dataframe(previous_top, width='stretch')
-            else:
-                st.info(f"No hay datos disponibles para el boletín #{bulletin2}")
-        
-        st.markdown("---")
-        
-        st.subheader(f"⏰ Actividad por Hora - Boletín #{bulletin1}")
-        if not current_hourly.empty:
-            # Crear gráfico de barras para la actividad por hora
-            fig = px.bar(
-                current_hourly, 
-                x='Hora', 
-                y='Reportes',
-                text='Reportes',
-                title=f"Distribución de Actividad por Hora - Boletín #{bulletin1}"
-            )
-            fig.update_traces(texttemplate='%{text:.0f}', textposition='outside')
-            fig.update_layout(showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Mostrar tabla con porcentajes
-            st.dataframe(current_hourly, width='stretch')
+        # Calcular crecimiento
+        if total_previous_reports > 0:
+            crecimiento = ((total_current_reports - total_previous_reports) / total_previous_reports) * 100
         else:
-            st.info("No hay datos de actividad horaria disponibles")
+            crecimiento = 0
+        
+        # ===== 3. MOSTRAR MÉTRICAS PRINCIPALES =====
+        st.subheader("📈 Indicadores Clave")
+        
+        # Primera fila de métricas
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric(
+                f"📊 Total Reportes - B#{bulletin1}",
+                f"{total_current_reports:,}",
+                delta=f"{total_current_reports - total_previous_reports:+,} vs B#{bulletin2}"
+            )
+        
+        with col2:
+            st.metric(
+                f"👥 Estaciones Únicas - B#{bulletin1}",
+                f"{current_data['Indicativo'].nunique() if not current_data.empty else 0:,}",
+                delta=f"{current_data['Indicativo'].nunique() - previous_data['Indicativo'].nunique():+,} vs B#{bulletin2}"
+            )
+        
+        with col3:
+            st.metric(
+                f"🌍 Estados - B#{bulletin1}",
+                f"{current_data['Estado'].nunique() if not current_data.empty else 0:,}",
+                delta=f"{current_data['Estado'].nunique() - previous_data['Estado'].nunique():+,} vs B#{bulletin2}"
+            )
+        
+        with col4:
+            # Calcular la mejor participación histórica
+            if not historical_data.empty:
+                mejor_participacion = historical_data.loc[historical_data['total_reportes'].idxmax()]
+                st.metric(
+                    "🏆 Mejor Participación",
+                    f"Boletín {mejor_participacion['fecha']}",
+                    delta=f"{mejor_participacion['total_reportes']:,} reportes"
+                )
+            else:
+                st.metric("🏆 Mejor Participación", "Sin datos históricos")
+        
+        st.markdown("---")
+        
+        # ===== 4. GRÁFICOS DE EVOLUCIÓN =====
+        if not historical_data.empty:
+            # 4.1 Evolución de Participación
+            st.subheader("📈 Evolución de la Participación (Últimos 12 Boletines)")
             
+            # Crear gráfico de líneas para la tendencia
+            fig_tendencia = px.line(
+                historical_data,
+                x='fecha',
+                y=['total_reportes', 'estaciones_unicas'],
+                title='Evolución de la Participación',
+                labels={'fecha': 'Fecha', 'value': 'Cantidad', 'variable': 'Métrica'},
+                markers=True,
+                color_discrete_sequence=px.colors.qualitative.Plotly
+            )
+            
+            # Mejorar formato del gráfico
+            fig_tendencia.update_layout(
+                xaxis_title='Fecha del Boletín',
+                yaxis_title='Cantidad',
+                legend_title='Métricas',
+                hovermode='x unified',
+                height=500,
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                )
+            )
+            
+            # Agregar anotaciones para los puntos máximos
+            max_reports = historical_data['total_reportes'].max()
+            max_date = historical_data.loc[historical_data['total_reportes'].idxmax(), 'fecha']
+            
+            fig_tendencia.add_annotation(
+                x=max_date,
+                y=max_reports,
+                text=f"Máximo: {max_reports} reportes",
+                showarrow=True,
+                arrowhead=1,
+                ax=0,
+                ay=-40
+            )
+            
+            st.plotly_chart(fig_tendencia, use_container_width=True)
+            
+            # 4.2 Evolución de Sistemas
+            st.subheader("📡 Evolución de Sistemas (Últimos 12 Boletines)")
+            
+            # Obtener las columnas de sistemas dinámicamente
+            system_columns = [f'reportes_{sistema.lower()}' for sistema in sistemas_unicos]
+            
+            # Asegurarse de que todas las columnas de sistemas existan en el DataFrame
+            for col in system_columns:
+                if col not in historical_data.columns:
+                    historical_data[col] = 0
+            
+            # Crear un mapa de colores para los sistemas
+            colors = px.colors.qualitative.Plotly
+            color_map = {col: colors[i % len(colors)] for i, col in enumerate(system_columns)}
+            
+            # Crear una copia del DataFrame para el gráfico
+            plot_data = historical_data[['fecha'] + system_columns].copy()
+            
+            # Rellenar valores NaN con 0 para asegurar que todas las series tengan la misma longitud
+            plot_data.fillna(0, inplace=True)
+            
+            # Crear gráfico de líneas para la evolución de sistemas
+            fig_sistemas_evol = px.line(
+                plot_data,
+                x='fecha',
+                y=system_columns,
+                title='Evolución de Sistemas por Tipo',
+                labels={'fecha': 'Fecha', 'value': 'Número de Reportes', 'variable': 'Sistema'},
+                markers=True,
+                color_discrete_map=color_map
+            )
+            
+            # Mejorar formato del gráfico
+            fig_sistemas_evol.update_layout(
+                xaxis_title='Fecha del Boletín',
+                yaxis_title='Número de Reportes',
+                legend_title='Sistema',
+                hovermode='x unified',
+                height=500,
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                )
+            )
+            
+            # Renombrar las etiquetas de la leyenda
+            fig_sistemas_evol.for_each_trace(lambda t: t.update(name=t.name.replace('reportes_', '').upper()))
+            
+            st.plotly_chart(fig_sistemas_evol, use_container_width=True)
+            
+            # 4.3 Evolución de Cobertura Geográfica por Zona
+            st.subheader("🌍 Evolución de la Participación por Zona (Últimos 12 Boletines)")
+            
+            # Obtener las columnas de zonas dinámicamente
+            zonas_columns = ['reportes_xe1', 'reportes_xe2', 'reportes_xe3', 'reportes_extranjera']
+            
+            # Verificar qué columnas existen realmente en los datos
+            zonas_existentes = [col for col in zonas_columns if col in historical_data.columns]
+            
+            if zonas_existentes:
+                # Crear una copia del DataFrame para el gráfico
+                plot_zonas = historical_data[['fecha'] + zonas_existentes].copy()
+                
+                # Rellenar valores NaN con 0 para asegurar que todas las series tengan la misma longitud
+                plot_zonas.fillna(0, inplace=True)
+                
+                # Crear gráfico de líneas para la evolución por zona
+                fig_cobertura = px.line(
+                    plot_zonas,
+                    x='fecha',
+                    y=zonas_existentes,
+                    title='Evolución de la Participación por Zona',
+                    labels={'fecha': 'Fecha', 'value': 'Número de Reportes', 'variable': 'Zona'},
+                    markers=True,
+                    color_discrete_sequence=px.colors.qualitative.Set2
+                )
+                    
+                # Mejorar formato del gráfico
+                fig_cobertura.update_layout(
+                    xaxis_title='Fecha del Boletín',
+                    yaxis_title='Número de Reportes',
+                    legend_title='Zonas',
+                    hovermode='x unified',
+                    height=500,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    )
+                )
+                
+                # Renombrar las etiquetas de la leyenda
+                zona_names = {
+                    'reportes_xe1': 'Zona 1 (Noroeste)',
+                    'reportes_xe2': 'Zona 2 (Noreste)',
+                    'reportes_xe3': 'Zona 3 (Centro)',
+                    'reportes_extranjera': 'Extranjera'
+                }
+                
+                for trace in fig_cobertura.data:
+                    trace.name = zona_names.get(trace.name, trace.name.replace('reportes_', '').upper())
+                    trace.hovertemplate = '<b>%{y} reportes</b><br>%{x|%d/%m/%Y}<extra></extra>'
+            else:
+                # Si no hay datos de zonas, mostrar un mensaje
+                st.warning("No se encontraron datos de zonas para mostrar.")
+                return
+            
+            # Mejorar formato del gráfico
+            fig_cobertura.update_layout(
+                xaxis_title='Fecha del Boletín',
+                yaxis_title='Cantidad',
+                legend_title='Métrica',
+                hovermode='x unified',
+                height=500,
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                )
+            )
+            
+            # Renombrar las etiquetas de la leyenda
+            fig_cobertura.for_each_trace(
+                lambda t: t.update(name='Zonas' if t.name == 'zonas_unicas' else 'Estados')
+            )
+            
+            # Agregar anotaciones para los puntos máximos
+            max_zonas = historical_data['zonas_unicas'].max()
+            max_zonas_date = historical_data.loc[historical_data['zonas_unicas'].idxmax(), 'fecha']
+            
+            max_estados = historical_data['estados_unicos'].max()
+            max_estados_date = historical_data.loc[historical_data['estados_unicos'].idxmax(), 'fecha']
+            
+            fig_cobertura.add_annotation(
+                x=max_zonas_date,
+                y=max_zonas,
+                text=f"Máx: {max_zonas} zonas",
+                showarrow=True,
+                arrowhead=1,
+                ax=0,
+                ay=-40,
+                bgcolor='rgba(148, 103, 189, 0.3)'
+            )
+            
+            fig_cobertura.add_annotation(
+                x=max_estados_date,
+                y=max_estados,
+                text=f"Máx: {max_estados} estados",
+                showarrow=True,
+                arrowhead=1,
+                ax=0,
+                ay=-80,
+                bgcolor='rgba(140, 86, 75, 0.3)'
+            )
+            
+            st.plotly_chart(fig_cobertura, use_container_width=True)
+        
+        # Sección de resumen eliminada según solicitud del usuario
     except Exception as e:
         st.error(f"❌ Error en reporte de tendencias: {str(e)}")
+        if 'conn' in locals():
+            conn.close()
 
 # ==================== NAVEGACIÓN PRINCIPAL ====================
 

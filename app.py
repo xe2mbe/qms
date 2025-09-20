@@ -2495,7 +2495,7 @@ def show_advanced_reports():
         tab1, tab2, tab3, tab4 = st.tabs([
             "📈 Participación", 
             "🌍 Geográfico", 
-            "🔧 Técnico", 
+            "🔧 Sistema de Radio", 
             "📊 Tendencias"
         ])
         
@@ -2636,13 +2636,17 @@ def show_participation_report(current_date, previous_date, bulletin1, bulletin2,
             retention_rate = (len(regular_stations) / len(previous_stations) * 100) if previous_stations else 0
             st.metric("🔄 Tasa de Retención", f"{retention_rate:.1f}%")
         
-        # Crear dos columnas para las tablas
-        col_tabla1, col_tabla2 = st.columns(2)
+        # Calcular missing_stations aquí para usarlo en las métricas
+        missing_stations = previous_stations - current_stations
+        missing_count = len(missing_stations)
         
-        with col_tabla1:
-            st.markdown("### 🆕 Detalle de Nuevas Estaciones")
+        # Crear tres columnas para las tablas
+        col1, col2, col3 = st.columns(3)
+        
+        # Tabla de Nuevas Estaciones
+        with col1:
+            st.markdown("### 🆕 Nuevas")
             if new_stations:
-                # Crear DataFrame para la tabla
                 new_stations_data = []
                 for station in sorted(new_stations):
                     operator = current_data[current_data['call_sign'] == station]['operator_name'].iloc[0]
@@ -2653,7 +2657,6 @@ def show_participation_report(current_date, previous_date, bulletin1, bulletin2,
                         'Reportes': reports
                     })
                 
-                # Mostrar tabla estilizada
                 st.dataframe(
                     pd.DataFrame(new_stations_data),
                     column_config={
@@ -2667,46 +2670,77 @@ def show_participation_report(current_date, previous_date, bulletin1, bulletin2,
                     },
                     hide_index=True,
                     use_container_width=True,
-                    height=min(300, 35 * len(new_stations_data) + 40)
+                    height=min(250, 35 * len(new_stations_data) + 40)
                 )
             else:
-                st.info("🌟 ¡Excelente noticia! No hay estaciones nuevas en este boletín.")
+                st.info("🌟 No hay nuevas estaciones")
         
-        with col_tabla2:
-            st.markdown("### 🔄 Estaciones que no Repitieron")
-            missing_stations = previous_stations - current_stations
-            missing_count = len(missing_stations)
-            
+        # Tabla de Estaciones que Repitieron
+        with col2:
+            st.markdown("### 🔄 Repitieron")
+            if regular_stations:
+                repeated_stations_data = []
+                for station in sorted(regular_stations):
+                    operator = current_data[current_data['call_sign'] == station]['operator_name'].iloc[0]
+                    current_reports = current_data[current_data['call_sign'] == station]['reports_count'].iloc[0]
+                    previous_reports = previous_data[previous_data['call_sign'] == station]['reports_count'].iloc[0] if not previous_data[previous_data['call_sign'] == station].empty else 0
+                    
+                    repeated_stations_data.append({
+                        'Indicativo': station,
+                        'Reportes': current_reports,
+                        'Vs Anterior': f"{current_reports - previous_reports:+d}"
+                    })
+                
+                st.dataframe(
+                    pd.DataFrame(repeated_stations_data),
+                    column_config={
+                        "Indicativo": "Indicativo",
+                        "Reportes": st.column_config.NumberColumn(
+                            "Reportes",
+                            help="Número de reportes en este boletín",
+                            format="%d"
+                        ),
+                        "Vs Anterior": st.column_config.TextColumn(
+                            "Vs Ant.",
+                            help="Diferencia vs boletín anterior"
+                        )
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    height=min(250, 35 * len(repeated_stations_data) + 40)
+                )
+            else:
+                st.info("ℹ️ No hay repeticiones")
+        
+        # Tabla de Estaciones que no Repitieron
+        with col3:
+            st.markdown("### ❌ No Repitieron")
             if missing_stations:
-                # Crear DataFrame para la tabla
                 missing_stations_data = []
                 for station in sorted(missing_stations):
                     operator = previous_data[previous_data['call_sign'] == station]['operator_name'].iloc[0] if not previous_data[previous_data['call_sign'] == station].empty else 'N/A'
                     reports = previous_data[previous_data['call_sign'] == station]['reports_count'].iloc[0] if not previous_data[previous_data['call_sign'] == station].empty else 0
                     missing_stations_data.append({
                         'Indicativo': station,
-                        'Operador': operator,
                         'Reportes': reports
                     })
                 
-                # Mostrar tabla estilizada
                 st.dataframe(
                     pd.DataFrame(missing_stations_data),
                     column_config={
                         "Indicativo": "Indicativo",
-                        "Operador": "Operador",
                         "Reportes": st.column_config.NumberColumn(
-                            "Reportes en Anterior",
-                            help="Número de reportes en el boletín anterior",
+                            "Reportes Ant.",
+                            help="Reportes en boletín anterior",
                             format="%d"
                         )
                     },
                     hide_index=True,
                     use_container_width=True,
-                    height=min(300, 35 * len(missing_stations_data) + 40)
+                    height=min(250, 35 * len(missing_stations_data) + 40)
                 )
             else:
-                st.info("🌟 ¡Excelente! Todas las estaciones del boletín anterior reportaron en este boletín.")
+                st.info("🌟 ¡Todas reportaron!")
         
         # Mostrar métricas de retención
         st.markdown("### 🔄 Métricas de Retención")
@@ -2905,7 +2939,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
         fecha1 (datetime.date): Fecha del boletín actual
         fecha2 (datetime.date): Fecha del boletín anterior
     """
-    st.subheader("🔧 Análisis Técnico")
+    st.subheader("🔧 Análisis por Sistema de Radio")
     
     try:
         conn = sqlite3.connect(db.db_path)
@@ -2989,8 +3023,8 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
                 y='porcentaje',
                 color='boletin',
                 barmode='group',
-                title=f'Comparación de Sistemas - Boletín #{bulletin1} vs #{bulletin2}',
-                labels={'sistema': 'Sistema', 'porcentaje': 'Porcentaje (%)', 'boletin': 'Boletín'},
+                title=f'Comparación de Sistemas de Radio - Boletín #{bulletin1} vs #{bulletin2}',
+                labels={'sistema': 'Sistema de Radio', 'porcentaje': 'Porcentaje (%)', 'boletin': 'Boletín'},
                 text='porcentaje',
                 color_discrete_sequence=px.colors.qualitative.Plotly
             )
@@ -3021,7 +3055,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
                 st.dataframe(
                     current_systems[['sistema', 'estaciones_unicas', 'total_reportes', 'porcentaje']]
                     .rename(columns={
-                        'sistema': 'Sistema',
+                        'sistema': 'Sistema de Radio',
                         'estaciones_unicas': 'Estaciones Únicas',
                         'total_reportes': 'Total Reportes',
                         'porcentaje': '% del Total'
@@ -3038,7 +3072,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
                 st.dataframe(
                     previous_systems[['sistema', 'estaciones_unicas', 'total_reportes', 'porcentaje']]
                     .rename(columns={
-                        'sistema': 'Sistema',
+                        'sistema': 'Sistema de Radio',
                         'estaciones_unicas': 'Estaciones Únicas',
                         'total_reportes': 'Total Reportes',
                         'porcentaje': '% del Total'

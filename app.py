@@ -2731,13 +2731,23 @@ def show_advanced_reports():
         
         # Obtener datos de ambas fechas para mostrar en la comparación
         current_data = pd.read_sql_query(
-            "SELECT * FROM reports WHERE DATE(session_date) = ?", 
+            """
+            SELECT r.*, et.name as event_type_name 
+            FROM reports r
+            LEFT JOIN event_types et ON r.event_type_id = et.id
+            WHERE DATE(r.session_date) = ?
+            """, 
             conn, 
             params=[fecha1.strftime('%Y-%m-%d')]
         )
         
         previous_data = pd.read_sql_query(
-            "SELECT * FROM reports WHERE DATE(session_date) = ?", 
+            """
+            SELECT r.*, et.name as event_type_name 
+            FROM reports r
+            LEFT JOIN event_types et ON r.event_type_id = et.id
+            WHERE DATE(r.session_date) = ?
+            """, 
             conn, 
             params=[fecha2.strftime('%Y-%m-%d')]
         )
@@ -2746,19 +2756,23 @@ def show_advanced_reports():
         bulletin1 = get_bulletin_number(fecha1)
         bulletin2 = get_bulletin_number(fecha2)
         
+        # Obtener el tipo de evento más común para cada fecha
+        event_type1 = current_data['event_type_name'].mode()[0] if not current_data.empty and 'event_type_name' in current_data.columns and not current_data['event_type_name'].isnull().all() else 'Sesión'
+        event_type2 = previous_data['event_type_name'].mode()[0] if not previous_data.empty and 'event_type_name' in previous_data.columns and not previous_data['event_type_name'].isnull().all() else 'Sesión'
+        
         # Mostrar información de comparación con formato mejorado
         st.markdown(f"""
         <div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin: 10px 0;'>
-            <h3 style='margin: 0 0 10px 0; color: #1f77b4;'>📅 Comparación de Boletines</h3>
+            <h3 style='margin: 0 0 10px 0; color: #1f77b4;'>📅 Comparación de {event_type1} vs {event_type2}</h3>
             <div style='display: flex; justify-content: space-between;'>
                 <div style='text-align: center; padding: 10px; background: white; border-radius: 8px; flex: 1; margin: 0 5px;'>
-                    <div style='font-weight: bold; font-size: 1.2em;'>Boletín #{bulletin1}</div>
+                    <div style='font-weight: bold; font-size: 1.2em;'>{event_type1} #{bulletin1}</div>
                     <div style='color: #666;'>{fecha1.strftime('%d/%m/%Y')}</div>
                     <div style='color: #888; font-size: 0.9em;'>{fecha1.strftime('%A').capitalize()}</div>
                 </div>
                 <div style='display: flex; align-items: center; justify-content: center; font-size: 1.5em; color: #666;'>vs</div>
                 <div style='text-align: center; padding: 10px; background: white; border-radius: 8px; flex: 1; margin: 0 5px;'>
-                    <div style='font-weight: bold; font-size: 1.2em;'>Boletín #{bulletin2}</div>
+                    <div style='font-weight: bold; font-size: 1.2em;'>{event_type2} #{bulletin2}</div>
                     <div style='color: #666;'>{fecha2.strftime('%d/%m/%Y')}</div>
                     <div style='color: #888; font-size: 0.9em;'>{fecha2.strftime('%A').capitalize()}</div>
                 </div>

@@ -2653,17 +2653,43 @@ def show_advanced_reports():
     st.markdown("### Análisis Comparativo de Sesiones")
     
     try:
-        # Obtener todas las fechas con reportes
+        # Obtener todas las fechas con reportes y sus tipos de evento
         conn = sqlite3.connect(db.db_path)
         
-        # Consulta para obtener fechas únicas con reportes
+        # Obtener fechas con su tipo de evento más común, igual que en el banner de comparación
         dates_query = """
-        SELECT DISTINCT DATE(session_date) as report_date
-        FROM reports
+        WITH ranked_events AS (
+            SELECT 
+                DATE(r.session_date) as report_date,
+                et.name as event_type,
+                COUNT(*) as event_count,
+                ROW_NUMBER() OVER (PARTITION BY DATE(r.session_date) ORDER BY COUNT(*) DESC) as rn
+            FROM reports r
+            LEFT JOIN event_types et ON r.event_type_id = et.id
+            GROUP BY DATE(r.session_date), et.name
+        )
+        SELECT 
+            report_date,
+            COALESCE(event_type, 'Sesión') as event_type
+        FROM ranked_events
+        WHERE rn = 1
         ORDER BY report_date DESC
         """
         
+        # Crear un diccionario de fechas a tipos de evento
+        date_info = {}
         dates_df = pd.read_sql_query(dates_query, conn)
+        for _, row in dates_df.iterrows():
+            date_info[pd.to_datetime(row['report_date']).date()] = row['event_type']
+        
+        # Si no hay fechas, mostrar un mensaje de error
+        if not date_info:
+            st.warning("No hay reportes disponibles para mostrar.")
+            return
+            
+        # Obtener lista de fechas únicas
+        available_dates = list(date_info.keys())
+        date_event_types = {date: {date_info[date]: 1} for date in available_dates}
         
         if len(dates_df) < 2:
             st.warning("⚠️ Se necesitan al menos 2 fechas con reportes para generar comparativas.")
@@ -2672,7 +2698,7 @@ def show_advanced_reports():
             return
             
         # Convertir a lista de fechas
-        available_dates = pd.to_datetime(dates_df['report_date']).dt.date.tolist()
+        available_dates = [pd.to_datetime(date).date() for date in date_event_types.keys()]
         
         # Encontrar automáticamente los dos últimos domingos con reportes
         last_sundays = []
@@ -2701,7 +2727,7 @@ def show_advanced_reports():
                 "Primera fecha:",
                 options=available_dates,
                 index=available_dates.index(last_sundays[0]) if last_sundays[0] in available_dates else 0,
-                format_func=lambda d: d.strftime('%d/%m/%Y')
+                format_func=lambda d: f"{d.strftime('%d/%m/%Y')} - {date_info.get(d, 'Sesión')} #{get_bulletin_number(d)}"
             )
         
         with col2:
@@ -2722,7 +2748,7 @@ def show_advanced_reports():
                 "Segunda fecha:",
                 options=available_dates_second,
                 index=second_date_index,
-                format_func=lambda d: d.strftime('%d/%m/%Y')
+                format_func=lambda d: f"{d.strftime('%d/%m/%Y')} - {date_info.get(d, 'Sesión')} #{get_bulletin_number(d)}"
             )
         
         # Asegurarse de que fecha1 sea la más reciente
@@ -2842,18 +2868,24 @@ def show_participation_report(current_date, previous_date, bulletin1, bulletin2,
         
         # Obtener datos de ambas sesiones
         current_data = pd.read_sql_query("""
-            SELECT call_sign, operator_name, COUNT(*) as reports_count
-            FROM reports 
-            WHERE DATE(session_date) = ?
-            GROUP BY call_sign, operator_name
+            SELECT r.call_sign, r.operator_name, COUNT(*) as reports_count, et.name as event_type_name
+            FROM reports r
+            LEFT JOIN event_types et ON r.event_type_id = et.id
+            WHERE DATE(r.session_date) = ?
+            GROUP BY r.call_sign, r.operator_name, et.name
         """, conn, params=[current_date])
         
         previous_data = pd.read_sql_query("""
-            SELECT call_sign, operator_name, COUNT(*) as reports_count
-            FROM reports 
-            WHERE DATE(session_date) = ?
-            GROUP BY call_sign, operator_name
+            SELECT r.call_sign, r.operator_name, COUNT(*) as reports_count, et.name as event_type_name
+            FROM reports r
+            LEFT JOIN event_types et ON r.event_type_id = et.id
+            WHERE DATE(r.session_date) = ?
+            GROUP BY r.call_sign, r.operator_name, et.name
         """, conn, params=[previous_date])
+        
+        # Obtener el tipo de evento más común para cada fecha
+        event_type1 = current_data['event_type_name'].mode()[0] if not current_data.empty and 'event_type_name' in current_data.columns and not current_data['event_type_name'].isnull().all() else 'Sesión'
+        event_type2 = previous_data['event_type_name'].mode()[0] if not previous_data.empty and 'event_type_name' in previous_data.columns and not previous_data['event_type_name'].isnull().all() else 'Sesión'
         
         conn.close()
         
@@ -2877,11 +2909,11 @@ def show_participation_report(current_date, previous_date, bulletin1, bulletin2,
             reports_diff_str = f"+{reports_diff}" if reports_diff > 0 else str(reports_diff)
             
             # Mostrar métrica principal con el delta
-            st.metric(f"📊 Boletín #{bulletin1} - {fecha1.strftime('%d/%m')}", 
+            st.metric(f"📊 {event_type1} #{bulletin1} - {fecha1.strftime('%d/%m')}", 
                     f"{current_total_reports:,} reportes",
-                    delta=f"{reports_diff_str} reportes vs boletín anterior",
+                    delta=f"{reports_diff_str} reportes vs {event_type2.lower()} anterior",
                     delta_color="normal",
-                    help=f"Total de reportes en el boletín actual ({fecha1.strftime('%d/%m/%Y')})")
+                    help=f"Total de reportes en el {event_type1.lower()} actual ({fecha1.strftime('%d/%m/%Y')})")
             
             # Mostrar comparación de estaciones únicas
             #unique_diff = current_unique - previous_unique
@@ -2892,9 +2924,9 @@ def show_participation_report(current_date, previous_date, bulletin1, bulletin2,
             #""", unsafe_allow_html=True)
         
         with col2:
-            st.metric(f"📊 Boletín #{bulletin2} - {fecha2.strftime('%d/%m')}", 
+            st.metric(f"📊 {event_type2} #{bulletin2} - {fecha2.strftime('%d/%m')}", 
                      f"{previous_total_reports:,} reportes",
-                     help=f"Total de reportes en el boletín anterior ({fecha2.strftime('%d/%m/%Y')})")
+                     help=f"Total de reportes en el {event_type2.lower()} anterior ({fecha2.strftime('%d/%m/%Y')})")
             st.caption(f"{previous_unique:,} estaciones únicas")
         
         with col3:

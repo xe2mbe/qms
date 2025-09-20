@@ -57,7 +57,13 @@ def show_db_admin():
     st.warning("⚠️ **ZONA DE ADMINISTRADOR**: Las operaciones en esta sección pueden afectar permanentemente la base de datos. Usa con precaución.")
     
     # Crear pestañas para organizar las funciones
-    tab1, tab2, tab3, tab4 = st.tabs(["🔍 Consultas SQL", "🗑️ Eliminar Registros", "📊 Estadísticas DB", "🔧 Mantenimiento"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "🔍 Consultas SQL", 
+        "🗑️ Eliminar Registros", 
+        "📊 Estadísticas DB", 
+        "🔧 Mantenimiento",
+        "📝 Esquema de la Base de Datos"
+    ])
     
     with tab1:
         st.subheader("🔍 Ejecutar Consultas SQL Directas")
@@ -489,6 +495,149 @@ def show_db_admin():
                 st.success("✅ Conexión SMTP exitosa")
             else:
                 st.error("❌ Error en la conexión SMTP")
+    
+    with tab5:
+        st.subheader("📝 Explorador de Esquema de la Base de Datos")
+        
+        try:
+            conn = sqlite3.connect(db.db_path)
+            cursor = conn.cursor()
+            
+            # Obtener todas las tablas
+            cursor.execute("""
+                SELECT name 
+                FROM sqlite_master 
+                WHERE type='table' 
+                AND name NOT LIKE 'sqlite_%' 
+                ORDER BY name
+            """)
+            
+            tables = cursor.fetchall()
+            
+            if not tables:
+                st.info("No se encontraron tablas en la base de datos.")
+                return
+            
+            # Mostrar selector de tablas
+            selected_table = st.selectbox(
+                "Selecciona una tabla para ver su estructura y datos:",
+                [table[0] for table in tables],
+                index=0
+            )
+            
+            if selected_table:
+                # Obtener información de la estructura de la tabla
+                st.markdown("### 🏗️ Estructura de la Tabla")
+                cursor.execute(f"PRAGMA table_info({selected_table})")
+                columns = cursor.fetchall()
+                
+                if columns:
+                    # Mostrar información de columnas
+                    columns_df = pd.DataFrame(columns, columns=["cid", "name", "type", "notnull", "dflt_value", "pk"])
+                    columns_df = columns_df[["name", "type", "notnull", "dflt_value", "pk"]]
+                    columns_df.columns = ["Columna", "Tipo", "No Nulo", "Valor por Defecto", "Clave Primaria"]
+                    st.dataframe(columns_df, hide_index=True, use_container_width=True)
+                    
+                    # Obtener índices
+                    cursor.execute(f"PRAGMA index_list({selected_table})")
+                    indexes = cursor.fetchall()
+                    
+                    if indexes:
+                        st.markdown("### 🔑 Índices")
+                        for idx in indexes:
+                            idx_name = idx[1]
+                            cursor.execute(f"PRAGMA index_info({idx_name})")
+                            idx_columns = cursor.fetchall()
+                            idx_cols = ", ".join([col[2] for col in idx_columns])
+                            st.write(f"- **{idx_name}**: {idx_cols}")
+                    
+                    # Mostrar vista previa de datos
+                    st.markdown("### 📊 Vista Previa de Datos")
+                    limit = st.slider("Número de filas a mostrar:", 10, 100, 20, 10, key=f"limit_{selected_table}")
+                    
+                    try:
+                        data = pd.read_sql_query(f"SELECT * FROM {selected_table} LIMIT {limit}", conn)
+                        
+                        if not data.empty:
+                            st.dataframe(data, use_container_width=True)
+                            
+                            # Opciones adicionales
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                if st.button("📥 Descargar datos como CSV", key=f"dl_csv_{selected_table}"):
+                                    csv = data.to_csv(index=False).encode('utf-8')
+                                    st.download_button(
+                                        label="✅ Haz clic para descargar",
+                                        data=csv,
+                                        file_name=f"{selected_table}_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                        mime="text/csv",
+                                        key=f"dl_btn_{selected_table}"
+                                    )
+                            
+                            with col2:
+                                if st.button("📋 Copiar consulta SQL", key=f"copy_sql_{selected_table}"):
+                                    # Crear consulta SQL para copiar
+                                    columns = ", ".join([f'"{col}"' for col in data.columns])
+                                    sql_query = f"SELECT {columns} FROM \"{selected_table}\" LIMIT {limit};"
+                                    st.code(sql_query, language="sql")
+                                    st.success("Consulta SQL copiada al portapapeles")
+                        else:
+                            st.info("La tabla está vacía.")
+                            
+                    except Exception as e:
+                        st.error(f"❌ Error al leer datos de la tabla: {str(e)}")
+                
+                # Mostrar claves foráneas si existen
+                cursor.execute(f"PRAGMA foreign_key_list({selected_table})")
+                fks = cursor.fetchall()
+                
+                if fks:
+                    st.markdown("### 🔗 Claves Foráneas")
+                    fk_df = pd.DataFrame(fks, columns=["id", "seq", "table", "from", "to", "on_update", "on_delete", "match"])
+                    fk_df = fk_df[["table", "from", "to", "on_update", "on_delete"]]
+                    fk_df.columns = ["Tabla Referenciada", "Columna Origen", "Columna Destino", "On Update", "On Delete"]
+                    st.dataframe(fk_df, hide_index=True, use_container_width=True)
+            
+            # Mostrar resumen de la base de datos
+            st.markdown("---")
+            st.markdown("### 📊 Resumen de la Base de Datos")
+            
+            # Obtener información de tamaño de la base de datos
+            db_size = os.path.getsize(db.db_path) / (1024 * 1024)  # Tamaño en MB
+            
+            # Obtener conteo de registros por tabla
+            table_counts = []
+            for table in tables:
+                table_name = table[0]
+                try:
+                    cursor.execute(f"SELECT COUNT(*) as count FROM \"{table_name}\"")
+                    count = cursor.fetchone()[0]
+                    table_counts.append((table_name, count))
+                except:
+                    table_counts.append((table_name, "Error al contar"))
+            
+            # Mostrar métricas
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.metric("📂 Tamaño de la Base de Datos", f"{db_size:.2f} MB")
+                st.metric("📊 Total de Tablas", len(tables))
+            
+            with col2:
+                st.metric("📝 Total de Registros", sum(count for _, count in table_counts if isinstance(count, int)))
+                st.metric("📅 Última Actualización", datetime.fromtimestamp(os.path.getmtime(db.db_path)).strftime('%Y-%m-%d %H:%M:%S'))
+            
+            # Mostrar tabla con conteos
+            st.markdown("#### Conteo de Registros por Tabla")
+            counts_df = pd.DataFrame(table_counts, columns=["Tabla", "Registros"])
+            st.dataframe(counts_df, hide_index=True, use_container_width=True)
+            
+        except Exception as e:
+            st.error(f"❌ Error al acceder a la base de datos: {str(e)}")
+        finally:
+            if 'conn' in locals():
+                conn.close()
 
 def show_motivational_dashboard():
     """Muestra el dashboard de rankings y reconocimientos"""
@@ -1007,11 +1156,15 @@ if st.sidebar.button("🚪 Cerrar Sesión"):
 
 st.sidebar.markdown("---")
 
+# Importar el módulo de gestión de eventos
+from event_manager import show_event_management, show_event_selection_modal
+
 # Crear menú dinámico basado en el rol del usuario
 menu_options = ["🏠 Registro de Reportes", "📊 Dashboard", "📈 Reportes Avanzados", "📋 Reportes Básicos/Exportar", "🔍 Buscar/Editar", "🏆 Ranking", "👤 Mi Perfil"]
 
 # Solo mostrar opciones de admin si es admin
 if current_user['role'] == 'admin':
+    menu_options.append("📅 Gestión de Eventos")
     menu_options.append("👥 Gestión de Usuarios")
     menu_options.append("🔧 Administrador DB")
 
@@ -1200,7 +1353,66 @@ def registro_reportes():
     """Página de registro de reportes con autocompletado inteligente"""
     import pandas as pd
     
+    # Mostrar diálogo de confirmación antes de mostrar el formulario
+    if 'show_report_instructions' not in st.session_state:
+        st.session_state.show_report_instructions = True
+    
+    if st.session_state.show_report_instructions:
+        # Create a dialog using st.container()
+        dialog = st.container()
+        with dialog:
+            st.markdown("### 📝 Instrucciones de Registro")
+            st.markdown("""
+            ### 📋 Instrucciones para el Registro de Reportes
+            
+            1. **Seleccione la fecha de la sesión** en el menú lateral si es diferente a la fecha actual.
+            2. Ingrese el **indicativo** de la estación reportada.
+            3. Complete los campos restantes con la información del reporte.
+            4. Revise que los datos sean correctos antes de guardar.
+            5. Haga clic en **Guardar Reporte** para registrar la información.
+            
+            **Nota:** Los campos marcados con * son obligatorios.
+            """)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ Entendido, continuar", type="primary", use_container_width=True):
+                    st.session_state.show_report_instructions = False
+                    st.rerun()
+            with col2:
+                if st.button("❌ Cancelar", use_container_width=True):
+                    st.session_state.show_report_instructions = False
+                    st.switch_page("app.py")
+            
+            st.markdown("---")
+            st.caption("Puede volver a ver estas instrucciones en cualquier momento recargando la página.")
+        
+        # No mostrar el resto del formulario hasta que el usuario confirme
+        st.stop()
+    
     st.title("📋 Registro de Reportes")
+    
+    # Obtener tipos de eventos
+    event_types = db.get_event_types()
+    event_type_names = ["Seleccionar..."] + [et['name'] for et in event_types.to_dict('records')]
+    
+    # Mostrar selector de tipo de evento
+    selected_event_type = st.selectbox(
+        "Tipo de Evento *",
+        options=event_type_names,
+        index=0,  # Por defecto muestra "Seleccionar..."
+        help="Seleccione el tipo de evento al que corresponde este reporte"
+    )
+    
+    # Validar que se haya seleccionado un tipo de evento
+    if selected_event_type == "Seleccionar...":
+        st.warning("⚠️ Por favor seleccione un tipo de evento")
+        st.stop()
+    
+    # Obtener el ID del tipo de evento seleccionado como entero
+    event_type_row = event_types[event_types['name'] == selected_event_type].iloc[0]
+    event_type_id = int(event_type_row['id'])  # Aseguramos que sea un entero
+    st.session_state['current_event_type_id'] = event_type_id  # Guardamos en session_state para referencia
     
     # Obtener sistema preferido del usuario y configuración HF
     user_preferred_system = "ASL"  # Default
@@ -1548,11 +1760,21 @@ def registro_reportes():
                                 
                                 created_by = current_user['username'] if current_user else 'guest'
                                 report_id = db.add_report(
-                                    row['Indicativo'], row['Operador'], row['Estado'],
-                                    row['Ciudad'], row['Señal'], row['Zona'],
-                                    row['Sistema'], grid_locator="", hf_frequency="",
-                                    hf_band="", hf_mode="", hf_power="",
-                                    observations=row['Observaciones'], created_by=created_by
+                                    call_sign=row['Indicativo'],
+                                    operator_name=row['Operador'],
+                                    qth=row['Estado'],
+                                    ciudad=row['Ciudad'],
+                                    signal_report=row['Señal'],
+                                    zona=row['Zona'],
+                                    sistema=row['Sistema'],
+                                    grid_locator="",
+                                    hf_frequency="",
+                                    hf_band="",
+                                    hf_mode="",
+                                    hf_power="",
+                                    observations=row['Observaciones'],
+                                    created_by=created_by,
+                                    event_type_id=event_type_id
                                 )
                                 success_count += 1
                                 saved_items.append({
@@ -1704,10 +1926,22 @@ def registro_reportes():
                         created_by = current_user['username'] if current_user else 'guest'
                         # Agregar a la base de datos
                         report_id = db.add_report(
-                            call_sign, operator_name, estado, ciudad, 
-                            signal_report, zona, sistema, 
-                            grid_locator="", hf_frequency="", hf_band="", hf_mode="", hf_power="", 
-                            observations=observations, session_date=session_date, created_by=created_by
+                            call_sign=call_sign, 
+                            operator_name=operator_name, 
+                            qth=estado, 
+                            ciudad=ciudad, 
+                            signal_report=signal_report, 
+                            zona=zona, 
+                            sistema=sistema, 
+                            grid_locator="", 
+                            hf_frequency="", 
+                            hf_band="", 
+                            hf_mode="", 
+                            hf_power="", 
+                            observations=observations, 
+                            session_date=session_date, 
+                            created_by=created_by,
+                            event_type_id=event_type_id
                         )
                         
                         # Limpiar datos precargados después de agregar reporte
@@ -1715,25 +1949,14 @@ def registro_reportes():
                             if key in st.session_state:
                                 del st.session_state[key]
                         
-                        # Guardar resumen en sesión para mostrar modal
-                        st.session_state.save_summary = {
-                            'count': 1,
-                            'errors': 0,
-                            'items': [{
-                                'Indicativo': call_sign,
-                                'Operador': operator_name,
-                                'Estado': estado,
-                                'Ciudad': ciudad,
-                                'Zona': zona,
-                                'Sistema': sistema
-                            }]
-                        }
-                        st.session_state.show_save_summary = True
-                        st.rerun()
+                        # Mostrar mensaje de éxito
+                        st.success("✅ Reporte guardado exitosamente!")
                         
                     except Exception as e:
-                        st.error(f"❌ Error al agregar reporte: {str(e)}")
-            else:
+                        st.error(f"❌ Error al guardar el reporte: {str(e)}")
+                        st.error("Por favor, inténtalo de nuevo o contacta al administrador.")
+                        
+                # Mostrar errores de validación si los hay
                 for error in errors:
                     st.error(f"❌ {error}")
     
@@ -1753,11 +1976,22 @@ def registro_reportes():
                         created_by = current_user['username'] if current_user else 'guest'
                         # Agregar a la base de datos
                         report_id = db.add_report(
-                            pending['call_sign'], pending['operator_name'], pending['estado'], 
-                            pending['ciudad'], pending['signal_report'], pending['zona'], 
-                            pending['sistema'], 
-                            grid_locator="", hf_frequency="", hf_band="", hf_mode="", hf_power="", 
-                            observations=pending['observations'], session_date=session_date, created_by=created_by
+                            call_sign=pending['call_sign'],
+                            operator_name=pending['operator_name'],
+                            qth=pending['estado'],
+                            ciudad=pending['ciudad'],
+                            signal_report=pending['signal_report'],
+                            zona=pending['zona'],
+                            sistema=pending['sistema'],
+                            grid_locator="",
+                            hf_frequency="",
+                            hf_band="",
+                            hf_mode="",
+                            hf_power="",
+                            observations=pending['observations'],
+                            session_date=session_date,
+                            created_by=created_by,
+                            event_type_id=event_type_id
                         )
                         
                         # Limpiar datos precargados después de agregar reporte
@@ -2491,12 +2725,13 @@ def show_advanced_reports():
         </div>
         """, unsafe_allow_html=True)
         
-        # Crear pestañas para diferentes tipos de reportes
-        tab1, tab2, tab3, tab4 = st.tabs([
+        # Crear pestañas para los diferentes reportes
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "📈 Participación", 
             "🌍 Geográfico", 
-            "🔧 Sistema de Radio", 
-            "📊 Tendencias"
+            "🔧 Técnico", 
+            "📊 Tendencias",
+            "🎯 Por Tipo de Evento"
         ])
         
         # Convertir fechas a string en formato YYYY-MM-DD para las consultas
@@ -2518,6 +2753,9 @@ def show_advanced_reports():
         
         with tab4:
             show_trends_report(current_date_str, previous_date_str, bulletin1, bulletin2, fecha1, fecha2)
+        
+        with tab5:
+            show_event_type_report()
             
         conn.close()
             
@@ -3178,6 +3416,151 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
             
     except Exception as e:
         st.error(f"❌ Error en reporte técnico: {str(e)}")
+        if 'conn' in locals():
+            conn.close()
+
+def show_event_type_report():
+    """Muestra un reporte de estadísticas por tipo de evento"""
+    st.subheader("📊 Reporte por Tipo de Evento")
+    
+    try:
+        # Obtener todos los tipos de eventos
+        event_types = db.get_event_types()
+        
+        if event_types.empty:
+            st.warning("No hay tipos de eventos registrados en el sistema.")
+            return
+            
+        # Obtener estadísticas por tipo de evento
+        conn = sqlite3.connect(db.db_path)
+        
+        # Consulta para obtener estadísticas por tipo de evento usando session_date
+        query = """
+        SELECT 
+            et.id as event_type_id,
+            et.name as event_name,
+            COUNT(DISTINCT r.id) as total_reports,
+            COUNT(DISTINCT r.call_sign) as unique_stations,
+            MIN(DATE(r.session_date)) as first_seen,
+            MAX(DATE(r.session_date)) as last_seen
+        FROM event_types et
+        LEFT JOIN reports r ON et.id = r.event_type_id
+        GROUP BY et.id, et.name
+        ORDER BY total_reports DESC, et.name
+        """
+        
+        event_stats = pd.read_sql_query(query, conn)
+        conn.close()
+        
+        # Mostrar métricas principales
+        total_event_types = len(event_stats)
+        active_event_types = len(event_stats[event_stats['total_reports'] > 0])
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("📋 Tipos de Evento", total_event_types)
+        with col2:
+            st.metric("✅ Tipos Activos", f"{active_event_types} ({active_event_types/total_event_types*100:.0f}%)")
+        
+        # Mostrar tabla de estadísticas
+        st.markdown("### Estadísticas por Tipo de Evento")
+        
+        # Formatear fechas
+        if not event_stats.empty:
+            event_stats['first_seen'] = pd.to_datetime(event_stats['first_seen']).dt.strftime('%d/%m/%Y')
+            event_stats['last_seen'] = pd.to_datetime(event_stats['last_seen']).dt.strftime('%d/%m/%Y')
+            
+            # Reordenar columnas
+            event_stats = event_stats[['event_name', 'total_reports', 'unique_stations', 'first_seen', 'last_seen']]
+            
+            # Mostrar tabla con estilos
+            st.dataframe(
+                event_stats,
+                column_config={
+                    "event_name": "Tipo de Evento",
+                    "total_reports": st.column_config.NumberColumn(
+                        "Total Reportes",
+                        help="Número total de reportes para este tipo de evento",
+                        format="%d"
+                    ),
+                    "unique_stations": st.column_config.NumberColumn(
+                        "Estaciones Únicas",
+                        help="Número de estaciones únicas que reportaron este evento",
+                        format="%d"
+                    ),
+                    "first_seen": "Primer Reporte",
+                    "last_seen": "Último Reporte"
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+            
+            # Mostrar gráfico de distribución
+            if not event_stats[event_stats['total_reports'] > 0].empty:
+                st.markdown("### Distribución de Reportes por Tipo de Evento")
+                
+                # Filtrar solo eventos con reportes
+                plot_data = event_stats[event_stats['total_reports'] > 0].copy()
+                
+                # Ordenar por total de reportes
+                plot_data = plot_data.sort_values('total_reports', ascending=False)
+                
+                # Crear gráfico de barras
+                fig = px.bar(
+                    plot_data,
+                    x='event_name',
+                    y='total_reports',
+                    title='Total de Reportes por Tipo de Evento',
+                    labels={'event_name': 'Tipo de Evento', 'total_reports': 'Número de Reportes'},
+                    color='total_reports',
+                    color_continuous_scale='Blues'
+                )
+                
+                # Mejorar el diseño del gráfico
+                fig.update_layout(
+                    xaxis_tickangle=-45,
+                    showlegend=False,
+                    height=500,
+                    margin=dict(l=20, r=20, t=50, b=150)
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Agregar gráfico de pastel para mostrar la distribución
+                st.markdown("### Distribución Porcentual de Reportes")
+                
+                # Crear gráfico de pastel
+                pie_fig = px.pie(
+                    plot_data,
+                    names='event_name',
+                    values='total_reports',
+                    title='Distribución de Reportes por Tipo de Evento',
+                    hole=0.3,
+                    color_discrete_sequence=px.colors.sequential.Blues_r
+                )
+                
+                # Mejorar el diseño del gráfico de pastel
+                pie_fig.update_traces(
+                    textposition='inside',
+                    textinfo='percent+label',
+                    hovertemplate='<b>%{label}</b><br>' +
+                                'Reportes: %{value}<br>' +
+                                '(%{percent})<extra></extra>'
+                )
+                
+                pie_fig.update_layout(
+                    showlegend=False,
+                    height=600,
+                    margin=dict(t=50, b=20, l=20, r=20)
+                )
+                
+                st.plotly_chart(pie_fig, use_container_width=True)
+                
+        else:
+            st.info("No hay datos de reportes por tipo de evento para mostrar.")
+            
+    except Exception as e:
+        st.error(f"❌ Error al generar el reporte por tipo de evento: {str(e)}")
         if 'conn' in locals():
             conn.close()
 
@@ -4445,6 +4828,13 @@ elif page == "👤 Mi Perfil":
 # Página: Gestión de Usuarios
 elif page == "👥 Gestión de Usuarios":
     show_user_management()
+
+# Página: Gestión de Eventos (solo para admins)
+elif page == "📅 Gestión de Eventos":
+    if current_user['role'] == 'admin':
+        show_event_management()
+    else:
+        st.error("❌ No tienes permisos para acceder a esta sección")
 
 # Página: Administrador DB (solo para admins)
 elif page == "🔧 Administrador DB":

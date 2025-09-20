@@ -10,11 +10,25 @@ class FMREDatabase:
         self.init_database()
     
     def init_database(self):
-        """Inicializa la base de datos con las tablas necesarias"""
+        """Inicializa la base de datos con todas las tablas necesarias"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        # Tabla de reportes - esquema limpio y consistente con campos HF
+        # Tabla de tipos de evento
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS event_types (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                default_weekday INTEGER,  -- 0-6 (Domingo=0, Lunes=1, etc.), NULL para eventos diarios
+                default_time TEXT,        -- 'HH:MM' en formato 24h
+                is_active BOOLEAN DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Tabla de reportes - esquema completo
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS reports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,7 +49,8 @@ class FMREDatabase:
                 timestamp DATETIME DEFAULT (datetime('now', 'localtime')),
                 region TEXT,
                 signal_quality INTEGER,
-                created_by TEXT
+                created_by TEXT,
+                event_type_id INTEGER REFERENCES event_types(id)
             )
         ''')
         
@@ -51,11 +66,12 @@ class FMREDatabase:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_date DATE UNIQUE,
                 total_participants INTEGER DEFAULT 0,
+                notes TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
-        # Tabla de usuarios con sistema preferido
+        # Tabla de usuarios
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,7 +89,7 @@ class FMREDatabase:
             )
         ''')
         
-        # Tabla de historial de estaciones - esquema consistente con campos HF
+        # Tabla de historial de estaciones
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS station_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,11 +106,43 @@ class FMREDatabase:
                 hf_power TEXT,
                 last_used DATETIME DEFAULT CURRENT_TIMESTAMP,
                 use_count INTEGER DEFAULT 1,
+                last_report_id INTEGER,
                 UNIQUE(call_sign, operator_name)
             )
         ''')
         
-        # Ejecutar migraciones después de crear las tablas
+        # Insertar tipos de evento por defecto si no existen
+        cursor.execute('''
+            INSERT OR IGNORE INTO event_types (name, description, default_weekday, default_time) VALUES
+                ('Boletín Dominical', 'Transmisión en vivo del boletín dominical', 0, '09:00'),
+                ('Retransmisión CREBC', 'Retransmisión del boletín del CREBC', 3, '17:00'),
+                ('RNE 40m', 'Red Nacional de Emergencias en 40m', NULL, '20:00'),
+                ('RNE 80m', 'Red Nacional de Emergencias en 80m', NULL, '21:00'),
+                ('Otro', 'Otro tipo de evento', NULL, NULL)
+        ''')
+        
+        # Crear índices
+        cursor.executescript('''
+            CREATE INDEX IF NOT EXISTS idx_reports_call_sign ON reports(call_sign);
+            CREATE INDEX IF NOT EXISTS idx_reports_session_date ON reports(session_date);
+            CREATE INDEX IF NOT EXISTS idx_reports_region ON reports(region);
+            CREATE INDEX IF NOT EXISTS idx_reports_event_type ON reports(event_type_id);
+            CREATE INDEX IF NOT EXISTS idx_station_history_call_sign ON station_history(call_sign);
+            CREATE INDEX IF NOT EXISTS idx_station_history_operator ON station_history(operator_name);
+            CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+        ''')
+        
+        # Crear trigger para actualizar timestamps
+        cursor.execute('''
+            CREATE TRIGGER IF NOT EXISTS update_event_types_timestamp
+            AFTER UPDATE ON event_types
+            FOR EACH ROW
+            BEGIN
+                UPDATE event_types SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+            END;
+        ''')
+        
+        # Ejecutar migraciones para bases de datos existentes
         self._migrate_database(cursor)
         
         conn.commit()
@@ -153,8 +201,30 @@ class FMREDatabase:
         except Exception as e:
             print(f"Error durante la migración: {e}")
     
-    def add_report(self, call_sign, operator_name, qth, ciudad, signal_report, zona, sistema, grid_locator="", hf_frequency="", hf_band="", hf_mode="", hf_power="", observations="", session_date=None, created_by=None):
-        """Agrega un nuevo reporte a la base de datos"""
+    def add_report(self, call_sign, operator_name, qth, ciudad, signal_report, zona, sistema, grid_locator="", hf_frequency="", hf_band="", hf_mode="", hf_power="", observations="", session_date=None, created_by=None, event_type_id=None):
+        """Agrega un nuevo reporte a la base de datos
+        
+        Args:
+            call_sign (str): Indicativo de la estación
+            operator_name (str): Nombre del operador
+            qth (str): Ubicación (estado)
+            ciudad (str): Ciudad
+            signal_report (str): Reporte de señal (ej. 59)
+            zona (str): Zona de operación
+            sistema (str): Sistema de radio (ej. ASL, HF, etc.)
+            grid_locator (str, optional): Localizador de cuadrícula
+            hf_frequency (str, optional): Frecuencia para modo HF
+            hf_band (str, optional): Banda para modo HF
+            hf_mode (str, optional): Modo para HF (ej. USB, LSB, etc.)
+            hf_power (str, optional): Potencia para modo HF
+            observations (str, optional): Observaciones adicionales
+            session_date (str, optional): Fecha de la sesión (YYYY-MM-DD)
+            created_by (str, optional): Usuario que creó el reporte
+            event_type_id (int, optional): ID del tipo de evento
+            
+        Returns:
+            int: ID del reporte insertado
+        """
         if session_date is None:
             # Usar zona horaria de México para la fecha de sesión
             mexico_tz = pytz.timezone('America/Mexico_City')
@@ -171,17 +241,43 @@ class FMREDatabase:
         # Convertir señal a calidad numérica (1=mala, 2=regular, 3=buena)
         signal_quality = self._convert_signal_to_quality(signal_report)
         
+        # Asegurar que event_type_id sea un entero o None
+        try:
+            event_type_id = int(event_type_id) if event_type_id is not None and str(event_type_id).strip() else None
+        except (ValueError, TypeError):
+            event_type_id = None
+        
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
         try:
             cursor.execute('''
-                INSERT INTO reports (call_sign, operator_name, qth, ciudad, signal_report, zona, sistema,
-                               grid_locator, hf_frequency, hf_band, hf_mode, hf_power, observations, session_date, region, signal_quality, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (call_sign.upper(), operator_name.title(), qth.upper(), ciudad.title(), signal_report, zona, sistema,
-                  grid_locator.upper() if grid_locator else None, hf_frequency or None, hf_band or None, 
-                  hf_mode or None, hf_power or None, observations, session_date, region, signal_quality, created_by))
+                INSERT INTO reports (
+                    call_sign, operator_name, qth, ciudad, signal_report, 
+                    zona, sistema, grid_locator, hf_frequency, hf_band, 
+                    hf_mode, hf_power, observations, session_date, region, 
+                    signal_quality, created_by, event_type_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                call_sign.upper(), 
+                operator_name.title(), 
+                qth.upper(), 
+                ciudad.title(), 
+                signal_report, 
+                zona, 
+                sistema,
+                grid_locator.upper() if grid_locator else None, 
+                hf_frequency or None, 
+                hf_band or None, 
+                hf_mode or None, 
+                hf_power or None, 
+                observations, 
+                session_date, 
+                region, 
+                signal_quality, 
+                created_by,
+                event_type_id  # Ya convertido a entero o None
+            ))
         except sqlite3.OperationalError as e:
             if "no column named" in str(e):
                 # Fallback para compatibilidad con esquemas antiguos
@@ -318,6 +414,34 @@ class FMREDatabase:
         else:
             return 1
     
+    def get_distinct_zones(self):
+        """Obtiene una lista de zonas únicas de la tabla de reportes"""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT DISTINCT zona FROM reports WHERE zona IS NOT NULL AND zona != '' ORDER BY zona")
+            zones = [row[0] for row in cursor.fetchall()]
+            return zones
+        except Exception as e:
+            print(f"Error al obtener zonas: {e}")
+            return []
+        finally:
+            conn.close()
+            
+    def get_distinct_systems(self):
+        """Obtiene una lista de sistemas únicos de la tabla de reportes"""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT DISTINCT sistema FROM reports WHERE sistema IS NOT NULL AND sistema != '' ORDER BY sistema")
+            systems = [row[0] for row in cursor.fetchall()]
+            return systems
+        except Exception as e:
+            print(f"Error al obtener sistemas: {e}")
+            return []
+        finally:
+            conn.close()
+            
     def get_all_reports(self, session_date=None):
         """Obtiene todos los reportes, opcionalmente filtrados por fecha"""
         conn = sqlite3.connect(self.db_path)
@@ -465,122 +589,212 @@ class FMREDatabase:
             query += " WHERE " + " AND ".join(where_conditions)
         query += " ORDER BY timestamp DESC"
         
-        df = pd.read_sql_query(query, conn, params=params)
-        
+        # Ejecutar la consulta y devolver resultados
+        if params:
+            df = pd.read_sql_query(query, conn, params=params)
+        else:
+            df = pd.read_sql_query(query, conn)
+            
         conn.close()
         return df
     
-    def get_distinct_zones(self):
-        """Obtiene las zonas únicas de la base de datos"""
+    def get_event_types(self, active_only=True):
+        """
+        Obtiene los tipos de eventos de la base de datos
+        
+        Args:
+            active_only (bool): Si es True, solo devuelve los tipos de eventos activos
+            
+        Returns:
+            pd.DataFrame: DataFrame con los tipos de eventos
+        """
+        conn = sqlite3.connect(self.db_path)
+        try:
+            query = "SELECT * FROM event_types"
+            params = ()
+            
+            if active_only:
+                query += " WHERE is_active = 1"
+                
+            query += " ORDER BY name"
+            
+            df = pd.read_sql_query(query, conn, params=params)
+            return df
+            
+        except Exception as e:
+            print(f"Error al obtener tipos de eventos: {str(e)}")
+            return pd.DataFrame()
+        finally:
+            conn.close()
+            
+    def update_event_type(self, event_type_id, name=None, description=None, default_weekday=None, default_time=None, is_active=None):
+        """
+        Actualiza un tipo de evento existente
+        
+        Args:
+            event_type_id (int): ID del tipo de evento a actualizar
+            name (str, optional): Nuevo nombre del evento
+            description (str, optional): Nueva descripción
+            default_weekday (int, optional): Nuevo día de la semana (0-6, None para diario)
+            default_time (str, optional): Nueva hora por defecto (HH:MM)
+            is_active (bool, optional): Nuevo estado de activación
+            
+        Returns:
+            bool: True si la actualización fue exitosa, False en caso contrario
+        """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT zona FROM reports WHERE zona IS NOT NULL ORDER BY zona")
-        zones = [row[0] for row in cursor.fetchall()]
-        conn.close()
-        return zones
-    
-    def get_distinct_systems(self):
-        """Obtiene los sistemas únicos de la base de datos"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT sistema FROM reports WHERE sistema IS NOT NULL ORDER BY sistema")
-        systems = [row[0] for row in cursor.fetchall()]
-        conn.close()
-        return systems
+        
+        try:
+            update_fields = []
+            params = []
+            
+            if name is not None:
+                update_fields.append("name = ?")
+                params.append(name)
+                
+            if description is not None:
+                update_fields.append("description = ?")
+                params.append(description)
+                
+            if default_weekday is not None:
+                update_fields.append("default_weekday = ?")
+                params.append(default_weekday)
+                
+            if default_time is not None:
+                update_fields.append("default_time = ?")
+                params.append(str(default_time))
+                
+            if is_active is not None:
+                update_fields.append("is_active = ?")
+                params.append(1 if is_active else 0)
+            
+            # Agregar el ID al final para el WHERE
+            params.append(event_type_id)
+            
+            if not update_fields:
+                return False  # No hay nada que actualizar
+                
+            query = f"UPDATE event_types SET {', '.join(update_fields)} WHERE id = ?"
+            cursor.execute(query, params)
+            conn.commit()
+            return cursor.rowcount > 0
+            
+        except sqlite3.Error as e:
+            print(f"Error al actualizar el tipo de evento: {e}")
+            return False
+            
+        finally:
+            conn.close()
     
     def get_motivational_stats(self):
         """Obtiene estadísticas motivacionales para competencia entre radioaficionados"""
-        conn = sqlite3.connect(self.db_path)
+        from datetime import datetime
+        import traceback
+        
+        conn = None
         stats = {}
         
-        # Estación más reportada del año
-        current_year = datetime.now().year
-        query = """
-            SELECT call_sign, operator_name, COUNT(*) as total_reports
-            FROM reports 
-            WHERE strftime('%Y', session_date) = ?
-            GROUP BY call_sign, operator_name
-            ORDER BY total_reports DESC
-            LIMIT 10
-        """
-        stats['top_stations_year'] = pd.read_sql_query(query, conn, params=(str(current_year),))
-        
-        # Estación más reportada del mes
-        current_month = datetime.now().strftime('%Y-%m')
-        query = """
-            SELECT call_sign, operator_name, COUNT(*) as total_reports
-            FROM reports 
-            WHERE strftime('%Y-%m', session_date) = ?
-            GROUP BY call_sign, operator_name
-            ORDER BY total_reports DESC
-            LIMIT 10
-        """
-        stats['top_stations_month'] = pd.read_sql_query(query, conn, params=(current_month,))
-        
-        # Zona más activa del año
-        query = """
-            SELECT zona, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
-            FROM reports 
-            WHERE strftime('%Y', session_date) = ?
-            GROUP BY zona
-            ORDER BY total_reports DESC
-        """
-        stats['top_zones_year'] = pd.read_sql_query(query, conn, params=(str(current_year),))
-        
-        # Zona más activa del mes
-        query = """
-            SELECT zona, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
-            FROM reports 
-            WHERE strftime('%Y-%m', session_date) = ?
-            GROUP BY zona
-            ORDER BY total_reports DESC
-        """
-        stats['top_zones_month'] = pd.read_sql_query(query, conn, params=(current_month,))
-        
-        # Sistema más usado del año
-        query = """
-            SELECT sistema, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
-            FROM reports 
-            WHERE strftime('%Y', session_date) = ?
-            GROUP BY sistema
-            ORDER BY total_reports DESC
-        """
-        stats['top_systems_year'] = pd.read_sql_query(query, conn, params=(str(current_year),))
-        
-        # Sistema más usado del mes
-        query = """
-            SELECT sistema, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
-            FROM reports 
-            WHERE strftime('%Y-%m', session_date) = ?
-            GROUP BY sistema
-            ORDER BY total_reports DESC
-        """
-        stats['top_systems_month'] = pd.read_sql_query(query, conn, params=(current_month,))
-        
-        # Estadísticas generales del año
-        query = """
-            SELECT 
-                COUNT(*) as total_reports,
-                COUNT(DISTINCT call_sign) as unique_stations,
-                COUNT(DISTINCT session_date) as active_days
-            FROM reports 
-            WHERE strftime('%Y', session_date) = ?
-        """
-        stats['general_year'] = pd.read_sql_query(query, conn, params=(str(current_year),))
-        
-        # Estadísticas generales del mes
-        query = """
-            SELECT 
-                COUNT(*) as total_reports,
-                COUNT(DISTINCT call_sign) as unique_stations,
-                COUNT(DISTINCT session_date) as active_days
-            FROM reports 
-            WHERE strftime('%Y-%m', session_date) = ?
-        """
-        stats['general_month'] = pd.read_sql_query(query, conn, params=(current_month,))
-        
-        conn.close()
-        return stats
+        try:
+            conn = sqlite3.connect(self.db_path)
+            # Estación más reportada del año
+            current_year = datetime.now().year
+            current_month = datetime.now().strftime('%Y-%m')
+            
+            # Estación más reportada del año
+            query = """
+                SELECT call_sign, operator_name, COUNT(*) as total_reports
+                FROM reports 
+                WHERE strftime('%Y', session_date) = ?
+                GROUP BY call_sign, operator_name
+                ORDER BY total_reports DESC
+                LIMIT 10
+            """
+            stats['top_stations_year'] = pd.read_sql_query(query, conn, params=(str(current_year),))
+            
+            # Estación más reportada del mes
+            query = """
+                SELECT call_sign, operator_name, COUNT(*) as total_reports
+                FROM reports 
+                WHERE strftime('%Y-%m', session_date) = ?
+                GROUP BY call_sign, operator_name
+                ORDER BY total_reports DESC
+                LIMIT 10
+            """
+            stats['top_stations_month'] = pd.read_sql_query(query, conn, params=(current_month,))
+            
+            # Zona más activa del año
+            query = """
+                SELECT zona, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
+                FROM reports 
+                WHERE strftime('%Y', session_date) = ?
+                GROUP BY zona
+                ORDER BY total_reports DESC
+            """
+            stats['top_zones_year'] = pd.read_sql_query(query, conn, params=(str(current_year),))
+            
+            # Zona más activa del mes
+            query = """
+                SELECT zona, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
+                FROM reports 
+                WHERE strftime('%Y-%m', session_date) = ?
+                GROUP BY zona
+                ORDER BY total_reports DESC
+            """
+            stats['top_zones_month'] = pd.read_sql_query(query, conn, params=(current_month,))
+            
+            # Sistema más usado del año
+            query = """
+                SELECT sistema, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
+                FROM reports 
+                WHERE strftime('%Y', session_date) = ?
+                GROUP BY sistema
+                ORDER BY total_reports DESC
+            """
+            stats['top_systems_year'] = pd.read_sql_query(query, conn, params=(str(current_year),))
+            
+            # Sistema más usado del mes
+            query = """
+                SELECT sistema, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
+                FROM reports 
+                WHERE strftime('%Y-%m', session_date) = ?
+                GROUP BY sistema
+                ORDER BY total_reports DESC
+            """
+            stats['top_systems_month'] = pd.read_sql_query(query, conn, params=(current_month,))
+            
+            # Estadísticas generales del año
+            query = """
+                SELECT 
+                    COUNT(*) as total_reports,
+                    COUNT(DISTINCT call_sign) as unique_stations,
+                    COUNT(DISTINCT session_date) as active_days
+                FROM reports 
+                WHERE strftime('%Y', session_date) = ?
+            """
+            stats['general_year'] = pd.read_sql_query(query, conn, params=(str(current_year),))
+            
+            # Estadísticas generales del mes
+            query = """
+                SELECT 
+                    COUNT(*) as total_reports,
+                    COUNT(DISTINCT call_sign) as unique_stations,
+                    COUNT(DISTINCT session_date) as active_days
+                FROM reports 
+                WHERE strftime('%Y-%m', session_date) = ?
+            """
+            stats['general_month'] = pd.read_sql_query(query, conn, params=(current_month,))
+            
+            return stats
+            
+        except Exception as e:
+            print(f"Error al obtener estadísticas motivacionales: {str(e)}")
+            print(traceback.format_exc())
+            return {}
+            
+        finally:
+            if conn:
+                conn.close()
     
     def get_sessions(self):
         """Obtiene todas las sesiones registradas"""

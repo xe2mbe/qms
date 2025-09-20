@@ -1385,6 +1385,7 @@ def registro_reportes():
             ### 📋 Instrucciones para el Registro de Reportes
             
             1. **Seleccione la fecha de la sesión** en el menú lateral si es diferente a la fecha actual.
+            2. **Seleccione el tipo de evento a registrar** en el menu de tipos de eventos que se mostrara a continuación.
             2. Ingrese el **indicativo** de la estación reportada.
             3. Complete los campos restantes con la información del reporte.
             4. Revise que los datos sean correctos antes de guardar.

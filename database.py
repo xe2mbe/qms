@@ -202,6 +202,18 @@ class FMREDatabase:
             print(f"Error durante la migración: {e}")
     
     def add_report(self, call_sign, operator_name, qth, ciudad, signal_report, zona, sistema, grid_locator="", hf_frequency="", hf_band="", hf_mode="", hf_power="", observations="", session_date=None, created_by=None, event_type_id=None):
+        print("\n[DEBUG] Iniciando add_report con los siguientes parámetros:")
+        print(f"  call_sign: {call_sign}")
+        print(f"  operator_name: {operator_name}")
+        print(f"  qth: {qth}")
+        print(f"  ciudad: {ciudad}")
+        print(f"  signal_report: {signal_report}")
+        print(f"  zona: {zona}")
+        print(f"  sistema: {sistema}")
+        print(f"  session_date (parámetro): {session_date} (tipo: {type(session_date)})")
+        print(f"  created_by: {created_by}")
+        print(f"  event_type_id: {event_type_id}\n")
+        
         """Agrega un nuevo reporte a la base de datos
         
         Args:
@@ -225,10 +237,43 @@ class FMREDatabase:
         Returns:
             int: ID del reporte insertado
         """
-        if session_date is None:
-            # Usar zona horaria de México para la fecha de sesión
+        # Procesar la fecha de sesión
+        print(f"[DEBUG] Procesando fecha de sesión. Valor recibido: {session_date} (tipo: {type(session_date)})")
+        
+        if session_date is None or str(session_date).strip() == '':
+            # Si no hay fecha, usar la actual con zona horaria de México
             mexico_tz = pytz.timezone('America/Mexico_City')
             session_date = datetime.now(mexico_tz).date()
+            session_date_str = session_date.strftime('%Y-%m-%d')
+            print(f"[DEBUG] Usando fecha actual (México): {session_date_str}")
+        else:
+            try:
+                # Si es un objeto datetime o date, formatear
+                if hasattr(session_date, 'strftime'):
+                    session_date_str = session_date.strftime('%Y-%m-%d')
+                    print(f"[DEBUG] Fecha formateada desde objeto date/datetime: {session_date_str}")
+                # Si es un string, intentar convertirlo a datetime y luego formatear
+                else:
+                    print(f"[DEBUG] Intentando parsear fecha desde string: {session_date}")
+                    # Intentar con diferentes formatos de fecha
+                    for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%Y/%m/%d', '%m/%d/%Y'):
+                        try:
+                            dt = datetime.strptime(str(session_date).strip(), fmt)
+                            session_date_str = dt.strftime('%Y-%m-%d')
+                            print(f"[DEBUG] Fecha parseada con formato '{fmt}': {session_date_str}")
+                            break
+                        except ValueError:
+                            print(f"[DEBUG] Error al parsear con formato '{fmt}'")  # Debug: Mostrar error de parseo
+                            continue
+                    else:
+                        # Si ningún formato funcionó, usar la fecha actual
+                        mexico_tz = pytz.timezone('America/Mexico_City')
+                        session_date_str = datetime.now(mexico_tz).strftime('%Y-%m-%d')
+                        print(f"[DEBUG] No se pudo parsear la fecha, usando fecha actual: {session_date_str}")
+            except Exception as e:
+                mexico_tz = pytz.timezone('America/Mexico_City')
+                session_date_str = datetime.now(mexico_tz).strftime('%Y-%m-%d')
+                print(f"[DEBUG] Excepción al procesar fecha: {str(e)}. Usando fecha actual: {session_date_str}")
         
         # Extraer región del estado
         if qth == "Extranjera":
@@ -246,6 +291,31 @@ class FMREDatabase:
             event_type_id = int(event_type_id) if event_type_id is not None and str(event_type_id).strip() else None
         except (ValueError, TypeError):
             event_type_id = None
+        
+        # Debug: Mostrar todos los campos que se van a guardar
+        debug_info = {
+            'call_sign': call_sign,
+            'operator_name': operator_name,
+            'qth': qth,
+            'ciudad': ciudad,
+            'signal_report': signal_report,
+            'zona': zona,
+            'sistema': sistema,
+            'grid_locator': grid_locator,
+            'hf_frequency': hf_frequency,
+            'hf_band': hf_band,
+            'hf_mode': hf_mode,
+            'hf_power': hf_power,
+            'observations': observations,
+            'session_date_param': str(session_date) + f' (tipo: {type(session_date).__name__})',
+            'session_date_processed': session_date_str,
+            'region': region,
+            'signal_quality': signal_quality,
+            'created_by': created_by,
+            'event_type_id': event_type_id,
+            'debug_timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        print("\n[DEBUG] Datos a guardar:", debug_info, "\n")
         
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -272,7 +342,7 @@ class FMREDatabase:
                 hf_mode or None, 
                 hf_power or None, 
                 observations, 
-                session_date, 
+                session_date_str, 
                 region, 
                 signal_quality, 
                 created_by,

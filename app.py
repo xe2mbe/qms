@@ -1176,11 +1176,23 @@ page = st.sidebar.selectbox(
 # Selector de fecha de sesión
 st.sidebar.markdown("---")
 st.sidebar.subheader("Sesión Actual")
+
+# Inicializar session_date en st.session_state si no existe
+if 'session_date' not in st.session_state:
+    st.session_state.session_date = datetime.now().date()
+
+# Mostrar el selector de fecha usando el valor de session_state
 session_date = st.sidebar.date_input(
-    "Fecha de sesión:",
-    value=date.today(),
-    help="Selecciona la fecha de la sesión de boletín"
+    "📅 Fecha de la Sesión",
+    value=st.session_state.session_date,
+    format="DD/MM/YYYY",
+    key="session_date_selector"
 )
+
+# Actualizar session_state si la fecha cambia
+if session_date != st.session_state.session_date:
+    st.session_state.session_date = session_date
+    st.rerun()  # Forzar actualización de la página para mostrar los reportes actualizados
 
 # Validar si la fecha de sesión es diferente a la actual
 date_difference = session_date != date.today()
@@ -1352,6 +1364,13 @@ def show_profile_management():
 def registro_reportes():
     """Página de registro de reportes con autocompletado inteligente"""
     import pandas as pd
+    
+    # Get and format session date from the sidebar
+    session_date = st.session_state.get('session_date', datetime.now().date())
+    if hasattr(session_date, 'date'):
+        session_date = session_date.date()
+    # Ensure it's a string in YYYY-MM-DD format for the database
+    session_date_str = session_date.strftime('%Y-%m-%d')
     
     # Mostrar diálogo de confirmación antes de mostrar el formulario
     if 'show_report_instructions' not in st.session_state:
@@ -1759,6 +1778,7 @@ def registro_reportes():
                                     continue
                                 
                                 created_by = current_user['username'] if current_user else 'guest'
+                                session_date_str = st.session_state.session_date.strftime('%Y-%m-%d')
                                 report_id = db.add_report(
                                     call_sign=row['Indicativo'],
                                     operator_name=row['Operador'],
@@ -1773,6 +1793,7 @@ def registro_reportes():
                                     hf_mode="",
                                     hf_power="",
                                     observations=row['Observaciones'],
+                                    session_date=session_date_str,
                                     created_by=created_by,
                                     event_type_id=event_type_id
                                 )
@@ -1919,30 +1940,36 @@ def registro_reportes():
                         'observations': observations,
                         'warning_msg': warning_msg
                     }
-                    st.rerun()
                 else:
                     # No hay inconsistencias, guardar directamente
                     try:
                         created_by = current_user['username'] if current_user else 'guest'
-                        # Agregar a la base de datos
-                        report_id = db.add_report(
-                            call_sign=call_sign, 
-                            operator_name=operator_name, 
-                            qth=estado, 
-                            ciudad=ciudad, 
-                            signal_report=signal_report, 
-                            zona=zona, 
-                            sistema=sistema, 
-                            grid_locator="", 
-                            hf_frequency="", 
-                            hf_band="", 
-                            hf_mode="", 
-                            hf_power="", 
-                            observations=observations, 
-                            session_date=session_date, 
-                            created_by=created_by,
-                            event_type_id=event_type_id
-                        )
+                        # Usar la fecha de sesión del selector
+                        session_date_str = st.session_state.session_date.strftime('%Y-%m-%d')
+                        
+                        report_data = {
+                            'call_sign': call_sign, 
+                            'operator_name': operator_name, 
+                            'qth': estado, 
+                            'ciudad': ciudad, 
+                            'signal_report': signal_report, 
+                            'zona': zona, 
+                            'sistema': sistema, 
+                            'grid_locator': "", 
+                            'hf_frequency': "", 
+                            'hf_band': "", 
+                            'hf_mode': "", 
+                            'hf_power': "", 
+                            'observations': observations, 
+                            'session_date': session_date_str,  # Usar la fecha de sesión del selector
+                            'created_by': created_by,
+                            'event_type_id': event_type_id
+                        }
+                        
+                        # Debug: Mostrar datos que se enviarán a la base de datos
+                        print("\n[DEBUG] Datos a guardar:", {k: f"{v} (tipo: {type(v).__name__})" for k, v in report_data.items()})
+                        
+                        report_id = db.add_report(**report_data)
                         
                         # Limpiar datos precargados después de agregar reporte
                         for key in ['prefill_call', 'prefill_name', 'prefill_estado', 'prefill_ciudad', 'prefill_zona', 'prefill_sistema']:
@@ -1974,6 +2001,7 @@ def registro_reportes():
                 if st.button("✅ Continuar y Guardar", key="confirm_save_modal", type="primary", width='stretch'):
                     try:
                         created_by = current_user['username'] if current_user else 'guest'
+                        session_date_str = session_date.strftime('%Y-%m-%d') if hasattr(session_date, 'strftime') else str(session_date)
                         # Agregar a la base de datos
                         report_id = db.add_report(
                             call_sign=pending['call_sign'],
@@ -1989,7 +2017,7 @@ def registro_reportes():
                             hf_mode="",
                             hf_power="",
                             observations=pending['observations'],
-                            session_date=session_date,
+                            session_date=session_date_str,
                             created_by=created_by,
                             event_type_id=event_type_id
                         )
@@ -2051,7 +2079,8 @@ def registro_reportes():
     # Mostrar reportes recientes de la sesión actual
     st.subheader(f"Reportes de la Sesión - {session_date.strftime('%d/%m/%Y')}")
     
-    recent_reports = db.get_all_reports(session_date)
+    # Usar la fecha ya formateada para la consulta
+    recent_reports = db.get_all_reports(session_date_str)
     
     if not recent_reports.empty:
         # Métricas del historial
@@ -2156,16 +2185,19 @@ def registro_reportes():
         display_data['Capturado por'] = display_data['created_by'].fillna('N/A')
         
         # Configurar columnas principales a mostrar
-        columns_to_show = ['Seleccionar', 'call_sign', 'operator_name', 'qth', 'zona', 'sistema', 'signal_report', 'Hora', 'Capturado por']
+        columns_to_show = ['Seleccionar', 'call_sign', 'operator_name', 'qth', 'ciudad', 'zona', 'sistema', 'signal_report', 'Tipo de Evento', 'Fecha de Sesión', 'Hora', 'Capturado por']
         column_config = {
             "Seleccionar": st.column_config.CheckboxColumn("✓", help="Seleccionar para acciones masivas", default=False, width="small"),
-            'call_sign': st.column_config.TextColumn("Indicativo", width="medium"),
+            'call_sign': st.column_config.TextColumn("Indicativo", width="small"),
             'operator_name': st.column_config.TextColumn("Operador", width="medium"),
-            'qth': st.column_config.TextColumn("QTH", width="medium"),
-            'zona': st.column_config.TextColumn("Zona", width="small"),
-            'sistema': st.column_config.TextColumn("Sistema", width="medium"),
-            'signal_report': st.column_config.TextColumn("Señal", width="small"),
-            'Hora': st.column_config.TextColumn("Hora", width="small"),
+            'qth': st.column_config.TextColumn("Estado", width="small"),
+            'ciudad': st.column_config.TextColumn("Ciudad", width="medium"),
+            'zona': st.column_config.TextColumn("Zona", width="xsmall"),
+            'sistema': st.column_config.TextColumn("Sistema", width="small"),
+            'signal_report': st.column_config.TextColumn("Señal", width="xsmall"),
+            'Tipo de Evento': st.column_config.TextColumn("Tipo de Evento", width="medium"),
+            'Fecha de Sesión': st.column_config.TextColumn("Fecha", width="small"),
+            'Hora': st.column_config.TextColumn("Hora", width="xsmall"),
             'Capturado por': st.column_config.TextColumn("Usuario", width="medium")
         }
         
@@ -2177,6 +2209,16 @@ def registro_reportes():
         display_data['Hora'] = pd.to_datetime(display_data['timestamp']).dt.strftime('%H:%M:%S')
         display_data['Seleccionar'] = display_data['id'].isin(st.session_state.selected_reports)
         display_data['Capturado por'] = display_data['created_by'].fillna('N/A')
+        display_data['Fecha de Sesión'] = pd.to_datetime(display_data['session_date']).dt.strftime('%d/%m/%Y')
+        
+        # Obtener nombres de tipos de evento si no están incluidos
+        if 'event_type' not in display_data.columns and 'event_type_id' in display_data.columns:
+            try:
+                event_types = db.get_event_types()
+                event_type_map = dict(zip(event_types['id'], event_types['name']))
+                display_data['Tipo de Evento'] = display_data['event_type_id'].map(event_type_map).fillna('No Especificado')
+            except:
+                display_data['Tipo de Evento'] = 'No Disponible'
         
         # Configuración de columnas para tabla de solo lectura
         column_config = {
@@ -2184,20 +2226,23 @@ def registro_reportes():
                 "Sel",
                 help="Seleccionar para editar o acciones masivas",
                 default=False,
-                width="small"
+                width="xsmall"
             ),
-            'call_sign': st.column_config.TextColumn("Indicativo", width="medium"),
+            'call_sign': st.column_config.TextColumn("Indicativo", width="small"),
             'operator_name': st.column_config.TextColumn("Operador", width="medium"),
-            'qth': st.column_config.TextColumn("QTH", width="medium"),
-            'zona': st.column_config.TextColumn("Zona", width="small"),
-            'sistema': st.column_config.TextColumn("Sistema", width="medium"),
-            'signal_report': st.column_config.TextColumn("Señal", width="small"),
-            'Hora': st.column_config.TextColumn("Hora", width="small"),
+            'qth': st.column_config.TextColumn("Estado", width="xsmall"),
+            'ciudad': st.column_config.TextColumn("Ciudad", width="medium"),
+            'zona': st.column_config.TextColumn("Zona", width="xsmall"),
+            'sistema': st.column_config.TextColumn("Sistema", width="small"),
+            'signal_report': st.column_config.TextColumn("Señal", width="xsmall"),
+            'Tipo de Evento': st.column_config.TextColumn("Tipo de Evento", width="medium"),
+            'Fecha de Sesión': st.column_config.TextColumn("Fecha", width="small"),
+            'Hora': st.column_config.TextColumn("Hora", width="xsmall"),
             'Capturado por': st.column_config.TextColumn("Usuario", width="medium")
         }
         
         # Mostrar tabla de solo lectura (solo para selección)
-        columns_to_show = ['Seleccionar', 'call_sign', 'operator_name', 'qth', 'zona', 'sistema', 'signal_report', 'Hora', 'Capturado por']
+        columns_to_show = ['Seleccionar', 'call_sign', 'operator_name', 'qth', 'ciudad', 'zona', 'sistema', 'signal_report', 'Tipo de Evento', 'Fecha de Sesión', 'Hora', 'Capturado por']
         
         selected_df = st.data_editor(
             display_data[columns_to_show],

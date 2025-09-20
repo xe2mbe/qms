@@ -489,12 +489,7 @@ def show_db_admin():
                 except Exception as e:
                     st.error(f"❌ Error: {str(e)}")
         
-        # Test de conexión
-        if st.button("🧪 Probar Conexión SMTP"):
-            if email_service.test_smtp_connection():
-                st.success("✅ Conexión SMTP exitosa")
-            else:
-                st.error("❌ Error en la conexión SMTP")
+        # Botón de prueba movido a la sección de configuración SMTP
     
     with tab5:
         st.subheader("📝 Explorador de Esquema de la Base de Datos")
@@ -1020,7 +1015,26 @@ def show_user_management():
             sender_email = st.text_input("Email remitente:", value=getattr(email_service, 'from_email', '') or "")
             sender_name = st.text_input("Nombre remitente:", value=getattr(email_service, 'from_name', '') or "Sistema FMRE")
             
-            submit_smtp = st.form_submit_button("💾 Guardar Configuración SMTP")
+            col1, col2 = st.columns(2)
+            with col1:
+                submit_smtp = st.form_submit_button("💾 Guardar Configuración SMTP")
+            with col2:
+                test_connection = st.form_submit_button("🧪 Probar Conexión SMTP")
+            
+            if test_connection:
+                if smtp_server and smtp_username and smtp_password:
+                    # Configurar temporalmente las credenciales para la prueba
+                    email_service.configure_smtp(
+                        smtp_server, smtp_port, smtp_username, 
+                        smtp_password if smtp_password else email_service.smtp_password,
+                        sender_email, sender_name
+                    )
+                    if email_service.test_smtp_connection():
+                        st.success("✅ Conexión SMTP exitosa")
+                    else:
+                        st.error("❌ Error en la conexión SMTP. Verifica tus credenciales.")
+                else:
+                    st.warning("⚠️ Por favor completa todos los campos de configuración SMTP antes de probar la conexión.")
             
             if submit_smtp:
                 if smtp_server and smtp_username and smtp_password:
@@ -5473,7 +5487,26 @@ def show_user_management():
             sender_email = st.text_input("Email remitente:", value=getattr(email_service, 'from_email', '') or "")
             sender_name = st.text_input("Nombre remitente:", value=getattr(email_service, 'from_name', '') or "Sistema FMRE")
             
-            submit_smtp = st.form_submit_button("💾 Guardar Configuración SMTP")
+            col1, col2 = st.columns(2)
+            with col1:
+                submit_smtp = st.form_submit_button("💾 Guardar Configuración SMTP")
+            with col2:
+                test_connection = st.form_submit_button("🧪 Probar Conexión SMTP")
+            
+            if test_connection:
+                if smtp_server and smtp_username and smtp_password:
+                    # Configurar temporalmente las credenciales para la prueba
+                    email_service.configure_smtp(
+                        smtp_server, smtp_port, smtp_username, 
+                        smtp_password if smtp_password else email_service.smtp_password,
+                        sender_email, sender_name
+                    )
+                    if email_service.test_smtp_connection():
+                        st.success("✅ Conexión SMTP exitosa")
+                    else:
+                        st.error("❌ Error en la conexión SMTP. Verifica tus credenciales.")
+                else:
+                    st.warning("⚠️ Por favor completa todos los campos de configuración SMTP antes de probar la conexión.")
             
             if submit_smtp:
                 if smtp_server and smtp_username and smtp_password:

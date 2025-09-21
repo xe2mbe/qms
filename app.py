@@ -3917,8 +3917,8 @@ def show_trends_report(current_date, previous_date, bulletin1, bulletin2, fecha1
         # Ejecutar la consulta
         historical_data = pd.read_sql_query(query, conn, params=[current_date])
         
-        # Obtener datos del boletín actual y anterior para comparación
-        current_data = pd.read_sql_query("""
+        # Construir la consulta base para obtener los reportes
+        base_query = """
             SELECT 
                 call_sign as 'Indicativo', 
                 operator_name as 'Operador',
@@ -3929,20 +3929,24 @@ def show_trends_report(current_date, previous_date, bulletin1, bulletin2, fecha1
                 strftime('%H:00', timestamp) as 'Hora'
             FROM reports 
             WHERE DATE(session_date) = ?
-        """, conn, params=[current_date])
+        """
         
-        previous_data = pd.read_sql_query("""
-            SELECT 
-                call_sign as 'Indicativo', 
-                operator_name as 'Operador',
-                zona as 'Zona',
-                qth as 'Estado',
-                sistema as 'Sistema',
-                signal_report as 'Señal',
-                strftime('%H:00', timestamp) as 'Hora'
-            FROM reports 
-            WHERE DATE(session_date) = ?
-        """, conn, params=[previous_date])
+        # Si se seleccionó un tipo de evento específico, agregar el filtro
+        if selected_event_type != "Todos los eventos":
+            event_id = event_types[event_types['name'] == selected_event_type].iloc[0]['id']
+            base_query += f" AND event_type_id = {event_id}"
+        
+        # Obtener datos del boletín actual para comparación
+        current_data = pd.read_sql_query(base_query, conn, params=[current_date])
+        
+        # Usar la misma consulta base para los datos anteriores, pero con la fecha anterior
+        previous_data = pd.read_sql_query(base_query, conn, params=[previous_date])
+        
+        # Si no hay datos para la fecha anterior, mostrar una advertencia
+        if previous_data.empty and not current_data.empty:
+            st.warning(f"No hay datos disponibles para la fecha anterior ({previous_date}) con el tipo de evento seleccionado.")
+            # Si no hay datos anteriores, usar un DataFrame vacío con las mismas columnas
+            previous_data = pd.DataFrame(columns=current_data.columns)
         
         # Cerrar conexión a la base de datos
         conn.close()

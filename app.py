@@ -3162,11 +3162,49 @@ def show_geographic_report(current_date, previous_date, bulletin1, bulletin2, fe
         fecha1 (datetime.date): Fecha del boletín actual
         fecha2 (datetime.date): Fecha del boletín anterior
     """
-    st.subheader("🌍 Análisis Geográfico")
+    # Obtener los tipos de evento para cada fecha
+    event_type1 = 'Boletín'
+    event_type2 = 'Boletín'
     
     try:
         conn = sqlite3.connect(db.db_path)
         
+        # Obtener el tipo de evento más común para cada fecha
+        current_events = pd.read_sql_query(
+            """
+            SELECT et.name as event_type, COUNT(*) as count
+            FROM reports r
+            LEFT JOIN event_types et ON r.event_type_id = et.id
+            WHERE DATE(r.session_date) = ?
+            GROUP BY et.name
+            ORDER BY count DESC
+            LIMIT 1
+            """, 
+            conn, 
+            params=[current_date]
+        )
+        
+        # Obtener también el tipo de evento para la fecha anterior
+        previous_events = pd.read_sql_query(
+            """
+            SELECT et.name as event_type, COUNT(*) as count
+            FROM reports r
+            LEFT JOIN event_types et ON r.event_type_id = et.id
+            WHERE DATE(r.session_date) = ?
+            GROUP BY et.name
+            ORDER BY count DESC
+            LIMIT 1
+            """, 
+            conn, 
+            params=[previous_date]
+        )
+        
+        # Actualizar los tipos de evento
+        if not current_events.empty and 'event_type' in current_events.columns and not current_events['event_type'].isnull().all():
+            event_type1 = current_events.iloc[0]['event_type']
+            
+        if not previous_events.empty and 'event_type' in previous_events.columns and not previous_events['event_type'].isnull().all():
+            event_type2 = previous_events.iloc[0]['event_type']
         # Datos por zona
         current_zones = pd.read_sql_query("""
             SELECT zona, COUNT(DISTINCT call_sign) as estaciones_unicas, COUNT(*) as total_reportes
@@ -3204,13 +3242,15 @@ def show_geographic_report(current_date, previous_date, bulletin1, bulletin2, fe
         col1, col2 = st.columns(2)
         
         with col1:
-            st.metric(f"📊 Boletín #{bulletin1} - {fecha1.strftime('%d/%m')}", 
+            st.metric(f"📊 {event_type1} #{bulletin1} - {fecha1.strftime('%d/%m')}", 
                      f"{total_current_reports:,} reportes",
-                     delta=f"{total_current_reports - total_previous_reports:+,} reportes")
+                     delta=f"{total_current_reports - total_previous_reports:+,} reportes",
+                     help=f"Total de reportes en el {event_type1.lower()} actual")
 
         with col2:
-            st.metric(f"📊 Boletín #{bulletin2} - {fecha2.strftime('%d/%m')}",
-                     f"{total_previous_reports:,} reportes")
+            st.metric(f"📊 {event_type2} #{bulletin2} - {fecha2.strftime('%d/%m')}",
+                     f"{total_previous_reports:,} reportes",
+                     help=f"Total de reportes en el {event_type2.lower()} anterior")
         #             delta=f"{total_current_reports - total_previous_reports:+,} reportes")
         
         st.markdown("---")
@@ -3221,8 +3261,8 @@ def show_geographic_report(current_date, previous_date, bulletin1, bulletin2, fe
         if not current_zones.empty or not previous_zones.empty:
             # Preparar datos para el gráfico combinado
             df_comparison = pd.concat([
-                current_zones.assign(Boletín=f'#{bulletin1} - {fecha1.strftime("%d/%m")}'),
-                previous_zones.assign(Boletín=f'#{bulletin2} - {fecha2.strftime("%d/%m")}')
+                current_zones.assign(Boletín=f'{event_type1} #{bulletin1}'),
+                previous_zones.assign(Boletín=f'{event_type2} #{bulletin2}')
             ])
             
             # Crear gráfico de barras agrupadas
@@ -3282,9 +3322,9 @@ def show_geographic_report(current_date, previous_date, bulletin1, bulletin2, fe
             # Métrica para el boletín actual
             total_current = current_zones['total_reportes'].sum() if not current_zones.empty else 0
             st.metric(
-                f"📊 Boletín #{bulletin1} - {fecha1.strftime('%d/%m')}",
+                f"📊 {event_type1} #{bulletin1} - {fecha1.strftime('%d/%m')}",
                 f"{total_current:,} reportes",
-                help=f"Total de reportes: {total_current:,}"
+                help=f"Total de reportes en {event_type1.lower()}: {total_current:,}"
             )
             if not current_zones.empty:
                 st.dataframe(current_zones, width='stretch')
@@ -3297,10 +3337,10 @@ def show_geographic_report(current_date, previous_date, bulletin1, bulletin2, fe
             delta = (total_current - total_previous) if (not current_zones.empty and not previous_zones.empty) else None
             
             st.metric(
-                f"📊 Boletín #{bulletin2} - {fecha2.strftime('%d/%m')}",
+                f"📊 {event_type2} #{bulletin2} - {fecha2.strftime('%d/%m')}",
                 f"{total_previous:,} reportes",
                 #delta=f"{delta:+,} reportes" if delta is not None else None,
-                help=f"Total de reportes: {total_previous:,}"
+                help=f"Total de reportes en {event_type2.lower()}: {total_previous:,}"
             )
             if not previous_zones.empty:
                 st.dataframe(previous_zones, width='stretch')
@@ -3309,7 +3349,7 @@ def show_geographic_report(current_date, previous_date, bulletin1, bulletin2, fe
         
         st.markdown("---")
         
-        st.subheader(f"🏛️ Top 10 Estados - Boletín #{bulletin1}")
+        st.subheader(f"🏛️ Top 10 Estados - {event_type1} #{bulletin1}")
         if not current_states.empty:
             st.dataframe(current_states, width='stretch')
         else:
@@ -3330,9 +3370,53 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
         fecha1 (datetime.date): Fecha del boletín actual
         fecha2 (datetime.date): Fecha del boletín anterior
     """
-    st.subheader("🔧 Análisis por Sistema de Radio")
+    # Obtener los tipos de evento para cada fecha
+    event_type1 = 'Boletín'
+    event_type2 = 'Boletín'
     
     try:
+        conn = sqlite3.connect(db.db_path)
+        
+        # Obtener el tipo de evento más común para cada fecha
+        current_events = pd.read_sql_query(
+            """
+            SELECT et.name as event_type, COUNT(*) as count
+            FROM reports r
+            LEFT JOIN event_types et ON r.event_type_id = et.id
+            WHERE DATE(r.session_date) = ?
+            GROUP BY et.name
+            ORDER BY count DESC
+            LIMIT 1
+            """, 
+            conn, 
+            params=[current_date]
+        )
+        
+        # Obtener también el tipo de evento para la fecha anterior
+        previous_events = pd.read_sql_query(
+            """
+            SELECT et.name as event_type, COUNT(*) as count
+            FROM reports r
+            LEFT JOIN event_types et ON r.event_type_id = et.id
+            WHERE DATE(r.session_date) = ?
+            GROUP BY et.name
+            ORDER BY count DESC
+            LIMIT 1
+            """, 
+            conn, 
+            params=[previous_date]
+        )
+        
+        # Actualizar los tipos de evento
+        if not current_events.empty and 'event_type' in current_events.columns and not current_events['event_type'].isnull().all():
+            event_type1 = current_events.iloc[0]['event_type']
+            
+        if not previous_events.empty and 'event_type' in previous_events.columns and not previous_events['event_type'].isnull().all():
+            event_type2 = previous_events.iloc[0]['event_type']
+            
+        st.subheader(f"🔧 Análisis por Sistema de Radio - {event_type1} #{bulletin1} vs {event_type2} #{bulletin2}")
+        
+        # Sistemas utilizados - Datos actuales
         conn = sqlite3.connect(db.db_path)
         
         # Sistemas utilizados - Datos actuales
@@ -3383,13 +3467,15 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
         col1, col2 = st.columns(2)
         
         with col1:
-            st.metric(f"📡 Boletín #{bulletin1} - {fecha1.strftime('%d/%m')}", 
+            st.metric(f"📡 {event_type1} #{bulletin1} - {fecha1.strftime('%d/%m')}", 
                      f"{total_current_reports:,} reportes",
-                     delta=f"{total_current_reports - total_previous_reports:+,} reportes")
+                     delta=f"{total_current_reports - total_previous_reports:+,} reportes",
+                     help=f"Total de reportes en el {event_type1.lower()} actual")
         
         with col2:
-            st.metric(f"📡 Boletín #{bulletin2} - {fecha2.strftime('%d/%m')}",
-                     f"{total_previous_reports:,} reportes")
+            st.metric(f"📡 {event_type2} #{bulletin2} - {fecha2.strftime('%d/%m')}",
+                     f"{total_previous_reports:,} reportes",
+                     help=f"Total de reportes en el {event_type2.lower()} anterior")
         #             delta=f"{total_current_reports - total_previous_reports:+,} reportes")
         
         st.markdown("---")
@@ -3400,9 +3486,9 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
         if not current_systems.empty or not previous_systems.empty:
             # Preparar datos para el gráfico comparativo
             if not current_systems.empty:
-                current_systems['boletin'] = f'Boletín #{bulletin1}'
+                current_systems['boletin'] = f'{event_type1} #{bulletin1}'
             if not previous_systems.empty:
-                previous_systems['boletin'] = f'Boletín #{bulletin2}'
+                previous_systems['boletin'] = f'{event_type2} #{bulletin2}'
             
             # Combinar datos para el gráfico
             combined_systems = pd.concat([current_systems, previous_systems])
@@ -3414,7 +3500,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
                 y='porcentaje',
                 color='boletin',
                 barmode='group',
-                title=f'Comparación de Sistemas de Radio - Boletín #{bulletin1} vs #{bulletin2}',
+                title=f'Comparación de Sistemas de Radio - {event_type1} #{bulletin1} vs {event_type2} #{bulletin2}',
                 labels={'sistema': 'Sistema de Radio', 'porcentaje': 'Porcentaje (%)', 'boletin': 'Boletín'},
                 text='porcentaje',
                 color_discrete_sequence=px.colors.qualitative.Plotly
@@ -3441,7 +3527,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader(f"📋 Detalle - Boletín #{bulletin1}")
+            st.subheader(f"📋 Detalle - {event_type1} #{bulletin1}")
             if not current_systems.empty:
                 st.dataframe(
                     current_systems[['sistema', 'estaciones_unicas', 'total_reportes', 'porcentaje']]
@@ -3458,7 +3544,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
                 st.info(f"No hay datos de sistemas para el boletín #{bulletin1}")
         
         with col2:
-            st.subheader(f"📋 Detalle - Boletín #{bulletin2}")
+            st.subheader(f"📋 Detalle - {event_type2} #{bulletin2}")
             if not previous_systems.empty:
                 st.dataframe(
                     previous_systems[['sistema', 'estaciones_unicas', 'total_reportes', 'porcentaje']]
@@ -3477,7 +3563,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
         st.markdown("---")
         
         # Sección de Calidad de Señales
-        st.subheader(f"📶 Calidad de Señales - Boletín #{bulletin1}")
+        st.subheader(f"📶 Calidad de Señales - {event_type1} #{bulletin1}")
         
         if not current_signals.empty:
             # Crear gráfico de dona para la calidad de señales
@@ -3486,7 +3572,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
                 values='total',
                 names='reporte_señal',
                 hole=0.4,
-                title=f'Distribución de Calidad de Señales - Boletín #{bulletin1}',
+                title=f'Distribución de Calidad de Señales - {event_type1} #{bulletin1}',
                 labels={'reporte_señal': 'Calidad de Señal', 'total': 'Cantidad'}
             )
             

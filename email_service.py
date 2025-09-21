@@ -130,7 +130,7 @@ class EmailService:
                     </div>
                     
                     <p>Puedes acceder al sistema usando el enlace de abajo:</p>
-                    <a href="http://localhost:8501" class="button">🚀 Acceder al Sistema</a>
+                    <a href="http://299085.nodes.allstarlink.org/fmre" class="button">🚀 Acceder al Sistema</a>
                     
                     <h3>📋 Funcionalidades Disponibles:</h3>
                     <ul>
@@ -144,7 +144,7 @@ class EmailService:
                     <p>Si tienes alguna pregunta o necesitas ayuda, no dudes en contactar al administrador del sistema.</p>
                 </div>
                 <div class="footer">
-                    <p>Sistema FMRE - Control de Reportes de Boletín<br>
+                    <p>Sistema FMRE - QSO Manager System - QMS<br>
                     Generado automáticamente el {datetime.now().strftime('%d/%m/%Y a las %H:%M')}</p>
                 </div>
             </div>
@@ -166,7 +166,7 @@ class EmailService:
         
         IMPORTANTE: Por seguridad, te recomendamos cambiar tu contraseña después del primer inicio de sesión.
         
-        Accede al sistema en: http://localhost:8501
+        Accede al sistema en: http://http://299085.nodes.allstarlink.org/fmre
         
         Sistema FMRE - {datetime.now().strftime('%d/%m/%Y %H:%M')}
         """

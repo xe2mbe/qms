@@ -489,12 +489,7 @@ def show_db_admin():
                 except Exception as e:
                     st.error(f"❌ Error: {str(e)}")
         
-        # Test de conexión
-        if st.button("🧪 Probar Conexión SMTP"):
-            if email_service.test_smtp_connection():
-                st.success("✅ Conexión SMTP exitosa")
-            else:
-                st.error("❌ Error en la conexión SMTP")
+        # Botón de prueba movido a la sección de configuración SMTP
     
     with tab5:
         st.subheader("📝 Explorador de Esquema de la Base de Datos")
@@ -536,7 +531,7 @@ def show_db_admin():
                     columns_df = pd.DataFrame(columns, columns=["cid", "name", "type", "notnull", "dflt_value", "pk"])
                     columns_df = columns_df[["name", "type", "notnull", "dflt_value", "pk"]]
                     columns_df.columns = ["Columna", "Tipo", "No Nulo", "Valor por Defecto", "Clave Primaria"]
-                    st.dataframe(columns_df, hide_index=True, use_container_width=True)
+                    st.dataframe(columns_df, hide_index=True, width='stretch')
                     
                     # Obtener índices
                     cursor.execute(f"PRAGMA index_list({selected_table})")
@@ -559,7 +554,7 @@ def show_db_admin():
                         data = pd.read_sql_query(f"SELECT * FROM {selected_table} LIMIT {limit}", conn)
                         
                         if not data.empty:
-                            st.dataframe(data, use_container_width=True)
+                            st.dataframe(data, width='stretch')
                             
                             # Opciones adicionales
                             col1, col2 = st.columns(2)
@@ -597,7 +592,7 @@ def show_db_admin():
                     fk_df = pd.DataFrame(fks, columns=["id", "seq", "table", "from", "to", "on_update", "on_delete", "match"])
                     fk_df = fk_df[["table", "from", "to", "on_update", "on_delete"]]
                     fk_df.columns = ["Tabla Referenciada", "Columna Origen", "Columna Destino", "On Update", "On Delete"]
-                    st.dataframe(fk_df, hide_index=True, use_container_width=True)
+                    st.dataframe(fk_df, hide_index=True, width='stretch')
             
             # Mostrar resumen de la base de datos
             st.markdown("---")
@@ -631,7 +626,7 @@ def show_db_admin():
             # Mostrar tabla con conteos
             st.markdown("#### Conteo de Registros por Tabla")
             counts_df = pd.DataFrame(table_counts, columns=["Tabla", "Registros"])
-            st.dataframe(counts_df, hide_index=True, use_container_width=True)
+            st.dataframe(counts_df, hide_index=True, width='stretch')
             
         except Exception as e:
             st.error(f"❌ Error al acceder a la base de datos: {str(e)}")
@@ -815,6 +810,54 @@ def show_user_management():
                         # Botón para editar usuario
                         if st.button(f"✏️ Editar", key=f"edit_user_{user['id']}"):
                             st.session_state[f"editing_user_{user['id']}"] = True
+                        
+                        # Botón para reenviar correo de bienvenida
+                        if st.button(f"📧 Reenviar correo", key=f"resend_email_{user['id']}"):
+                            try:
+                                # Generar una contraseña temporal segura
+                                import secrets
+                                import string
+                                import hashlib
+                                
+                                alphabet = string.ascii_letters + string.digits + string.punctuation
+                                temp_password = ''.join(secrets.choice(alphabet) for i in range(12))
+                                
+                                try:
+                                    # Actualizar la contraseña en la base de datos
+                                    hashed_password = hashlib.sha256(temp_password.encode()).hexdigest()
+                                    
+                                    # Obtener conexión a la base de datos
+                                    conn = sqlite3.connect('fmre_reports.db')
+                                    cursor = conn.cursor()
+                                    
+                                    try:
+                                        # Actualizar la contraseña usando el método correcto
+                                        cursor.execute('''
+                                            UPDATE users 
+                                            SET password_hash = ? 
+                                            WHERE id = ?
+                                        ''', (hashed_password, user['id']))
+                                        
+                                        # Enviar el correo de bienvenida
+                                        if email_service.send_welcome_email(user, temp_password):
+                                            conn.commit()  # Confirmar los cambios si el correo se envía correctamente
+                                            st.success(f"✅ Correo de bienvenida reenviado a {user.get('email', '')}")
+                                            st.warning("⚠️ Se generó una nueva contraseña temporal. El usuario deberá cambiarla al iniciar sesión.")
+                                        else:
+                                            conn.rollback()  # Revertir si hay un error al enviar el correo
+                                            st.error("❌ Error al enviar el correo. Verifica la configuración SMTP.")
+                                    except Exception as e:
+                                        conn.rollback()  # Revertir en caso de error
+                                        st.error(f"❌ Error al actualizar la contraseña: {str(e)}")
+                                        raise
+                                    finally:
+                                        conn.close()
+                                        
+                                except Exception as db_error:
+                                    st.error(f"❌ Error al actualizar la contraseña: {str(db_error)}")
+                                    db.rollback()
+                            except Exception as e:
+                                st.error(f"❌ Error al enviar el correo: {str(e)}")
                         
                         # Botón para eliminar usuario (solo si no es admin)
                         if user['username'] != 'admin':
@@ -1020,7 +1063,26 @@ def show_user_management():
             sender_email = st.text_input("Email remitente:", value=getattr(email_service, 'from_email', '') or "")
             sender_name = st.text_input("Nombre remitente:", value=getattr(email_service, 'from_name', '') or "Sistema FMRE")
             
-            submit_smtp = st.form_submit_button("💾 Guardar Configuración SMTP")
+            col1, col2 = st.columns(2)
+            with col1:
+                submit_smtp = st.form_submit_button("💾 Guardar Configuración SMTP")
+            with col2:
+                test_connection = st.form_submit_button("🧪 Probar Conexión SMTP")
+            
+            if test_connection:
+                if smtp_server and smtp_username and smtp_password:
+                    # Configurar temporalmente las credenciales para la prueba
+                    email_service.configure_smtp(
+                        smtp_server, smtp_port, smtp_username, 
+                        smtp_password if smtp_password else email_service.smtp_password,
+                        sender_email, sender_name
+                    )
+                    if email_service.test_smtp_connection():
+                        st.success("✅ Conexión SMTP exitosa")
+                    else:
+                        st.error("❌ Error en la conexión SMTP. Verifica tus credenciales.")
+                else:
+                    st.warning("⚠️ Por favor completa todos los campos de configuración SMTP antes de probar la conexión.")
             
             if submit_smtp:
                 if smtp_server and smtp_username and smtp_password:
@@ -1396,11 +1458,11 @@ def registro_reportes():
             
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("✅ Entendido, continuar", type="primary", use_container_width=True):
+                if st.button("✅ Entendido, continuar", type="primary", width='stretch'):
                     st.session_state.show_report_instructions = False
                     st.rerun()
             with col2:
-                if st.button("❌ Cancelar", use_container_width=True):
+                if st.button("❌ Cancelar", width='stretch'):
                     st.session_state.show_report_instructions = False
                     st.switch_page("app.py")
             
@@ -1686,16 +1748,16 @@ def registro_reportes():
                 col1_top, col2_top, col3_top, col4_top = st.columns([2, 1.5, 1.5, 1])
                 
                 with col1_top:
-                    save_clicked_top = st.form_submit_button("💾 Agregar Seleccionadas", type="primary", use_container_width=True)
+                    save_clicked_top = st.form_submit_button("💾 Agregar Seleccionadas", type="primary", width='stretch')
                 
                 with col2_top:
-                    select_all_clicked_top = st.form_submit_button("✅ Seleccionar Todas", use_container_width=True)
+                    select_all_clicked_top = st.form_submit_button("✅ Seleccionar Todas", width='stretch')
                 
                 with col3_top:
-                    deselect_all_clicked_top = st.form_submit_button("❌ Deseleccionar Todas", use_container_width=True)
+                    deselect_all_clicked_top = st.form_submit_button("❌ Deseleccionar Todas", width='stretch')
                 
                 with col4_top:
-                    cancel_clicked_top = st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True)
+                    cancel_clicked_top = st.form_submit_button("❌ Cancelar", type="secondary", width='stretch')
                 
                 st.markdown("---")  # Línea divisoria
                 
@@ -1724,16 +1786,16 @@ def registro_reportes():
                 col1_bottom, col2_bottom, col3_bottom, col4_bottom = st.columns([2, 1.5, 1.5, 1])
                 
                 with col1_bottom:
-                    save_clicked_bottom = st.form_submit_button("💾 Agregar Seleccionadas", key="save_bottom_btn", type="primary", use_container_width=True)
+                    save_clicked_bottom = st.form_submit_button("💾 Agregar Seleccionadas", key="save_bottom_btn", type="primary", width='stretch')
                 
                 with col2_bottom:
-                    select_all_clicked_bottom = st.form_submit_button("✅ Seleccionar Todas", key="select_all_bottom_btn", use_container_width=True)
+                    select_all_clicked_bottom = st.form_submit_button("✅ Seleccionar Todas", key="select_all_bottom_btn", width='stretch')
                 
                 with col3_bottom:
-                    deselect_all_clicked_bottom = st.form_submit_button("❌ Deseleccionar Todas", key="deselect_all_bottom_btn", use_container_width=True)
+                    deselect_all_clicked_bottom = st.form_submit_button("❌ Deseleccionar Todas", key="deselect_all_bottom_btn", width='stretch')
                 
                 with col4_bottom:
-                    cancel_clicked_bottom = st.form_submit_button("❌ Cancelar", key="cancel_bottom_btn", type="secondary", use_container_width=True)
+                    cancel_clicked_bottom = st.form_submit_button("❌ Cancelar", key="cancel_bottom_btn", type="secondary", width='stretch')
                 
                 # Procesar clics en los botones
                 save_clicked = save_clicked_top or save_clicked_bottom
@@ -2999,7 +3061,7 @@ def show_participation_report(current_date, previous_date, bulletin1, bulletin2,
                         )
                     },
                     hide_index=True,
-                    use_container_width=True,
+                    width='stretch',
                     height=min(250, 35 * len(new_stations_data) + 40)
                 )
             else:
@@ -3036,7 +3098,7 @@ def show_participation_report(current_date, previous_date, bulletin1, bulletin2,
                         )
                     },
                     hide_index=True,
-                    use_container_width=True,
+                    width='stretch',
                     height=min(250, 35 * len(repeated_stations_data) + 40)
                 )
             else:
@@ -3066,7 +3128,7 @@ def show_participation_report(current_date, previous_date, bulletin1, bulletin2,
                         )
                     },
                     hide_index=True,
-                    use_container_width=True,
+                    width='stretch',
                     height=min(250, 35 * len(missing_stations_data) + 40)
                 )
             else:
@@ -3101,11 +3163,49 @@ def show_geographic_report(current_date, previous_date, bulletin1, bulletin2, fe
         fecha1 (datetime.date): Fecha del boletín actual
         fecha2 (datetime.date): Fecha del boletín anterior
     """
-    st.subheader("🌍 Análisis Geográfico")
+    # Obtener los tipos de evento para cada fecha
+    event_type1 = 'Boletín'
+    event_type2 = 'Boletín'
     
     try:
         conn = sqlite3.connect(db.db_path)
         
+        # Obtener el tipo de evento más común para cada fecha
+        current_events = pd.read_sql_query(
+            """
+            SELECT et.name as event_type, COUNT(*) as count
+            FROM reports r
+            LEFT JOIN event_types et ON r.event_type_id = et.id
+            WHERE DATE(r.session_date) = ?
+            GROUP BY et.name
+            ORDER BY count DESC
+            LIMIT 1
+            """, 
+            conn, 
+            params=[current_date]
+        )
+        
+        # Obtener también el tipo de evento para la fecha anterior
+        previous_events = pd.read_sql_query(
+            """
+            SELECT et.name as event_type, COUNT(*) as count
+            FROM reports r
+            LEFT JOIN event_types et ON r.event_type_id = et.id
+            WHERE DATE(r.session_date) = ?
+            GROUP BY et.name
+            ORDER BY count DESC
+            LIMIT 1
+            """, 
+            conn, 
+            params=[previous_date]
+        )
+        
+        # Actualizar los tipos de evento
+        if not current_events.empty and 'event_type' in current_events.columns and not current_events['event_type'].isnull().all():
+            event_type1 = current_events.iloc[0]['event_type']
+            
+        if not previous_events.empty and 'event_type' in previous_events.columns and not previous_events['event_type'].isnull().all():
+            event_type2 = previous_events.iloc[0]['event_type']
         # Datos por zona
         current_zones = pd.read_sql_query("""
             SELECT zona, COUNT(DISTINCT call_sign) as estaciones_unicas, COUNT(*) as total_reportes
@@ -3143,13 +3243,15 @@ def show_geographic_report(current_date, previous_date, bulletin1, bulletin2, fe
         col1, col2 = st.columns(2)
         
         with col1:
-            st.metric(f"📊 Boletín #{bulletin1} - {fecha1.strftime('%d/%m')}", 
+            st.metric(f"📊 {event_type1} #{bulletin1} - {fecha1.strftime('%d/%m')}", 
                      f"{total_current_reports:,} reportes",
-                     delta=f"{total_current_reports - total_previous_reports:+,} reportes")
+                     delta=f"{total_current_reports - total_previous_reports:+,} reportes",
+                     help=f"Total de reportes en el {event_type1.lower()} actual")
 
         with col2:
-            st.metric(f"📊 Boletín #{bulletin2} - {fecha2.strftime('%d/%m')}",
-                     f"{total_previous_reports:,} reportes")
+            st.metric(f"📊 {event_type2} #{bulletin2} - {fecha2.strftime('%d/%m')}",
+                     f"{total_previous_reports:,} reportes",
+                     help=f"Total de reportes en el {event_type2.lower()} anterior")
         #             delta=f"{total_current_reports - total_previous_reports:+,} reportes")
         
         st.markdown("---")
@@ -3160,8 +3262,8 @@ def show_geographic_report(current_date, previous_date, bulletin1, bulletin2, fe
         if not current_zones.empty or not previous_zones.empty:
             # Preparar datos para el gráfico combinado
             df_comparison = pd.concat([
-                current_zones.assign(Boletín=f'#{bulletin1} - {fecha1.strftime("%d/%m")}'),
-                previous_zones.assign(Boletín=f'#{bulletin2} - {fecha2.strftime("%d/%m")}')
+                current_zones.assign(Boletín=f'{event_type1} #{bulletin1}'),
+                previous_zones.assign(Boletín=f'{event_type2} #{bulletin2}')
             ])
             
             # Crear gráfico de barras agrupadas
@@ -3207,7 +3309,7 @@ def show_geographic_report(current_date, previous_date, bulletin1, bulletin2, fe
                 height=500
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         else:
             st.warning("No hay datos suficientes para mostrar la comparación")
         
@@ -3221,9 +3323,9 @@ def show_geographic_report(current_date, previous_date, bulletin1, bulletin2, fe
             # Métrica para el boletín actual
             total_current = current_zones['total_reportes'].sum() if not current_zones.empty else 0
             st.metric(
-                f"📊 Boletín #{bulletin1} - {fecha1.strftime('%d/%m')}",
+                f"📊 {event_type1} #{bulletin1} - {fecha1.strftime('%d/%m')}",
                 f"{total_current:,} reportes",
-                help=f"Total de reportes: {total_current:,}"
+                help=f"Total de reportes en {event_type1.lower()}: {total_current:,}"
             )
             if not current_zones.empty:
                 st.dataframe(current_zones, width='stretch')
@@ -3236,10 +3338,10 @@ def show_geographic_report(current_date, previous_date, bulletin1, bulletin2, fe
             delta = (total_current - total_previous) if (not current_zones.empty and not previous_zones.empty) else None
             
             st.metric(
-                f"📊 Boletín #{bulletin2} - {fecha2.strftime('%d/%m')}",
+                f"📊 {event_type2} #{bulletin2} - {fecha2.strftime('%d/%m')}",
                 f"{total_previous:,} reportes",
                 #delta=f"{delta:+,} reportes" if delta is not None else None,
-                help=f"Total de reportes: {total_previous:,}"
+                help=f"Total de reportes en {event_type2.lower()}: {total_previous:,}"
             )
             if not previous_zones.empty:
                 st.dataframe(previous_zones, width='stretch')
@@ -3248,7 +3350,7 @@ def show_geographic_report(current_date, previous_date, bulletin1, bulletin2, fe
         
         st.markdown("---")
         
-        st.subheader(f"🏛️ Top 10 Estados - Boletín #{bulletin1}")
+        st.subheader(f"🏛️ Top 10 Estados - {event_type1} #{bulletin1}")
         if not current_states.empty:
             st.dataframe(current_states, width='stretch')
         else:
@@ -3269,9 +3371,53 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
         fecha1 (datetime.date): Fecha del boletín actual
         fecha2 (datetime.date): Fecha del boletín anterior
     """
-    st.subheader("🔧 Análisis por Sistema de Radio")
+    # Obtener los tipos de evento para cada fecha
+    event_type1 = 'Boletín'
+    event_type2 = 'Boletín'
     
     try:
+        conn = sqlite3.connect(db.db_path)
+        
+        # Obtener el tipo de evento más común para cada fecha
+        current_events = pd.read_sql_query(
+            """
+            SELECT et.name as event_type, COUNT(*) as count
+            FROM reports r
+            LEFT JOIN event_types et ON r.event_type_id = et.id
+            WHERE DATE(r.session_date) = ?
+            GROUP BY et.name
+            ORDER BY count DESC
+            LIMIT 1
+            """, 
+            conn, 
+            params=[current_date]
+        )
+        
+        # Obtener también el tipo de evento para la fecha anterior
+        previous_events = pd.read_sql_query(
+            """
+            SELECT et.name as event_type, COUNT(*) as count
+            FROM reports r
+            LEFT JOIN event_types et ON r.event_type_id = et.id
+            WHERE DATE(r.session_date) = ?
+            GROUP BY et.name
+            ORDER BY count DESC
+            LIMIT 1
+            """, 
+            conn, 
+            params=[previous_date]
+        )
+        
+        # Actualizar los tipos de evento
+        if not current_events.empty and 'event_type' in current_events.columns and not current_events['event_type'].isnull().all():
+            event_type1 = current_events.iloc[0]['event_type']
+            
+        if not previous_events.empty and 'event_type' in previous_events.columns and not previous_events['event_type'].isnull().all():
+            event_type2 = previous_events.iloc[0]['event_type']
+            
+        st.subheader(f"🔧 Análisis por Sistema de Radio - {event_type1} #{bulletin1} vs {event_type2} #{bulletin2}")
+        
+        # Sistemas utilizados - Datos actuales
         conn = sqlite3.connect(db.db_path)
         
         # Sistemas utilizados - Datos actuales
@@ -3322,13 +3468,15 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
         col1, col2 = st.columns(2)
         
         with col1:
-            st.metric(f"📡 Boletín #{bulletin1} - {fecha1.strftime('%d/%m')}", 
+            st.metric(f"📡 {event_type1} #{bulletin1} - {fecha1.strftime('%d/%m')}", 
                      f"{total_current_reports:,} reportes",
-                     delta=f"{total_current_reports - total_previous_reports:+,} reportes")
+                     delta=f"{total_current_reports - total_previous_reports:+,} reportes",
+                     help=f"Total de reportes en el {event_type1.lower()} actual")
         
         with col2:
-            st.metric(f"📡 Boletín #{bulletin2} - {fecha2.strftime('%d/%m')}",
-                     f"{total_previous_reports:,} reportes")
+            st.metric(f"📡 {event_type2} #{bulletin2} - {fecha2.strftime('%d/%m')}",
+                     f"{total_previous_reports:,} reportes",
+                     help=f"Total de reportes en el {event_type2.lower()} anterior")
         #             delta=f"{total_current_reports - total_previous_reports:+,} reportes")
         
         st.markdown("---")
@@ -3339,9 +3487,9 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
         if not current_systems.empty or not previous_systems.empty:
             # Preparar datos para el gráfico comparativo
             if not current_systems.empty:
-                current_systems['boletin'] = f'Boletín #{bulletin1}'
+                current_systems['boletin'] = f'{event_type1} #{bulletin1}'
             if not previous_systems.empty:
-                previous_systems['boletin'] = f'Boletín #{bulletin2}'
+                previous_systems['boletin'] = f'{event_type2} #{bulletin2}'
             
             # Combinar datos para el gráfico
             combined_systems = pd.concat([current_systems, previous_systems])
@@ -3353,7 +3501,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
                 y='porcentaje',
                 color='boletin',
                 barmode='group',
-                title=f'Comparación de Sistemas de Radio - Boletín #{bulletin1} vs #{bulletin2}',
+                title=f'Comparación de Sistemas de Radio - {event_type1} #{bulletin1} vs {event_type2} #{bulletin2}',
                 labels={'sistema': 'Sistema de Radio', 'porcentaje': 'Porcentaje (%)', 'boletin': 'Boletín'},
                 text='porcentaje',
                 color_discrete_sequence=px.colors.qualitative.Plotly
@@ -3374,13 +3522,13 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
                 height=500
             )
             
-            st.plotly_chart(fig_sistemas, use_container_width=True)
+            st.plotly_chart(fig_sistemas, width='stretch')
         
         # Mostrar tablas de sistemas
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader(f"📋 Detalle - Boletín #{bulletin1}")
+            st.subheader(f"📋 Detalle - {event_type1} #{bulletin1}")
             if not current_systems.empty:
                 st.dataframe(
                     current_systems[['sistema', 'estaciones_unicas', 'total_reportes', 'porcentaje']]
@@ -3397,7 +3545,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
                 st.info(f"No hay datos de sistemas para el boletín #{bulletin1}")
         
         with col2:
-            st.subheader(f"📋 Detalle - Boletín #{bulletin2}")
+            st.subheader(f"📋 Detalle - {event_type2} #{bulletin2}")
             if not previous_systems.empty:
                 st.dataframe(
                     previous_systems[['sistema', 'estaciones_unicas', 'total_reportes', 'porcentaje']]
@@ -3416,7 +3564,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
         st.markdown("---")
         
         # Sección de Calidad de Señales
-        st.subheader(f"📶 Calidad de Señales - Boletín #{bulletin1}")
+        st.subheader(f"📶 Calidad de Señales - {event_type1} #{bulletin1}")
         
         if not current_signals.empty:
             # Crear gráfico de dona para la calidad de señales
@@ -3425,7 +3573,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
                 values='total',
                 names='reporte_señal',
                 hole=0.4,
-                title=f'Distribución de Calidad de Señales - Boletín #{bulletin1}',
+                title=f'Distribución de Calidad de Señales - {event_type1} #{bulletin1}',
                 labels={'reporte_señal': 'Calidad de Señal', 'total': 'Cantidad'}
             )
             
@@ -3444,7 +3592,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
             col1, col2 = st.columns([2, 1])
             
             with col1:
-                st.plotly_chart(fig_señales, use_container_width=True)
+                st.plotly_chart(fig_señales, width='stretch')
             
             with col2:
                 st.write("### Detalle de Calidad")
@@ -3498,7 +3646,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
                     hovermode='x unified'
                 )
                 
-                st.plotly_chart(fig_tendencia, use_container_width=True)
+                st.plotly_chart(fig_tendencia, width='stretch')
                 
         except Exception as e:
             st.warning(f"No se pudo cargar el análisis de tendencia: {str(e)}")
@@ -3584,7 +3732,7 @@ def show_event_type_report():
                     "last_seen": "Último Reporte"
                 },
                 hide_index=True,
-                use_container_width=True
+                width='stretch'
             )
             
             # Mostrar gráfico de distribución
@@ -3616,7 +3764,7 @@ def show_event_type_report():
                     margin=dict(l=20, r=20, t=50, b=150)
                 )
                 
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
                 
                 # Agregar gráfico de pastel para mostrar la distribución
                 st.markdown("### Distribución Porcentual de Reportes")
@@ -3646,7 +3794,7 @@ def show_event_type_report():
                     margin=dict(t=50, b=20, l=20, r=20)
                 )
                 
-                st.plotly_chart(pie_fig, use_container_width=True)
+                st.plotly_chart(pie_fig, width='stretch')
                 
         else:
             st.info("No hay datos de reportes por tipo de evento para mostrar.")
@@ -3921,7 +4069,7 @@ def show_trends_report(current_date, previous_date, bulletin1, bulletin2, fecha1
                     )
                 )
             
-            st.plotly_chart(fig_tendencia, use_container_width=True)
+            st.plotly_chart(fig_tendencia, width='stretch')
             
             # 4.2 Evolución de Sistemas
             st.subheader("📡 Evolución de Sistemas (Últimos 12 Boletines)")
@@ -4030,7 +4178,7 @@ def show_trends_report(current_date, previous_date, bulletin1, bulletin2, fecha1
                             borderwidth=1
                         )
             
-            st.plotly_chart(fig_sistemas_evol, use_container_width=True)
+            st.plotly_chart(fig_sistemas_evol, width='stretch')
             
             # 4.3 Evolución de Cobertura Geográfica por Zona
             st.subheader("🌍 Evolución de la Participación por Zona (Últimos 12 Boletines)")
@@ -4160,7 +4308,7 @@ def show_trends_report(current_date, previous_date, bulletin1, bulletin2, fecha1
                                     yshift=5
                                 )
                     
-                    st.plotly_chart(fig_zonas_evol, use_container_width=True)
+                    st.plotly_chart(fig_zonas_evol, width='stretch')
                     
                     # Agregar tabla resumen debajo del gráfico
                     st.subheader("📊 Resumen de Participación por Zona")
@@ -4193,7 +4341,7 @@ def show_trends_report(current_date, previous_date, bulletin1, bulletin2, fecha1
                             )
                         },
                         hide_index=True,
-                        use_container_width=True
+                        width='stretch'
                     )
                 else:
                     st.warning("No se encontraron datos de zonas para mostrar.")
@@ -5270,6 +5418,54 @@ def show_user_management():
                         if st.button(f"✏️ Editar", key=f"edit_user_{user['id']}"):
                             st.session_state[f"editing_user_{user['id']}"] = True
                         
+                        # Botón para reenviar correo de bienvenida
+                        if st.button(f"📧 Reenviar correo", key=f"resend_email_{user['id']}"):
+                            try:
+                                # Generar una contraseña temporal segura
+                                import secrets
+                                import string
+                                import hashlib
+                                
+                                alphabet = string.ascii_letters + string.digits + string.punctuation
+                                temp_password = ''.join(secrets.choice(alphabet) for i in range(12))
+                                
+                                try:
+                                    # Actualizar la contraseña en la base de datos
+                                    hashed_password = hashlib.sha256(temp_password.encode()).hexdigest()
+                                    
+                                    # Obtener conexión a la base de datos
+                                    conn = sqlite3.connect('fmre_reports.db')
+                                    cursor = conn.cursor()
+                                    
+                                    try:
+                                        # Actualizar la contraseña usando el método correcto
+                                        cursor.execute('''
+                                            UPDATE users 
+                                            SET password_hash = ? 
+                                            WHERE id = ?
+                                        ''', (hashed_password, user['id']))
+                                        
+                                        # Enviar el correo de bienvenida
+                                        if email_service.send_welcome_email(user, temp_password):
+                                            conn.commit()  # Confirmar los cambios si el correo se envía correctamente
+                                            st.success(f"✅ Correo de bienvenida reenviado a {user.get('email', '')}")
+                                            st.warning("⚠️ Se generó una nueva contraseña temporal. El usuario deberá cambiarla al iniciar sesión.")
+                                        else:
+                                            conn.rollback()  # Revertir si hay un error al enviar el correo
+                                            st.error("❌ Error al enviar el correo. Verifica la configuración SMTP.")
+                                    except Exception as e:
+                                        conn.rollback()  # Revertir en caso de error
+                                        st.error(f"❌ Error al actualizar la contraseña: {str(e)}")
+                                        raise
+                                    finally:
+                                        conn.close()
+                                        
+                                except Exception as db_error:
+                                    st.error(f"❌ Error al actualizar la contraseña: {str(db_error)}")
+                                    db.rollback()
+                            except Exception as e:
+                                st.error(f"❌ Error al enviar el correo: {str(e)}")
+                        
                         # Botón para eliminar usuario (solo si no es admin)
                         if user['username'] != 'admin':
                             if st.button(f"🗑️ Eliminar", key=f"delete_user_{user['id']}"):
@@ -5474,7 +5670,26 @@ def show_user_management():
             sender_email = st.text_input("Email remitente:", value=getattr(email_service, 'from_email', '') or "")
             sender_name = st.text_input("Nombre remitente:", value=getattr(email_service, 'from_name', '') or "Sistema FMRE")
             
-            submit_smtp = st.form_submit_button("💾 Guardar Configuración SMTP")
+            col1, col2 = st.columns(2)
+            with col1:
+                submit_smtp = st.form_submit_button("💾 Guardar Configuración SMTP")
+            with col2:
+                test_connection = st.form_submit_button("🧪 Probar Conexión SMTP")
+            
+            if test_connection:
+                if smtp_server and smtp_username and smtp_password:
+                    # Configurar temporalmente las credenciales para la prueba
+                    email_service.configure_smtp(
+                        smtp_server, smtp_port, smtp_username, 
+                        smtp_password if smtp_password else email_service.smtp_password,
+                        sender_email, sender_name
+                    )
+                    if email_service.test_smtp_connection():
+                        st.success("✅ Conexión SMTP exitosa")
+                    else:
+                        st.error("❌ Error en la conexión SMTP. Verifica tus credenciales.")
+                else:
+                    st.warning("⚠️ Por favor completa todos los campos de configuración SMTP antes de probar la conexión.")
             
             if submit_smtp:
                 if smtp_server and smtp_username and smtp_password:

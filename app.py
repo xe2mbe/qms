@@ -2713,31 +2713,70 @@ def registro_reportes():
 def show_advanced_reports():
     """Muestra reportes estadísticos avanzados comparativos"""
     st.header("📊 Reportes Avanzados")
+    
+    # Obtener los tipos de eventos disponibles
+    conn = sqlite3.connect(db.db_path)
+    event_types = pd.read_sql_query(
+        "SELECT id, name, description FROM event_types WHERE is_active = 1 ORDER BY name", 
+        conn
+    )
+    
+    # Crear opciones para el menú desplegable
+    event_type_options = ["Todos los eventos"] + [f"{row['name']}" for _, row in event_types.iterrows()]
+    
+    # Agregar un selector de tipo de evento
+    selected_event_type = st.selectbox(
+        "Seleccione el tipo de reporte avanzado:",
+        options=event_type_options,
+        index=0
+    )
+    
+    # Mostrar descripción si se selecciona un tipo de evento específico
+    if selected_event_type != "Todos los eventos":
+        event_info = event_types[event_types['name'] == selected_event_type].iloc[0]
+        if pd.notna(event_info['description']):
+            st.info(f"📝 **{selected_event_type}**: {event_info['description']}")
+    
+    st.markdown("---")
     st.markdown("### Análisis Comparativo de Sesiones")
     
     try:
         # Obtener todas las fechas con reportes y sus tipos de evento
         conn = sqlite3.connect(db.db_path)
         
-        # Obtener fechas con su tipo de evento más común, igual que en el banner de comparación
-        dates_query = """
-        WITH ranked_events AS (
-            SELECT 
+        # Construir la consulta base para obtener fechas con su tipo de evento
+        if selected_event_type != "Todos los eventos":
+            # Si se selecciona un tipo de evento específico, filtrar por ese tipo
+            event_id = event_types[event_types['name'] == selected_event_type].iloc[0]['id']
+            dates_query = f"""
+            SELECT DISTINCT
                 DATE(r.session_date) as report_date,
-                et.name as event_type,
-                COUNT(*) as event_count,
-                ROW_NUMBER() OVER (PARTITION BY DATE(r.session_date) ORDER BY COUNT(*) DESC) as rn
+                et.name as event_type
             FROM reports r
-            LEFT JOIN event_types et ON r.event_type_id = et.id
-            GROUP BY DATE(r.session_date), et.name
-        )
-        SELECT 
-            report_date,
-            COALESCE(event_type, 'Sesión') as event_type
-        FROM ranked_events
-        WHERE rn = 1
-        ORDER BY report_date DESC
-        """
+            JOIN event_types et ON r.event_type_id = et.id
+            WHERE et.id = {event_id}
+            ORDER BY report_date DESC
+            """
+        else:
+            # Para 'Todos los eventos', mostrar el tipo de evento más común por fecha
+            dates_query = """
+            WITH ranked_events AS (
+                SELECT 
+                    DATE(r.session_date) as report_date,
+                    et.name as event_type,
+                    COUNT(*) as event_count,
+                    ROW_NUMBER() OVER (PARTITION BY DATE(r.session_date) ORDER BY COUNT(*) DESC) as rn
+                FROM reports r
+                LEFT JOIN event_types et ON r.event_type_id = et.id
+                GROUP BY DATE(r.session_date), et.name
+            )
+            SELECT 
+                report_date,
+                COALESCE(event_type, 'Sesión') as event_type
+            FROM ranked_events
+            WHERE rn = 1
+            ORDER BY report_date DESC
+            """
         
         # Crear un diccionario de fechas a tipos de evento
         date_info = {}

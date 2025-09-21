@@ -241,6 +241,23 @@ class FMREDatabase:
                 conn.rollback()
             raise
     
+    def user_exists(self, username):
+        """Verifica si un nombre de usuario ya existe"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) FROM users WHERE username = ?', (username,))
+            return cursor.fetchone()[0] > 0
+            
+    def email_exists(self, email, exclude_user_id=None):
+        """Verifica si un correo electrónico ya existe"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if exclude_user_id is not None:
+                cursor.execute('SELECT COUNT(*) FROM users WHERE email = ? AND id != ?', (email, exclude_user_id))
+            else:
+                cursor.execute('SELECT COUNT(*) FROM users WHERE email = ?', (email,))
+            return cursor.fetchone()[0] > 0
+            
     def get_all_users(self):
         """Obtiene todos los usuarios registrados"""
         with self.get_connection() as conn:

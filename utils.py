@@ -90,6 +90,29 @@ def validate_signal_report(report):
     
     return True, ""
 
+def validate_password(password):
+    """
+    Valida que una contraseña cumpla con los requisitos de seguridad:
+    - Mínimo 8 caracteres
+    - Al menos una letra mayúscula
+    - Al menos un número
+    - Al menos un carácter especial
+    """
+    if not password or len(password) < 8:
+        return False, "La contraseña debe tener al menos 8 caracteres"
+    
+    if not any(char.isupper() for char in password):
+        return False, "La contraseña debe contener al menos una letra mayúscula"
+    
+    if not any(char.isdigit() for char in password):
+        return False, "La contraseña debe contener al menos un número"
+    
+    special_chars = "!@#$%^&*()-_=+[]{}|;:,.<>?/`~"
+    if not any(char in special_chars for char in password):
+        return False, "La contraseña debe contener al menos un carácter especial"
+    
+    return True, ""
+
 def validate_call_sign_zone_consistency(call_sign, zona):
     """Valida que el prefijo del indicativo coincida con la zona"""
     if not call_sign or not zona:

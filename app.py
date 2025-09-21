@@ -257,8 +257,14 @@ def show_users():
             
             if submit_create:
                 if new_username and new_full_name and new_email and new_password and confirm_password:
+                    # Validar que el nombre de usuario no exista
+                    if db.user_exists(new_username):
+                        st.error("❌ El nombre de usuario ya está en uso")
+                    # Validar que el correo no exista
+                    elif db.email_exists(new_email):
+                        st.error("❌ El correo electrónico ya está registrado")
                     # Validar que las contraseñas coincidan
-                    if new_password != confirm_password:
+                    elif new_password != confirm_password:
                         st.error("❌ Las contraseñas no coinciden")
                     else:
                         # Validar fortaleza de la contraseña

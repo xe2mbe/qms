@@ -1,1224 +1,535 @@
 import sqlite3
-import pandas as pd
+import hashlib
+import secrets
+import string
 from datetime import datetime
-import os
-import pytz
 
 class FMREDatabase:
-    def __init__(self, db_path="fmre_reports.db"):
+    def __init__(self, db_path="qms.db"):
         self.db_path = db_path
         self.init_database()
+        
+    def _check_password(self, password, hashed_password):
+        """
+        Verifica si la contraseña coincide con el hash almacenado
+        
+        Args:
+            password (str): Contraseña en texto plano
+            hashed_password (str): Hash de la contraseña almacenado en la base de datos
+            
+        Returns:
+            bool: True si la contraseña coincide, False en caso contrario
+        """
+        # Asegurarse de que el hash se calcule de la misma manera que en change_password
+        return hashlib.sha256(password.encode()).hexdigest() == hashed_password
+    
+    def get_connection(self):
+        """Obtiene una conexión a la base de datos con manejo de timeouts y conexiones persistentes"""
+        # Configuración para evitar bloqueos
+        conn = sqlite3.connect(
+            self.db_path,
+            timeout=30.0,  # Aumentar el tiempo de espera
+            isolation_level=None,  # Deshabilitar el modo de transacción automática
+            check_same_thread=False  # Permitir acceso desde múltiples hilos
+        )
+        # Habilitar WAL (Write-Ahead Logging) para mejor concurrencia
+        conn.execute('PRAGMA journal_mode=WAL')
+        conn.execute('PRAGMA busy_timeout=5000')  # 5 segundos de timeout
+        conn.execute('PRAGMA synchronous=NORMAL')
+        conn.row_factory = sqlite3.Row
+        return conn
     
     def init_database(self):
-        """Inicializa la base de datos con todas las tablas necesarias"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Tabla de tipos de evento
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS event_types (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                description TEXT,
-                default_weekday INTEGER,  -- 0-6 (Domingo=0, Lunes=1, etc.), NULL para eventos diarios
-                default_time TEXT,        -- 'HH:MM' en formato 24h
-                is_active BOOLEAN DEFAULT 1,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # Tabla de reportes - esquema completo
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS reports (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                call_sign TEXT NOT NULL,
-                operator_name TEXT NOT NULL,
-                qth TEXT NOT NULL,
-                ciudad TEXT NOT NULL,
-                signal_report TEXT NOT NULL,
-                zona TEXT NOT NULL,
-                sistema TEXT NOT NULL,
-                grid_locator TEXT,
-                hf_frequency TEXT,
-                hf_band TEXT,
-                hf_mode TEXT,
-                hf_power TEXT,
-                observations TEXT,
-                session_date TEXT NOT NULL,
-                timestamp DATETIME DEFAULT (datetime('now', 'localtime')),
-                region TEXT,
-                signal_quality INTEGER,
-                created_by TEXT,
-                event_type_id INTEGER REFERENCES event_types(id)
-            )
-        ''')
-        
-        # Agregar columna created_by si no existe (para bases de datos existentes)
-        try:
-            cursor.execute('ALTER TABLE reports ADD COLUMN created_by TEXT')
-        except sqlite3.OperationalError:
-            pass  # La columna ya existe
-        
-        # Tabla de sesiones
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_date DATE UNIQUE,
-                total_participants INTEGER DEFAULT 0,
-                notes TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # Tabla de usuarios
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                full_name TEXT NOT NULL,
-                email TEXT,
-                role TEXT DEFAULT 'operator',
-                preferred_system TEXT DEFAULT 'ASL',
-                hf_frequency_pref TEXT,
-                hf_mode_pref TEXT,
-                hf_power_pref TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                last_login DATETIME
-            )
-        ''')
-        
-        # Tabla de historial de estaciones
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS station_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                call_sign TEXT NOT NULL,
-                operator_name TEXT NOT NULL,
-                qth TEXT NOT NULL,
-                ciudad TEXT NOT NULL,
-                zona TEXT,
-                sistema TEXT,
-                grid_locator TEXT,
-                hf_frequency TEXT,
-                hf_band TEXT,
-                hf_mode TEXT,
-                hf_power TEXT,
-                last_used DATETIME DEFAULT CURRENT_TIMESTAMP,
-                use_count INTEGER DEFAULT 1,
-                last_report_id INTEGER,
-                UNIQUE(call_sign, operator_name)
-            )
-        ''')
-        
-        # Insertar tipos de evento por defecto si no existen
-        cursor.execute('''
-            INSERT OR IGNORE INTO event_types (name, description, default_weekday, default_time) VALUES
-                ('Boletín Dominical', 'Transmisión en vivo del boletín dominical', 0, '09:00'),
-                ('Retransmisión CREBC', 'Retransmisión del boletín del CREBC', 3, '17:00'),
-                ('RNE 40m', 'Red Nacional de Emergencias en 40m', NULL, '20:00'),
-                ('RNE 80m', 'Red Nacional de Emergencias en 80m', NULL, '21:00'),
-                ('Otro', 'Otro tipo de evento', NULL, NULL)
-        ''')
-        
-        # Crear índices
-        cursor.executescript('''
-            CREATE INDEX IF NOT EXISTS idx_reports_call_sign ON reports(call_sign);
-            CREATE INDEX IF NOT EXISTS idx_reports_session_date ON reports(session_date);
-            CREATE INDEX IF NOT EXISTS idx_reports_region ON reports(region);
-            CREATE INDEX IF NOT EXISTS idx_reports_event_type ON reports(event_type_id);
-            CREATE INDEX IF NOT EXISTS idx_station_history_call_sign ON station_history(call_sign);
-            CREATE INDEX IF NOT EXISTS idx_station_history_operator ON station_history(operator_name);
-            CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-        ''')
-        
-        # Crear trigger para actualizar timestamps
-        cursor.execute('''
-            CREATE TRIGGER IF NOT EXISTS update_event_types_timestamp
-            AFTER UPDATE ON event_types
-            FOR EACH ROW
-            BEGIN
-                UPDATE event_types SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
-            END;
-        ''')
-        
-        # Ejecutar migraciones para bases de datos existentes
-        self._migrate_database(cursor)
-        
-        conn.commit()
-        conn.close()
-    
-    def _migrate_database(self, cursor):
-        """Migra la base de datos agregando columnas faltantes"""
-        try:
-            # Migrar datos existentes si es necesario
-            cursor.execute("PRAGMA table_info(reports)")
-            columns = [column[1] for column in cursor.fetchall()]
+        """Inicializa la base de datos con las tablas necesarias"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
             
-            # Agregar columnas faltantes para compatibilidad
-            if 'region' not in columns:
-                cursor.execute('ALTER TABLE reports ADD COLUMN region TEXT')
-            if 'signal_quality' not in columns:
-                cursor.execute('ALTER TABLE reports ADD COLUMN signal_quality INTEGER')
-            if 'grid_locator' not in columns:
-                cursor.execute('ALTER TABLE reports ADD COLUMN grid_locator TEXT')
-            if 'hf_frequency' not in columns:
-                cursor.execute('ALTER TABLE reports ADD COLUMN hf_frequency TEXT')
-            if 'hf_band' not in columns:
-                cursor.execute('ALTER TABLE reports ADD COLUMN hf_band TEXT')
-            if 'hf_mode' not in columns:
-                cursor.execute('ALTER TABLE reports ADD COLUMN hf_mode TEXT')
-            if 'hf_power' not in columns:
-                cursor.execute('ALTER TABLE reports ADD COLUMN hf_power TEXT')
-            
-            # Migrar tabla de usuarios para agregar preferred_system y campos HF
-            cursor.execute("PRAGMA table_info(users)")
-            user_columns = [column[1] for column in cursor.fetchall()]
-            if 'preferred_system' not in user_columns:
-                cursor.execute('ALTER TABLE users ADD COLUMN preferred_system TEXT DEFAULT "ASL"')
-            if 'hf_frequency_pref' not in user_columns:
-                cursor.execute('ALTER TABLE users ADD COLUMN hf_frequency_pref TEXT')
-            if 'hf_mode_pref' not in user_columns:
-                cursor.execute('ALTER TABLE users ADD COLUMN hf_mode_pref TEXT')
-            if 'hf_power_pref' not in user_columns:
-                cursor.execute('ALTER TABLE users ADD COLUMN hf_power_pref TEXT')
-                
-            # Migrar datos de estado/ciudad si existen columnas separadas
-            if 'estado' in columns and 'ciudad' in columns:
-                # Migrar estado a qth si qth está vacío
-                cursor.execute('''
-                    UPDATE reports 
-                    SET qth = COALESCE(estado, qth)
-                    WHERE qth IS NULL OR qth = ''
-                ''')
-                # Asegurar que ciudad tenga datos
-                cursor.execute('''
-                    UPDATE reports 
-                    SET ciudad = COALESCE(ciudad, qth, 'N/A')
-                    WHERE ciudad IS NULL OR ciudad = ''
-                ''')
-                
-        except Exception as e:
-            print(f"Error durante la migración: {e}")
-    
-    def add_report(self, call_sign, operator_name, qth, ciudad, signal_report, zona, sistema, grid_locator="", hf_frequency="", hf_band="", hf_mode="", hf_power="", observations="", session_date=None, created_by=None, event_type_id=None):
-        print("\n[DEBUG] Iniciando add_report con los siguientes parámetros:")
-        print(f"  call_sign: {call_sign}")
-        print(f"  operator_name: {operator_name}")
-        print(f"  qth: {qth}")
-        print(f"  ciudad: {ciudad}")
-        print(f"  signal_report: {signal_report}")
-        print(f"  zona: {zona}")
-        print(f"  sistema: {sistema}")
-        print(f"  session_date (parámetro): {session_date} (tipo: {type(session_date)})")
-        print(f"  created_by: {created_by}")
-        print(f"  event_type_id: {event_type_id}\n")
-        
-        """Agrega un nuevo reporte a la base de datos
-        
-        Args:
-            call_sign (str): Indicativo de la estación
-            operator_name (str): Nombre del operador
-            qth (str): Ubicación (estado)
-            ciudad (str): Ciudad
-            signal_report (str): Reporte de señal (ej. 59)
-            zona (str): Zona de operación
-            sistema (str): Sistema de radio (ej. ASL, HF, etc.)
-            grid_locator (str, optional): Localizador de cuadrícula
-            hf_frequency (str, optional): Frecuencia para modo HF
-            hf_band (str, optional): Banda para modo HF
-            hf_mode (str, optional): Modo para HF (ej. USB, LSB, etc.)
-            hf_power (str, optional): Potencia para modo HF
-            observations (str, optional): Observaciones adicionales
-            session_date (str, optional): Fecha de la sesión (YYYY-MM-DD)
-            created_by (str, optional): Usuario que creó el reporte
-            event_type_id (int, optional): ID del tipo de evento
-            
-        Returns:
-            int: ID del reporte insertado
-        """
-        # Procesar la fecha de sesión
-        print(f"[DEBUG] Procesando fecha de sesión. Valor recibido: {session_date} (tipo: {type(session_date)})")
-        
-        if session_date is None or str(session_date).strip() == '':
-            # Si no hay fecha, usar la actual con zona horaria de México
-            mexico_tz = pytz.timezone('America/Mexico_City')
-            session_date = datetime.now(mexico_tz).date()
-            session_date_str = session_date.strftime('%Y-%m-%d')
-            print(f"[DEBUG] Usando fecha actual (México): {session_date_str}")
-        else:
-            try:
-                # Si es un objeto datetime o date, formatear
-                if hasattr(session_date, 'strftime'):
-                    session_date_str = session_date.strftime('%Y-%m-%d')
-                    print(f"[DEBUG] Fecha formateada desde objeto date/datetime: {session_date_str}")
-                # Si es un string, intentar convertirlo a datetime y luego formatear
-                else:
-                    print(f"[DEBUG] Intentando parsear fecha desde string: {session_date}")
-                    # Intentar con diferentes formatos de fecha
-                    for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%Y/%m/%d', '%m/%d/%Y'):
-                        try:
-                            dt = datetime.strptime(str(session_date).strip(), fmt)
-                            session_date_str = dt.strftime('%Y-%m-%d')
-                            print(f"[DEBUG] Fecha parseada con formato '{fmt}': {session_date_str}")
-                            break
-                        except ValueError:
-                            print(f"[DEBUG] Error al parsear con formato '{fmt}'")  # Debug: Mostrar error de parseo
-                            continue
-                    else:
-                        # Si ningún formato funcionó, usar la fecha actual
-                        mexico_tz = pytz.timezone('America/Mexico_City')
-                        session_date_str = datetime.now(mexico_tz).strftime('%Y-%m-%d')
-                        print(f"[DEBUG] No se pudo parsear la fecha, usando fecha actual: {session_date_str}")
-            except Exception as e:
-                mexico_tz = pytz.timezone('America/Mexico_City')
-                session_date_str = datetime.now(mexico_tz).strftime('%Y-%m-%d')
-                print(f"[DEBUG] Excepción al procesar fecha: {str(e)}. Usando fecha actual: {session_date_str}")
-        
-        # Extraer región del estado
-        if qth == "Extranjera":
-            region = "EX"
-        else:
-            # Buscar código del estado
-            states = {v: k for k, v in self._get_mexican_states().items()}
-            region = states.get(qth, "XX")
-        
-        # Convertir señal a calidad numérica (1=mala, 2=regular, 3=buena)
-        signal_quality = self._convert_signal_to_quality(signal_report)
-        
-        # Asegurar que event_type_id sea un entero o None
-        try:
-            event_type_id = int(event_type_id) if event_type_id is not None and str(event_type_id).strip() else None
-        except (ValueError, TypeError):
-            event_type_id = None
-        
-        # Debug: Mostrar todos los campos que se van a guardar
-        debug_info = {
-            'call_sign': call_sign,
-            'operator_name': operator_name,
-            'qth': qth,
-            'ciudad': ciudad,
-            'signal_report': signal_report,
-            'zona': zona,
-            'sistema': sistema,
-            'grid_locator': grid_locator,
-            'hf_frequency': hf_frequency,
-            'hf_band': hf_band,
-            'hf_mode': hf_mode,
-            'hf_power': hf_power,
-            'observations': observations,
-            'session_date_param': str(session_date) + f' (tipo: {type(session_date).__name__})',
-            'session_date_processed': session_date_str,
-            'region': region,
-            'signal_quality': signal_quality,
-            'created_by': created_by,
-            'event_type_id': event_type_id,
-            'debug_timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        }
-        print("\n[DEBUG] Datos a guardar:", debug_info, "\n")
-        
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        try:
+            # Tabla de configuración SMTP
             cursor.execute('''
-                INSERT INTO reports (
-                    call_sign, operator_name, qth, ciudad, signal_report, 
-                    zona, sistema, grid_locator, hf_frequency, hf_band, 
-                    hf_mode, hf_power, observations, session_date, region, 
-                    signal_quality, created_by, event_type_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                call_sign.upper(), 
-                operator_name.title(), 
-                qth.upper(), 
-                ciudad.title(), 
-                signal_report, 
-                zona, 
-                sistema,
-                grid_locator.upper() if grid_locator else None, 
-                hf_frequency or None, 
-                hf_band or None, 
-                hf_mode or None, 
-                hf_power or None, 
-                observations, 
-                session_date_str, 
-                region, 
-                signal_quality, 
-                created_by,
-                event_type_id  # Ya convertido a entero o None
-            ))
-        except sqlite3.OperationalError as e:
-            if "no column named" in str(e):
-                # Fallback para compatibilidad con esquemas antiguos
-                cursor.execute("PRAGMA table_info(reports)")
-                columns = [column[1] for column in cursor.fetchall()]
-                
-                if 'estado' in columns and 'ciudad' in columns:
-                    cursor.execute('''
-                        INSERT INTO reports (call_sign, operator_name, qth, estado, ciudad, signal_report, zona, sistema,
-                                           grid_locator, hf_frequency, hf_band, hf_mode, hf_power, observations, session_date, region, signal_quality)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (call_sign.upper(), operator_name.title(), qth.upper(), qth.upper(), ciudad.title(), signal_report, zona, sistema,
-                          grid_locator.upper() if grid_locator else None, hf_frequency or None, hf_band or None,
-                          hf_mode or None, hf_power or None, observations, session_date, region, signal_quality))
-                else:
-                    raise Exception(f"Estructura de base de datos incompatible: {e}")
-            else:
-                raise e
-        
-        # Actualizar historial de estaciones
-        cursor.execute('''
-            INSERT OR REPLACE INTO station_history 
-            (call_sign, operator_name, qth, ciudad, zona, sistema, grid_locator, hf_frequency, hf_band, hf_mode, hf_power, last_used, use_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), 
-                    COALESCE((SELECT use_count FROM station_history WHERE call_sign = ?) + 1, 1))
-        ''', (call_sign.upper(), operator_name.title(), qth.upper(), ciudad.title(), zona, sistema, 
-              grid_locator.upper() if grid_locator else None, hf_frequency or None, hf_band or None, 
-              hf_mode or None, hf_power or None, call_sign.upper()))
-        
-        # Actualizar contador de sesión
-        cursor.execute('''
-            INSERT OR REPLACE INTO sessions (session_date, total_participants)
-            VALUES (?, (
-                SELECT COUNT(DISTINCT call_sign) 
-                FROM reports 
-                WHERE session_date = ?
-            ))
-        ''', (session_date, session_date))
-        
-        conn.commit()
-        conn.close()
-        return cursor.lastrowid
+                CREATE TABLE IF NOT EXISTS smtp_settings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    server TEXT NOT NULL,
+                    port INTEGER NOT NULL,
+                    username TEXT NOT NULL,
+                    password TEXT NOT NULL,
+                    use_tls BOOLEAN DEFAULT 1,
+                    from_email TEXT NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Insertar configuración por defecto si no existe
+            cursor.execute('SELECT COUNT(*) FROM smtp_settings')
+            if cursor.fetchone()[0] == 0:
+                cursor.execute('''
+                    INSERT INTO smtp_settings 
+                    (server, port, username, password, use_tls, from_email)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', ('smtp.gmail.com', 587, '', '', 1, ''))
+            
+            # Tabla de QTH (Estados)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS qth (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    estado TEXT NOT NULL UNIQUE,
+                    abreviatura TEXT NOT NULL UNIQUE
+                )
+            ''')
+            
+            # Tabla de Zonas
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS zonas (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    codigo TEXT NOT NULL UNIQUE,
+                    nombre TEXT NOT NULL UNIQUE
+                )
+            ''')
+            
+            # Tabla de Sistemas
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS sistemas (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    codigo TEXT NOT NULL UNIQUE,
+                    nombre TEXT NOT NULL UNIQUE
+                )
+            ''')
+            
+            # Tabla de Usuarios
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    full_name TEXT NOT NULL,
+                    email TEXT UNIQUE,
+                    phone TEXT,
+                    role TEXT NOT NULL DEFAULT 'operator',
+                    is_active BOOLEAN DEFAULT 1,
+                    last_login DATETIME,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Insertar datos iniciales si no existen
+            self._insert_initial_data(cursor)
+            
+            conn.commit()
     
-    def _get_mexican_states(self):
-        """Retorna diccionario de estados mexicanos con códigos de 3 letras"""
-        return {
-            'AGS': 'Aguascalientes',
-            'BCN': 'Baja California',
-            'BCS': 'Baja California Sur',
-            'CAM': 'Campeche',
-            'CHP': 'Chiapas',
-            'CHH': 'Chihuahua',
-            'COA': 'Coahuila',
-            'COL': 'Colima',
-            'CMX': 'Ciudad de México',
-            'DUR': 'Durango',
-            'GTO': 'Guanajuato',
-            'GRO': 'Guerrero',
-            'HID': 'Hidalgo',
-            'JAL': 'Jalisco',
-            'MEX': 'Estado de México',
-            'MIC': 'Michoacán',
-            'MOR': 'Morelos',
-            'NAY': 'Nayarit',
-            'NLE': 'Nuevo León',
-            'OAX': 'Oaxaca',
-            'PUE': 'Puebla',
-            'QRO': 'Querétaro',
-            'ROO': 'Quintana Roo',
-            'SLP': 'San Luis Potosí',
-            'SIN': 'Sinaloa',
-            'SON': 'Sonora',
-            'TAB': 'Tabasco',
-            'TAM': 'Tamaulipas',
-            'TLA': 'Tlaxcala',
-            'VER': 'Veracruz',
-            'YUC': 'Yucatán',
-            'ZAC': 'Zacatecas'
-        }
+    def _insert_initial_data(self, cursor):
+        """Inserta los datos iniciales en las tablas"""
+        # Insertar estados de México
+        estados_mexico = [
+            ('Aguascalientes', 'AGS'), ('Baja California', 'BC'), 
+            ('Baja California Sur', 'BCS'), ('Campeche', 'CAMP'),
+            ('Chiapas', 'CHIS'), ('Chihuahua', 'CHIH'),
+            ('Ciudad de México', 'CDMX'), ('Coahuila', 'COAH'),
+            ('Colima', 'COL'), ('Durango', 'DGO'),
+            ('Estado de México', 'EDOMEX'), ('Guanajuato', 'GTO'),
+            ('Guerrero', 'GRO'), ('Hidalgo', 'HGO'),
+            ('Jalisco', 'JAL'), ('Michoacán', 'MICH'),
+            ('Morelos', 'MOR'), ('Nayarit', 'NAY'),
+            ('Nuevo León', 'NL'), ('Oaxaca', 'OAX'),
+            ('Puebla', 'PUE'), ('Querétaro', 'QRO'),
+            ('Quintana Roo', 'QROO'), ('San Luis Potosí', 'SLP'),
+            ('Sinaloa', 'SIN'), ('Sonora', 'SON'),
+            ('Tabasco', 'TAB'), ('Tamaulipas', 'TAMPS'),
+            ('Tlaxcala', 'TLAX'), ('Veracruz', 'VER'),
+            ('Yucatán', 'YUC'), ('Zacatecas', 'ZAC'),
+            ('Extranjero', 'EXT')
+        ]
+        
+        cursor.executemany(
+            'INSERT OR IGNORE INTO qth (estado, abreviatura) VALUES (?, ?)',
+            estados_mexico
+        )
+        
+        # Insertar zonas
+        zonas = [
+            ('XE1', 'Zona XE1'),
+            ('XE2', 'Zona XE2'),
+            ('XE3', 'Zona XE3'),
+            ('EXT', 'Zona Extranjera')
+        ]
+        
+        cursor.executemany(
+            'INSERT OR IGNORE INTO zonas (codigo, nombre) VALUES (?, ?)',
+            zonas
+        )
+        
+        # Insertar sistemas
+        sistemas = [
+            ('HF', 'High Frequency'),
+            ('ASL', 'All Star Link'),
+            ('IRLP', 'Internet Radio Link Project'),
+            ('DMR', 'DMR'),
+            ('Fusion', 'Yaesu C4FM'),
+            ('D-Star', 'Icom D-Star'),
+            ('P25', 'P25'),
+            ('M17', 'M17')
+        ]
+        
+        cursor.executemany(
+            'INSERT OR IGNORE INTO sistemas (codigo, nombre) VALUES (?, ?)',
+            sistemas
+        )
+        
+        # Crear usuario admin por defecto si no existe
+        admin_exists = cursor.execute(
+            'SELECT id FROM users WHERE username = ?', 
+            ('admin',)
+        ).fetchone()
+        
+        if not admin_exists:
+            self.create_user(
+                username='admin',
+                password='admin123',  # Se debe cambiar en producción
+                full_name='Administrador del Sistema',
+                email='admin@example.com',
+                role='admin'
+            )
     
-    def _validate_grid_locator(self, grid_locator):
-        """Valida formato de Grid Locator con niveles progresivos
-        - Mínimo 4 caracteres requeridos
-        - Niveles: DL74 (4), DL74QB (6), DL74QB44 (8), DL74QB44PG (10)
-        """
-        if not grid_locator:
-            return True, ""  # Opcional
+    def _hash_password(self, password):
+        """Genera un hash seguro de la contraseña"""
+        salt = secrets.token_hex(16)
+        pwd_hash = hashlib.pbkdf2_hmac(
+            'sha256',
+            password.encode('utf-8'),
+            salt.encode('utf-8'),
+            100000
+        ).hex()
+        return f"{salt}${pwd_hash}"
         
-        grid_locator = grid_locator.upper().strip()
+    def _check_password(self, password, hashed_password):
+        """Verifica si la contraseña coincide con el hash almacenado"""
+        if not hashed_password or '$' not in hashed_password:
+            return False
+            
+        salt, stored_hash = hashed_password.split('$', 1)
+        new_hash = hashlib.pbkdf2_hmac(
+            'sha256',
+            password.encode('utf-8'),
+            salt.encode('utf-8'),
+            100000
+        ).hex()
+        return new_hash == stored_hash
         
-        # Mínimo 4 caracteres requeridos
-        if len(grid_locator) < 4:
-            return False, "Grid Locator debe tener mínimo 4 caracteres (ej: DL74)"
+    def create_user(self, username, password, full_name, email, phone=None, role='operator'):
+        """Crea un nuevo usuario en la base de datos"""
+        password_hash = self._hash_password(password)
         
-        # Máximo 10 caracteres
-        if len(grid_locator) > 10:
-            return False, "Grid Locator debe tener máximo 10 caracteres"
-        
-        # Validar longitudes permitidas: 4, 6, 8, 10
-        if len(grid_locator) not in [4, 6, 8, 10]:
-            return False, "Grid Locator debe tener 4, 6, 8 o 10 caracteres"
-        
-        import re
-        
-        # Nivel 1: DL74 (4 chars) - 2 letras A-R + 2 números
-        if len(grid_locator) == 4:
-            if not re.match(r'^[A-R]{2}[0-9]{2}$', grid_locator):
-                return False, "Formato inválido para 4 chars. Ejemplo: DL74"
-        
-        # Nivel 2: DL74QB (6 chars) - + 2 letras A-X
-        elif len(grid_locator) == 6:
-            if not re.match(r'^[A-R]{2}[0-9]{2}[A-X]{2}$', grid_locator):
-                return False, "Formato inválido para 6 chars. Ejemplo: DL74QB"
-        
-        # Nivel 3: DL74QB44 (8 chars) - + 2 números
-        elif len(grid_locator) == 8:
-            if not re.match(r'^[A-R]{2}[0-9]{2}[A-X]{2}[0-9]{2}$', grid_locator):
-                return False, "Formato inválido para 8 chars. Ejemplo: DL74QB44"
-        
-        # Nivel 4: DL74QB44PG (10 chars) - + 2 letras A-X
-        elif len(grid_locator) == 10:
-            if not re.match(r'^[A-R]{2}[0-9]{2}[A-X]{2}[0-9]{2}[A-X]{2}$', grid_locator):
-                return False, "Formato inválido para 10 chars. Ejemplo: DL74QB44PG"
-        
-        return True, ""
-    
-    def _convert_signal_to_quality(self, signal_report):
-        """Convierte el reporte de señal a calidad numérica"""
-        signal_lower = signal_report.lower()
-        if any(word in signal_lower for word in ['buena', 'excelente', 'fuerte', '5']):
-            return 3
-        elif any(word in signal_lower for word in ['regular', 'media', '3', '4']):
-            return 2
-        else:
-            return 1
-    
-    def get_distinct_zones(self):
-        """Obtiene una lista de zonas únicas de la tabla de reportes"""
-        conn = sqlite3.connect(self.db_path)
         try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT DISTINCT zona FROM reports WHERE zona IS NOT NULL AND zona != '' ORDER BY zona")
-            zones = [row[0] for row in cursor.fetchall()]
-            return zones
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('BEGIN TRANSACTION')
+                cursor.execute('''
+                    INSERT INTO users 
+                    (username, password_hash, full_name, email, phone, role)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (username, password_hash, full_name, email, phone, role))
+                user_id = cursor.lastrowid
+                conn.commit()
+                return user_id
+        except sqlite3.IntegrityError as e:
+            if 'UNIQUE constraint failed: users.username' in str(e):
+                raise ValueError(f"El nombre de usuario '{username}' ya existe") from e
+            if 'UNIQUE constraint failed: users.email' in str(e):
+                raise ValueError(f"El correo electrónico '{email}' ya está registrado") from e
+            raise
         except Exception as e:
-            print(f"Error al obtener zonas: {e}")
-            return []
-        finally:
-            conn.close()
-            
-    def get_distinct_systems(self):
-        """Obtiene una lista de sistemas únicos de la tabla de reportes"""
-        conn = sqlite3.connect(self.db_path)
-        try:
+            if conn:
+                conn.rollback()
+            raise
+    
+    def get_all_users(self):
+        """Obtiene todos los usuarios registrados"""
+        with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT DISTINCT sistema FROM reports WHERE sistema IS NOT NULL AND sistema != '' ORDER BY sistema")
-            systems = [row[0] for row in cursor.fetchall()]
-            return systems
-        except Exception as e:
-            print(f"Error al obtener sistemas: {e}")
-            return []
-        finally:
-            conn.close()
-            
-    def get_all_reports(self, session_date=None):
-        """Obtiene todos los reportes, opcionalmente filtrados por fecha"""
-        conn = sqlite3.connect(self.db_path)
-        
-        if session_date:
-            query = "SELECT * FROM reports WHERE session_date = ? ORDER BY timestamp DESC"
-            df = pd.read_sql_query(query, conn, params=(session_date,))
-        else:
-            query = "SELECT * FROM reports ORDER BY timestamp DESC"
-            df = pd.read_sql_query(query, conn)
-        
-        conn.close()
-        return df
+            cursor.execute('''
+                SELECT id, username, full_name, email, phone, role, 
+                       last_login, created_at, updated_at, is_active
+                FROM users
+                ORDER BY full_name
+            ''')
+            return [dict(row) for row in cursor.fetchall()]
     
-    def update_report(self, report_id, **kwargs):
-        """Actualiza un reporte existente"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Construir query dinámicamente
-        set_clause = ", ".join([f"{key} = ?" for key in kwargs.keys()])
-        values = list(kwargs.values()) + [report_id]
-        
-        cursor.execute(f"UPDATE reports SET {set_clause} WHERE id = ?", values)
-        rows_affected = cursor.rowcount
-        
-        conn.commit()
-        conn.close()
-        
-        return rows_affected
-    
-    def delete_report(self, report_id):
-        """Elimina un reporte"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM reports WHERE id = ?", (report_id,))
-        rows_affected = cursor.rowcount
-        conn.commit()
-        conn.close()
-        return rows_affected
-    
-    def get_statistics(self, session_date=None):
-        """Obtiene estadísticas de los reportes"""
-        conn = sqlite3.connect(self.db_path)
-        
-        base_query = "FROM reports"
-        where_clause = ""
-        params = ()
-        
-        if session_date:
-            where_clause = " WHERE session_date = ?"
-            params = (session_date,)
-        
-        # Estadísticas generales
-        stats = {}
-        
-        # Total de participantes únicos
-        cursor = conn.cursor()
-        cursor.execute(f"SELECT COUNT(DISTINCT call_sign) {base_query} {where_clause}", params)
-        stats['total_participants'] = cursor.fetchone()[0]
-        
-        # Total de reportes
-        cursor.execute(f"SELECT COUNT(*) {base_query} {where_clause}", params)
-        stats['total_reports'] = cursor.fetchone()[0]
-        
-        # Participantes por región
-        query = f"SELECT region, COUNT(DISTINCT call_sign) as count {base_query} {where_clause} GROUP BY region ORDER BY count DESC"
-        stats['by_region'] = pd.read_sql_query(query, conn, params=params)
-        
-        # Ranking de estaciones más activas
-        query = f"SELECT call_sign, operator_name, COUNT(*) as reports_count {base_query} {where_clause} GROUP BY call_sign ORDER BY reports_count DESC LIMIT 10"
-        stats['most_active'] = pd.read_sql_query(query, conn, params=params)
-        
-        # Distribución de calidad de señal
-        query = f"SELECT signal_quality, COUNT(*) as count {base_query} {where_clause} GROUP BY signal_quality"
-        stats['signal_quality'] = pd.read_sql_query(query, conn, params=params)
-        
-        # Reportes por zona (total de reportes, no participantes únicos)
-        query = f"SELECT zona, COUNT(*) as count {base_query} {where_clause} GROUP BY zona ORDER BY count DESC"
-        stats['by_zona'] = pd.read_sql_query(query, conn, params=params)
-        
-        # Reportes por sistema (total de reportes, no participantes únicos)
-        query = f"SELECT sistema, COUNT(*) as count {base_query} {where_clause} GROUP BY sistema ORDER BY count DESC"
-        stats['by_sistema'] = pd.read_sql_query(query, conn, params=params)
-        
-        # Reportes por hora
-        query = f"SELECT strftime('%H', timestamp) as hour, COUNT(*) as count {base_query} {where_clause} GROUP BY hour ORDER BY hour"
-        stats['by_hour'] = pd.read_sql_query(query, conn, params=params)
-        
-        # Rankings - Top zona (incluir empates)
-        if not stats['by_zona'].empty:
-            max_count = stats['by_zona']['count'].max()
-            top_zonas = stats['by_zona'][stats['by_zona']['count'] == max_count]
-            zona_names = ', '.join(top_zonas['zona'].tolist())
-            stats['top_zona'] = {'zona': zona_names, 'count': max_count}
-        
-        # Rankings - Top sistema (incluir empates)
-        if not stats['by_sistema'].empty:
-            max_count = stats['by_sistema']['count'].max()
-            top_sistemas = stats['by_sistema'][stats['by_sistema']['count'] == max_count]
-            sistema_names = ', '.join(top_sistemas['sistema'].tolist())
-            stats['top_sistema'] = {'sistema': sistema_names, 'count': max_count}
-        
-        # Rankings - Top indicativo (incluir empates)
-        if not stats['most_active'].empty:
-            max_count = stats['most_active']['reports_count'].max()
-            top_calls = stats['most_active'][stats['most_active']['reports_count'] == max_count]
-            call_names = ', '.join(top_calls['call_sign'].tolist())
-            stats['top_call_sign'] = {'call_sign': call_names, 'count': max_count}
-        
-        conn.close()
-        return stats
-    
-    def search_reports(self, search_term, filters=None):
-        """Busca reportes por indicativo, nombre o QTH con filtros opcionales"""
-        conn = sqlite3.connect(self.db_path)
-        
-        # Query base
-        where_conditions = []
-        params = []
-        
-        # Búsqueda por término
-        if search_term:
-            where_conditions.append("(call_sign LIKE ? OR operator_name LIKE ? OR ciudad LIKE ? OR qth LIKE ? OR grid_locator LIKE ? OR hf_frequency LIKE ?)")
-            search_pattern = f"%{search_term}%"
-            params.extend([search_pattern, search_pattern, search_pattern, search_pattern, search_pattern, search_pattern])
-        
-        # Aplicar filtros adicionales
-        if filters:
-            if filters.get('session_date'):
-                where_conditions.append("session_date = ?")
-                params.append(filters['session_date'])
-            
-            if filters.get('zona') and filters['zona'] != 'Todas':
-                where_conditions.append("zona = ?")
-                params.append(filters['zona'])
-            
-            if filters.get('sistema') and filters['sistema'] != 'Todos':
-                where_conditions.append("sistema = ?")
-                params.append(filters['sistema'])
-        
-        # Construir query final
-        query = "SELECT * FROM reports"
-        if where_conditions:
-            query += " WHERE " + " AND ".join(where_conditions)
-        query += " ORDER BY timestamp DESC"
-        
-        # Ejecutar la consulta y devolver resultados
-        if params:
-            df = pd.read_sql_query(query, conn, params=params)
-        else:
-            df = pd.read_sql_query(query, conn)
-            
-        conn.close()
-        return df
-    
-    def get_event_types(self, active_only=True):
+    def change_password(self, username, new_password):
         """
-        Obtiene los tipos de eventos de la base de datos
+        Actualiza la contraseña de un usuario
         
         Args:
-            active_only (bool): Si es True, solo devuelve los tipos de eventos activos
-            
-        Returns:
-            pd.DataFrame: DataFrame con los tipos de eventos
-        """
-        conn = sqlite3.connect(self.db_path)
-        try:
-            query = "SELECT * FROM event_types"
-            params = ()
-            
-            if active_only:
-                query += " WHERE is_active = 1"
-                
-            query += " ORDER BY name"
-            
-            df = pd.read_sql_query(query, conn, params=params)
-            return df
-            
-        except Exception as e:
-            print(f"Error al obtener tipos de eventos: {str(e)}")
-            return pd.DataFrame()
-        finally:
-            conn.close()
-            
-    def update_event_type(self, event_type_id, name=None, description=None, default_weekday=None, default_time=None, is_active=None):
-        """
-        Actualiza un tipo de evento existente
-        
-        Args:
-            event_type_id (int): ID del tipo de evento a actualizar
-            name (str, optional): Nuevo nombre del evento
-            description (str, optional): Nueva descripción
-            default_weekday (int, optional): Nuevo día de la semana (0-6, None para diario)
-            default_time (str, optional): Nueva hora por defecto (HH:MM)
-            is_active (bool, optional): Nuevo estado de activación
+            username (str): Nombre de usuario
+            new_password (str): Nueva contraseña en texto plano
             
         Returns:
             bool: True si la actualización fue exitosa, False en caso contrario
         """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        try:
-            update_fields = []
-            params = []
+        if not username or not new_password:
+            raise ValueError("Se requiere nombre de usuario y nueva contraseña")
             
-            if name is not None:
-                update_fields.append("name = ?")
-                params.append(name)
-                
-            if description is not None:
-                update_fields.append("description = ?")
-                params.append(description)
-                
-            if default_weekday is not None:
-                update_fields.append("default_weekday = ?")
-                params.append(default_weekday)
-                
-            if default_time is not None:
-                update_fields.append("default_time = ?")
-                params.append(str(default_time))
-                
-            if is_active is not None:
-                update_fields.append("is_active = ?")
-                params.append(1 if is_active else 0)
+        # Usar el mismo método de hashing que en _hash_password
+        password_hash = self._hash_password(new_password)
             
-            # Agregar el ID al final para el WHERE
-            params.append(event_type_id)
-            
-            if not update_fields:
-                return False  # No hay nada que actualizar
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    UPDATE users 
+                    SET password_hash = ?, 
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE username = ?
+                ''', (password_hash, username))
                 
-            query = f"UPDATE event_types SET {', '.join(update_fields)} WHERE id = ?"
-            cursor.execute(query, params)
-            conn.commit()
-            return cursor.rowcount > 0
+                if cursor.rowcount == 0:
+                    return False
+                    
+                conn.commit()
+                return True
+                
+            except sqlite3.Error as e:
+                conn.rollback()
+                raise Exception(f"Error al actualizar la contraseña: {str(e)}")
             
-        except sqlite3.Error as e:
-            print(f"Error al actualizar el tipo de evento: {e}")
-            return False
+    def delete_user(self, user_id):
+        """Elimina un usuario por su ID"""
+        if not user_id:
+            raise ValueError("Se requiere un ID de usuario válido")
             
-        finally:
-            conn.close()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('BEGIN TRANSACTION')
+                # Verificar que el usuario existe
+                cursor.execute('SELECT id FROM users WHERE id = ?', (user_id,))
+                if not cursor.fetchone():
+                    raise ValueError("El usuario no existe")
+                
+                # Eliminar el usuario
+                cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
+                conn.commit()
+                return True
+                
+            except sqlite3.Error as e:
+                conn.rollback()
+                raise Exception(f"Error al eliminar el usuario: {str(e)}")
+            except Exception as e:
+                conn.rollback()
+                raise
     
-    def get_motivational_stats(self):
-        """Obtiene estadísticas motivacionales para competencia entre radioaficionados"""
-        from datetime import datetime
-        import traceback
+    def update_user(self, user_id, username=None, full_name=None, email=None, phone=None, role=None, password=None, is_active=None):
+        """
+        Actualiza los datos de un usuario existente
         
-        conn = None
-        stats = {}
-        
+        Args:
+            user_id: ID del usuario a actualizar
+            username: Nuevo nombre de usuario (opcional)
+            full_name: Nuevo nombre completo (opcional)
+            email: Nuevo email (opcional)
+            phone: Nuevo teléfono (opcional)
+            role: Nuevo rol (opcional)
+            password: Nueva contraseña en texto plano (opcional)
+            is_active: Estado de la cuenta (True/False) (opcional)
+            
+        Returns:
+            bool: True si la actualización fue exitosa
+        """
         try:
-            conn = sqlite3.connect(self.db_path)
-            # Estación más reportada del año
-            current_year = datetime.now().year
-            current_month = datetime.now().strftime('%Y-%m')
-            
-            # Estación más reportada del año
-            query = """
-                SELECT call_sign, operator_name, COUNT(*) as total_reports
-                FROM reports 
-                WHERE strftime('%Y', session_date) = ?
-                GROUP BY call_sign, operator_name
-                ORDER BY total_reports DESC
-                LIMIT 10
-            """
-            stats['top_stations_year'] = pd.read_sql_query(query, conn, params=(str(current_year),))
-            
-            # Estación más reportada del mes
-            query = """
-                SELECT call_sign, operator_name, COUNT(*) as total_reports
-                FROM reports 
-                WHERE strftime('%Y-%m', session_date) = ?
-                GROUP BY call_sign, operator_name
-                ORDER BY total_reports DESC
-                LIMIT 10
-            """
-            stats['top_stations_month'] = pd.read_sql_query(query, conn, params=(current_month,))
-            
-            # Zona más activa del año
-            query = """
-                SELECT zona, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
-                FROM reports 
-                WHERE strftime('%Y', session_date) = ?
-                GROUP BY zona
-                ORDER BY total_reports DESC
-            """
-            stats['top_zones_year'] = pd.read_sql_query(query, conn, params=(str(current_year),))
-            
-            # Zona más activa del mes
-            query = """
-                SELECT zona, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
-                FROM reports 
-                WHERE strftime('%Y-%m', session_date) = ?
-                GROUP BY zona
-                ORDER BY total_reports DESC
-            """
-            stats['top_zones_month'] = pd.read_sql_query(query, conn, params=(current_month,))
-            
-            # Sistema más usado del año
-            query = """
-                SELECT sistema, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
-                FROM reports 
-                WHERE strftime('%Y', session_date) = ?
-                GROUP BY sistema
-                ORDER BY total_reports DESC
-            """
-            stats['top_systems_year'] = pd.read_sql_query(query, conn, params=(str(current_year),))
-            
-            # Sistema más usado del mes
-            query = """
-                SELECT sistema, COUNT(DISTINCT call_sign) as unique_stations, COUNT(*) as total_reports
-                FROM reports 
-                WHERE strftime('%Y-%m', session_date) = ?
-                GROUP BY sistema
-                ORDER BY total_reports DESC
-            """
-            stats['top_systems_month'] = pd.read_sql_query(query, conn, params=(current_month,))
-            
-            # Estadísticas generales del año
-            query = """
-                SELECT 
-                    COUNT(*) as total_reports,
-                    COUNT(DISTINCT call_sign) as unique_stations,
-                    COUNT(DISTINCT session_date) as active_days
-                FROM reports 
-                WHERE strftime('%Y', session_date) = ?
-            """
-            stats['general_year'] = pd.read_sql_query(query, conn, params=(str(current_year),))
-            
-            # Estadísticas generales del mes
-            query = """
-                SELECT 
-                    COUNT(*) as total_reports,
-                    COUNT(DISTINCT call_sign) as unique_stations,
-                    COUNT(DISTINCT session_date) as active_days
-                FROM reports 
-                WHERE strftime('%Y-%m', session_date) = ?
-            """
-            stats['general_month'] = pd.read_sql_query(query, conn, params=(current_month,))
-            
-            return stats
-            
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Construir la consulta dinámicamente basada en los parámetros proporcionados
+                update_fields = []
+                params = []
+                
+                if username is not None:
+                    update_fields.append("username = ?")
+                    params.append(username)
+                    
+                if full_name is not None:
+                    update_fields.append("full_name = ?")
+                    params.append(full_name)
+                    
+                if email is not None:
+                    update_fields.append("email = ?")
+                    params.append(email)
+                    
+                if phone is not None:
+                    update_fields.append("phone = ?")
+                    params.append(phone)
+                    
+                if role is not None:
+                    update_fields.append("role = ?")
+                    params.append(role)
+                    
+                if is_active is not None:
+                    update_fields.append("is_active = ?")
+                    params.append(1 if is_active else 0)
+                    
+                if password is not None:
+                    password_hash = self._hash_password(password)
+                    update_fields.append("password_hash = ?")
+                    params.append(password_hash)
+                
+                # Agregar siempre la actualización de updated_at
+                update_fields.append("updated_at = CURRENT_TIMESTAMP")
+                
+                if not update_fields:
+                    return False  # No hay nada que actualizar
+                
+                # Construir y ejecutar la consulta
+                query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
+                params.append(user_id)
+                
+                cursor.execute(query, params)
+                conn.commit()
+                return cursor.rowcount > 0
+                
+        except sqlite3.IntegrityError as e:
+            if 'UNIQUE constraint failed: users.username' in str(e):
+                raise ValueError(f"El nombre de usuario ya está en uso") from e
+            if 'UNIQUE constraint failed: users.email' in str(e):
+                raise ValueError(f"El correo electrónico ya está registrado") from e
+            raise
         except Exception as e:
-            print(f"Error al obtener estadísticas motivacionales: {str(e)}")
-            print(traceback.format_exc())
-            return {}
-            
-        finally:
             if conn:
-                conn.close()
+                conn.rollback()
+            raise
     
-    def get_sessions(self):
-        """Obtiene todas las sesiones registradas"""
-        conn = sqlite3.connect(self.db_path)
-        df = pd.read_sql_query("SELECT * FROM sessions ORDER BY session_date DESC", conn)
-        conn.close()
-        return df
-    
-    def get_station_history(self, limit=20):
-        """Obtiene el historial de estaciones ordenado alfabéticamente por indicativo"""
-        conn = sqlite3.connect(self.db_path)
-        df = pd.read_sql_query('''
-            SELECT * FROM station_history 
-            ORDER BY call_sign ASC
-            LIMIT ?
-        ''', conn, params=(limit,))
-        conn.close()
-        return df
-    
-    def clear_station_history(self):
-        """Limpia todo el historial de estaciones"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM station_history")
-        conn.commit()
-        conn.close()
-        return cursor.rowcount
-    
-    def clean_orphaned_station_history(self):
-        """Limpia registros huérfanos en station_history que no tienen reportes asociados"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("""
-            DELETE FROM station_history 
-            WHERE call_sign NOT IN (SELECT DISTINCT call_sign FROM reports)
-        """)
-        deleted_count = cursor.rowcount
-        conn.commit()
-        conn.close()
-        return deleted_count
-    
-    def create_user(self, username, password_hash, full_name, email=None, role='operator'):
-        """Crea un nuevo usuario"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        try:
+    def get_user_by_id(self, user_id):
+        """Obtiene un usuario por su ID"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO users (username, password_hash, full_name, email, role)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (username, password_hash, full_name, email, role))
-            conn.commit()
-            user_id = cursor.lastrowid
-            conn.close()
-            return user_id
-        except sqlite3.IntegrityError:
-            conn.close()
-            return None
+                SELECT id, username, full_name, email, phone, role, 
+                       last_login, created_at, updated_at
+                FROM users 
+                WHERE id = ?
+            ''', (user_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
     
     def get_user_by_username(self, username):
         """Obtiene un usuario por su nombre de usuario"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
-        user = cursor.fetchone()
-        
-        conn.close()
-        return user
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
+            user = cursor.fetchone()
+            return dict(user) if user else None
     
-    def update_user_preferred_system(self, username, preferred_system):
-        """Actualiza el sistema preferido de un usuario"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            UPDATE users 
-            SET preferred_system = ? 
-            WHERE username = ?
-        ''', (preferred_system, username))
-        
-        conn.commit()
-        conn.close()
-        return cursor.rowcount > 0
+    def get_smtp_settings(self):
+        """Obtiene la configuración SMTP"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM smtp_settings ORDER BY id DESC LIMIT 1')
+            result = cursor.fetchone()
+            return dict(result) if result else None
     
-    def get_user_preferred_system(self, username):
-        """Obtiene el sistema preferido de un usuario"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT preferred_system FROM users WHERE username = ?', (username,))
-        result = cursor.fetchone()
-        
-        conn.close()
-        return result[0] if result else 'ASL'
-    
-    def update_user_hf_preferences(self, username, frequency, mode, power):
-        """Actualiza las preferencias HF de un usuario"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            UPDATE users 
-            SET hf_frequency_pref = ?, hf_mode_pref = ?, hf_power_pref = ?
-            WHERE username = ?
-        ''', (frequency, mode, power, username))
-        
-        conn.commit()
-        success = cursor.rowcount > 0
-        conn.close()
-        return success
-    
-    def update_user_profile(self, user_id, full_name, email):
-        """Actualiza información básica del perfil de usuario"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        try:
+    def update_smtp_settings(self, server, port, username, password, use_tls, from_email):
+        """Actualiza la configuración SMTP"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
             cursor.execute('''
-                UPDATE users 
-                SET full_name = ?, email = ?
-                WHERE id = ?
-            ''', (full_name, email, user_id))
-            
+                INSERT INTO smtp_settings 
+                (server, port, username, password, use_tls, from_email)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (server, port, username, password, 1 if use_tls else 0, from_email))
             conn.commit()
-            success = cursor.rowcount > 0
-            conn.close()
-            return success
-        except Exception as e:
-            conn.close()
-            raise e
+            return True
     
-    def change_user_password(self, user_id, new_password):
-        """Cambia la contraseña de un usuario"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+    def verify_user(self, username, password):
+        """Verifica las credenciales del usuario"""
+        user = self.get_user_by_username(username)
+        if not user:
+            return None
+            
+        if self._check_password(password, user['password_hash']):
+            # Actualizar último inicio de sesión
+            with self.get_connection() as conn:
+                conn.execute(
+                    'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?',
+                    (user['id'],)
+                )
+                conn.commit()
+            
+            # No devolver el hash de la contraseña
+            user.pop('password_hash', None)
+            return user
         
-        try:
-            # Actualizar con nueva contraseña
-            import hashlib
-            password_hash = hashlib.sha256(new_password.encode()).hexdigest()
-            cursor.execute('''
-                UPDATE users 
-                SET password_hash = ?
-                WHERE id = ?
-            ''', (password_hash, user_id))
-            
-            conn.commit()
-            success = cursor.rowcount > 0
-            conn.close()
-            return success
-        except Exception as e:
-            conn.close()
-            raise e
-    
-    def get_user(self, username):
-        """Obtiene un usuario por nombre de usuario"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
-        user = cursor.fetchone()
-        conn.close()
-        if user:
-            return dict(user)
         return None
     
-    def get_all_users(self):
-        """Obtiene todos los usuarios"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, username, full_name, role, email, created_at, last_login FROM users ORDER BY created_at DESC")
-        users = cursor.fetchall()
-        conn.close()
-        
-        # Convertir a lista de diccionarios
-        if users:
-            return [dict(user) for user in users]
-        return []
+# ... (rest of the code remains the same)
+        """Genera un hash seguro de la contraseña"""
+        salt = secrets.token_hex(16)
+        pwd_hash = hashlib.pbkdf2_hmac(
+            'sha256',
+            password.encode('utf-8'),
+            salt.encode('utf-8'),
+            100000
+        ).hex()
+        return f"{salt}${pwd_hash}"
     
-    def update_user(self, user_id, full_name=None, role=None, email=None):
-        """Actualiza información de un usuario"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        updates = []
-        params = []
-        
-        if full_name:
-            updates.append("full_name = ?")
-            params.append(full_name)
-        if role:
-            updates.append("role = ?")
-            params.append(role)
-        if email:
-            updates.append("email = ?")
-            params.append(email)
-        
-        if updates:
-            params.append(user_id)
-            cursor.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params)
-            conn.commit()
-        
-        conn.close()
-        return cursor.rowcount > 0
-    
-    def delete_user(self, user_id):
-        """Elimina un usuario"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
-        conn.commit()
-        conn.close()
-        return cursor.rowcount > 0
-    
-    def change_password(self, username, new_password_hash):
-        """Cambia la contraseña de un usuario"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("UPDATE users SET password_hash = ? WHERE username = ?", (new_password_hash, username))
-        conn.commit()
-        conn.close()
-        return cursor.rowcount > 0
-    
-    def normalize_operator_names(self):
-        """Normaliza todos los nombres de operadores y ciudades existentes a formato título"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Actualizar tabla reports - nombres de operadores y ciudades
-        cursor.execute('SELECT id, operator_name, ciudad FROM reports WHERE operator_name IS NOT NULL OR ciudad IS NOT NULL')
-        reports = cursor.fetchall()
-        
-        for report_id, name, ciudad in reports:
-            updates = []
-            params = []
+    def _check_password(self, password, stored_hash):
+        """Verifica si la contraseña coincide con el hash almacenado"""
+        if not stored_hash or '$' not in stored_hash:
+            return False
             
-            if name and name.strip():
-                normalized_name = name.strip().title()
-                updates.append('operator_name = ?')
-                params.append(normalized_name)
-            
-            if ciudad and ciudad.strip():
-                normalized_ciudad = ciudad.strip().title()
-                updates.append('ciudad = ?')
-                params.append(normalized_ciudad)
-            
-            if updates:
-                params.append(report_id)
-                cursor.execute(f'UPDATE reports SET {", ".join(updates)} WHERE id = ?', params)
+        salt, pwd_hash = stored_hash.split('$', 1)
+        new_hash = hashlib.pbkdf2_hmac(
+            'sha256',
+            password.encode('utf-8'),
+            salt.encode('utf-8'),
+            100000
+        ).hex()
         
-        # Actualizar tabla station_history - solo actualizar ciudad (no operator_name para evitar UNIQUE constraint)
-        cursor.execute('''
-            UPDATE station_history 
-            SET ciudad = CASE 
-                WHEN ciudad IS NOT NULL AND TRIM(ciudad) != '' THEN
-                    UPPER(SUBSTR(TRIM(ciudad), 1, 1)) || 
-                    LOWER(SUBSTR(TRIM(ciudad), 2))
-                ELSE ciudad 
-            END
-            WHERE ciudad IS NOT NULL
-        ''')
+        return pwd_hash == new_hash
         
-        conn.commit()
-        
-        # Obtener conteo actualizado después de las operaciones
-        cursor.execute('SELECT COUNT(*) FROM reports')
-        reports_count = cursor.fetchone()[0]
-        cursor.execute('SELECT COUNT(*) FROM station_history')
-        stations_count = cursor.fetchone()[0]
-        
-        conn.close()
-        
-        return reports_count + stations_count
+    # Métodos para consultar datos maestros
+    def get_estados(self):
+        """Obtiene todos los estados de la base de datos"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT abreviatura, estado FROM qth ORDER BY estado')
+            return {row['abreviatura']: row['estado'] for row in cursor.fetchall()}
     
-    def update_last_login(self, username):
-        """Actualiza la última fecha de login del usuario"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE username = ?", (username,))
-        conn.commit()
-        conn.close()
+    def get_zonas(self):
+        """Obtiene todas las zonas de la base de datos"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT codigo, nombre FROM zonas ORDER BY nombre')
+            return {row['codigo']: row['nombre'] for row in cursor.fetchall()}
     
-    def search_call_signs_dynamic(self, pattern, limit=10):
-        """
-        Busca indicativos dinámicamente usando solo la tabla reports.
-        Retorna solo registros únicos por call_sign (el más reciente).
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Preparar patrón de búsqueda
-        if not pattern:
-            return []
-            
-        search_pattern = f"{pattern.upper()}%"
-        
-        # Buscar en reports agrupando por call_sign únicamente y tomando el más reciente
-        cursor.execute('''
-            SELECT call_sign, operator_name, qth, ciudad, zona, sistema, 
-                   COUNT(*) as report_count,
-                   MAX(timestamp) as last_report
-            FROM reports 
-            WHERE call_sign LIKE ? 
-            GROUP BY call_sign
-            ORDER BY report_count DESC, last_report DESC, call_sign ASC
-            LIMIT ?
-        ''', (search_pattern, limit))
-        
-        results = cursor.fetchall()
-        conn.close()
-        
-        # Formatear resultados para mantener compatibilidad con el código existente
-        formatted_results = []
-        for row in results:
-            formatted_results.append({
-                'call_sign': row[0],
-                'operator_name': row[1], 
-                'qth': row[2],
-                'ciudad': row[3],
-                'zona': row[4],
-                'sistema': row[5],
-                'use_count': row[6],  # report_count como use_count para compatibilidad
-                'last_used': row[7]   # last_report como last_used
-            })
-        
-        return formatted_results
+    def get_sistemas(self):
+        """Obtiene todos los sistemas de la base de datos"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT codigo, nombre FROM sistemas ORDER BY nombre')
+            return {row['codigo']: row['nombre'] for row in cursor.fetchall()}
     
-    def diagnose_qth_data(self, pattern):
-        """
-        Función de diagnóstico para verificar datos QTH de estaciones específicas
-        """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        search_pattern = f"{pattern.upper()}%"
-        
-        # Query detallado para diagnóstico
-        cursor.execute('''
-            SELECT call_sign, operator_name, qth, ciudad, zona, sistema, 
-                   timestamp, session_date,
-                   CASE 
-                       WHEN qth IS NULL THEN 'NULL'
-                       WHEN qth = '' THEN 'EMPTY'
-                       WHEN TRIM(qth) = '' THEN 'WHITESPACE'
-                       ELSE 'HAS_DATA'
-                   END as qth_status
-            FROM reports 
-            WHERE call_sign LIKE ? 
-            ORDER BY call_sign ASC, timestamp DESC
-        ''', (search_pattern,))
-        
-        results = cursor.fetchall()
-        conn.close()
-        
-        return results
+    def get_estado_by_abreviatura(self, abreviatura):
+        """Obtiene un estado por su abreviatura"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT estado FROM qth WHERE abreviatura = ?', (abreviatura,))
+            result = cursor.fetchone()
+            return result['estado'] if result else None
+    
+    def get_zona_by_codigo(self, codigo):
+        """Obtiene una zona por su código"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT nombre FROM zonas WHERE codigo = ?', (codigo,))
+            result = cursor.fetchone()
+            return result['nombre'] if result else None
+    
+    def get_sistema_by_codigo(self, codigo):
+        """Obtiene un sistema por su código"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT nombre FROM sistemas WHERE codigo = ?', (codigo,))
+            result = cursor.fetchone()
+            return result['nombre'] if result else None
+
+if __name__ == "__main__":
+    # Crear la base de datos y tablas si no existen
+    db = FMREDatabase()
+    print("Base de datos inicializada correctamente.")

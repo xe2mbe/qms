@@ -1,474 +1,155 @@
 import re
 from datetime import datetime
 import pytz
+from database import FMREDatabase
 
-def is_mexican_call_sign(call_sign):
-    """
-    Determina si un indicativo es mexicano
-    Indicativos mexicanos: XE, XF, 4A, 6D
-    """
-    if not call_sign:
-        return False
-    
-    # Patrón para indicativos mexicanos
-    mexican_pattern = r'^(XE|XF|4A|6D)[0-9][A-Z]{1,3}$'
-    return bool(re.match(mexican_pattern, call_sign.upper()))
+# Inicializar la base de datos
+db = FMREDatabase()
+
+def format_call_sign(call_sign):
+    """Formatea un indicativo de llamada a mayúsculas"""
+    return call_sign.upper().strip() if call_sign else ""
+
+def format_name(name):
+    """Formatea un nombre con mayúsculas iniciales"""
+    return name.title().strip() if name else ""
+
+def format_qth(qth):
+    """Formatea una ubicación (QTH)"""
+    return qth.upper().strip() if qth else ""
+
+def get_mexican_states():
+    """Retorna un diccionario con los estados de México desde la base de datos"""
+    return db.get_estados()
+
+def get_estados_list():
+    """Retorna una lista de tuplas (abreviatura, nombre) de los estados de México"""
+    states = get_mexican_states()
+    return [(abbr, name) for abbr, name in states.items()]
+
+def get_zonas():
+    """Retorna las zonas disponibles desde la base de datos"""
+    zonas = db.get_zonas()
+    return [(codigo, nombre) for codigo, nombre in zonas.items()]
+
+def get_sistemas():
+    """Retorna los sistemas disponibles desde la base de datos"""
+    sistemas = db.get_sistemas()
+    return [(codigo, nombre) for codigo, nombre in sistemas.items()]
 
 def validate_call_sign(call_sign):
-    """
-    Valida el formato del indicativo de llamada
-    Acepta tanto indicativos mexicanos como extranjeros
-    """
-    if not call_sign:
+    """Valida que el indicativo tenga un formato válido"""
+    if not call_sign or not call_sign.strip():
         return False, "El indicativo no puede estar vacío"
     
-    # Patrón básico para indicativos (más permisivo para extranjeros)
-    # Formato general: 1-3 letras + 1 número + 1-4 letras/números
-    general_pattern = r'^[A-Z]{1,3}[0-9][A-Z0-9]{1,4}$'
-    
-    if re.match(general_pattern, call_sign.upper()):
-        return True, ""
-    else:
-        return False, "Formato de indicativo inválido. Ejemplo: XE1ABC, W1ABC, JA1ABC"
-
-def validate_call_sign_zone_consistency(call_sign, zona):
-    """
-    Valida que el indicativo sea consistente con la zona seleccionada
-    """
-    if not call_sign or not zona:
-        return True, ""  # Si falta información, no validar aquí
-    
-    is_mexican = is_mexican_call_sign(call_sign)
-    mexican_zones = ['XE1', 'XE2', 'XE3']
-    
-    if is_mexican and zona == 'Extranjera':
-        return False, "El indicativo mexicano debe usar zona XE1, XE2 o XE3, no 'Extranjera'"
-    
-    if not is_mexican and zona in mexican_zones:
-        return False, "Las estaciones extranjeras deben usar la zona 'Extranjera'"
-    
-    return True, ""
-
-def detect_inconsistent_data(call_sign, estado, zona):
-    """
-    Detecta inconsistencias que requieren confirmación del usuario
-    Retorna: (needs_confirmation, warning_message)
-    """
-    if not call_sign or not estado or not zona:
-        return False, ""
-    
-    is_mexican = is_mexican_call_sign(call_sign)
-    mexican_zones = ['XE1', 'XE2', 'XE3']
-    
-    # Caso: Indicativo mexicano + Estado "Extranjera" + Zona mexicana
-    if is_mexican and estado.upper() == 'EXTRANJERA' and zona in mexican_zones:
-        return True, f"⚠️ **Inconsistencia detectada:**\n\n" \
-                    f"• **Indicativo:** {call_sign} (Mexicano)\n" \
-                    f"• **Estado:** {estado}\n" \
-                    f"• **Zona:** {zona}\n\n" \
-                    f"**Recomendación:** Si es una estación extranjera, selecciona zona 'Extranjera'. " \
-                    f"Si es una estación mexicana, selecciona un estado mexicano.\n\n" \
-                    f"¿Deseas continuar con estos datos?"
-    
-    # Caso: Indicativo extranjero + Estado mexicano + Zona extranjera
-    if not is_mexican and estado.upper() != 'EXTRANJERA' and zona == 'Extranjera':
-        return True, f"⚠️ **Inconsistencia detectada:**\n\n" \
-                    f"• **Indicativo:** {call_sign} (Extranjero)\n" \
-                    f"• **Estado:** {estado}\n" \
-                    f"• **Zona:** {zona}\n\n" \
-                    f"**Recomendación:** Si es una estación extranjera, selecciona estado 'Extranjera'. " \
-                    f"Si es una estación mexicana, verifica el indicativo.\n\n" \
-                    f"¿Deseas continuar con estos datos?"
-    
-    return False, ""
-
-def validate_qth(qth):
-    """Valida el formato del QTH (ubicación) - DEPRECATED, usar validate_ciudad"""
-    if not qth or len(qth.strip()) < 2:
-        return False, "El QTH debe tener al menos 2 caracteres"
-    
-    if len(qth) > 50:
-        return False, "El QTH no puede exceder 50 caracteres"
+    # Expresión regular para validar indicativos de llamada
+    pattern = r'^[A-Z0-9]{3,7}(/[A-Z0-9]{1,3})?$'
+    if not re.match(pattern, call_sign.upper()):
+        return False, "Formato de indicativo inválido"
     
     return True, ""
 
 def validate_operator_name(name):
     """Valida el nombre del operador"""
-    if not name or len(name.strip()) < 2:
-        return False, "El nombre debe tener al menos 2 caracteres"
+    if not name or not name.strip():
+        return False, "El nombre del operador no puede estar vacío"
     
-    if len(name) > 100:
-        return False, "El nombre no puede exceder 100 caracteres"
-    
-    # Solo letras, espacios y algunos caracteres especiales
-    pattern = r'^[A-Za-zÀ-ÿ\s\-\.]+$'
-    if not re.match(pattern, name):
-        return False, "El nombre solo puede contener letras, espacios, guiones y puntos"
-    
-    return True, ""
-
-def validate_signal_report(signal):
-    """Valida el reporte de señal"""
-    if not signal:
-        return False, "El reporte de señal es obligatorio"
-    
-    valid_signals = [
-        'buena', 'regular', 'mala', 'excelente', 'fuerte', 'débil',
-        '5', '4', '3', '2', '1', '59', '58', '57', '56', '55'
-    ]
-    
-    if signal.lower() in valid_signals or any(vs in signal.lower() for vs in valid_signals):
-        return True, ""
-    else:
-        return False, "Reporte de señal inválido. Use: Buena/Regular/Mala o escala RST"
-
-def format_call_sign(call_sign):
-    """Formatea el indicativo en mayúsculas"""
-    return call_sign.upper().strip() if call_sign else ""
-
-def format_qth(qth):
-    """Formatea el QTH en mayúsculas"""
-    return qth.upper().strip() if qth else ""
-
-def format_name(name):
-    """Formatea el nombre con capitalización apropiada"""
-    return name.title().strip() if name else ""
-
-def get_mexican_states():
-    """Retorna lista de estados mexicanos con sus códigos"""
-    return {
-        'AG': 'Aguascalientes',
-        'BC': 'Baja California',
-        'BS': 'Baja California Sur',
-        'CM': 'Campeche',
-        'CS': 'Chiapas',
-        'CH': 'Chihuahua',
-        'CO': 'Coahuila',
-        'CL': 'Colima',
-        'DF': 'Ciudad de México',
-        'DG': 'Durango',
-        'GT': 'Guanajuato',
-        'GR': 'Guerrero',
-        'HG': 'Hidalgo',
-        'JA': 'Jalisco',
-        'EM': 'Estado de México',
-        'MI': 'Michoacán',
-        'MO': 'Morelos',
-        'NA': 'Nayarit',
-        'NL': 'Nuevo León',
-        'OA': 'Oaxaca',
-        'PU': 'Puebla',
-        'QT': 'Querétaro',
-        'QR': 'Quintana Roo',
-        'SL': 'San Luis Potosí',
-        'SI': 'Sinaloa',
-        'SO': 'Sonora',
-        'TB': 'Tabasco',
-        'TM': 'Tamaulipas',
-        'TL': 'Tlaxcala',
-        'VE': 'Veracruz',
-        'YU': 'Yucatán',
-        'ZA': 'Zacatecas'
-    }
-
-def get_estados_list():
-    """Retorna lista ordenada de estados para dropdown"""
-    estados = ['Extranjera']  # Primera opción
-    estados.extend(sorted(get_mexican_states().values()))
-    return estados
-
-def validate_estado(estado):
-    """Valida el estado seleccionado"""
-    valid_estados = get_estados_list()
-    
-    if not estado:
-        return False, "El estado es obligatorio"
-    
-    if estado not in valid_estados:
-        return False, f"Estado inválido. Debe ser uno de la lista"
+    if len(name) < 3:
+        return False, "El nombre es demasiado corto"
     
     return True, ""
 
 def validate_ciudad(ciudad):
-    """Valida el campo ciudad (opcional)"""
-    # Ciudad es opcional, permitir vacío
-    if not ciudad or len(ciudad.strip()) == 0:
+    """Valida el nombre de la ciudad"""
+    if not ciudad or not ciudad.strip():
+        return False, "La ciudad no puede estar vacía"
+    
+    return True, ""
+
+def validate_estado(estado):
+    """Valida que el estado exista en la base de datos"""
+    if not estado:
+        return False, "El estado no puede estar vacío"
+        
+    # Verificar si el estado existe en la base de datos
+    estados = get_mexican_states()
+    if estado not in estados.values() and estado != 'Extranjero':
+        return False, "Seleccione un estado válido"
+    
+    return True, ""
+
+def validate_signal_report(report):
+    """Valida el reporte de señal"""
+    if not report or not report.strip():
+        return False, "El reporte de señal no puede estar vacío"
+    
+    # Validar formato común de reportes (ej: 59, 5x9, 5x9+10, etc.)
+    pattern = r'^[0-9]{1,2}(x[0-9+]+)?$'
+    if not re.match(pattern, report.lower()):
+        return False, "Formato de reporte inválido"
+    
+    return True, ""
+
+def validate_call_sign_zone_consistency(call_sign, zona):
+    """Valida que el prefijo del indicativo coincida con la zona"""
+    if not call_sign or not zona:
+        return True  # La validación de campos vacíos se hace en otras funciones
+    
+    call_sign = call_sign.upper()
+    
+    # Si es extranjero, no hay validación de prefijo
+    if zona == 'EXT' or zona == 'Zona Extranjera':
         return True, ""
     
-    # Si se proporciona, debe tener al menos 2 caracteres
-    if len(ciudad.strip()) < 2:
-        return False, "La ciudad debe tener al menos 2 caracteres si se proporciona"
+    # Extraer el prefijo del indicativo (primeros 3 caracteres)
+    prefix = call_sign[:3].upper()
     
-    if len(ciudad) > 50:
-        return False, "La ciudad no puede exceder 50 caracteres"
-    
-    return True, ""
-
-def extract_region_from_qth(qth):
-    """Extrae la región del QTH basado en los primeros caracteres"""
-    if not qth or len(qth) < 2:
-        return "XX"
-    
-    region_code = qth[:2].upper()
-    states = get_mexican_states()
-    
-    if region_code in states:
-        return region_code
-    else:
-        # Intentar encontrar coincidencia parcial
-        for code, state in states.items():
-            if state.upper().startswith(qth[:3].upper()):
-                return code
-        return "XX"  # Región desconocida
-
-def format_timestamp(timestamp):
-    """Formatea timestamp para mostrar en zona horaria de México"""
-    # Zona horaria de México (Centro)
-    mexico_tz = pytz.timezone('America/Mexico_City')
-    
-    if isinstance(timestamp, str):
-        try:
-            # Parsear timestamp como UTC
-            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-            if dt.tzinfo is None:
-                dt = pytz.utc.localize(dt)
-        except:
-            return timestamp
-    else:
-        dt = timestamp
-        if dt.tzinfo is None:
-            dt = pytz.utc.localize(dt)
-    
-    # Convertir a zona horaria de México
-    dt_mexico = dt.astimezone(mexico_tz)
-    return dt_mexico.strftime("%d/%m/%Y %H:%M:%S")
-
-def get_signal_quality_text(quality_num):
-    """Convierte calidad numérica a texto"""
-    quality_map = {
-        1: "Mala",
-        2: "Regular", 
-        3: "Buena"
-    }
-    return quality_map.get(quality_num, "Desconocida")
-
-def validate_zona(zona):
-    """Valida la zona seleccionada"""
-    valid_zonas = ['XE1', 'XE2', 'XE3', 'Extranjera']
-    
-    if not zona:
-        return False, "La zona es obligatoria"
-    
-    if zona not in valid_zonas:
-        return False, f"Zona inválida. Debe ser: {', '.join(valid_zonas)}"
-    
-    return True, ""
-
-def validate_sistema(sistema):
-    """Valida el sistema seleccionado"""
-    valid_sistemas = ['IRLP', 'ASL', 'DMR', 'Fusion', 'D-Star', 'HF', 'Otro']
-    
-    if not sistema:
-        return False, "El sistema es obligatorio"
-    
-    if sistema not in valid_sistemas:
-        return False, f"Sistema inválido. Debe ser: {', '.join(valid_sistemas)}"
-    
-    return True, ""
-
-def get_zonas():
-    """Retorna lista de zonas disponibles"""
-    return ['XE1', 'XE2', 'XE3', 'Extranjera']
-
-def get_sistemas():
-    """Retorna lista de sistemas disponibles"""
-    return ['IRLP', 'ASL', 'DMR', 'Fusion', 'D-Star', 'HF', 'Otro']
-
-def validate_password(password):
-    """Valida que la contraseña cumpla con los requisitos de seguridad"""
-    if len(password) < 8:
-        return False, "La contraseña debe tener al menos 8 caracteres"
-    
-    if not any(c.isupper() for c in password):
-        return False, "La contraseña debe contener al menos una letra mayúscula"
-    
-    if not any(c.isdigit() for c in password):
-        return False, "La contraseña debe contener al menos un número"
-    
-    special_chars = "!@#$%^&*()_+-=[]{}|;:,.<>?"
-    if not any(c in special_chars for c in password):
-        return False, "La contraseña debe contener al menos un carácter especial (!@#$%^&*()_+-=[]{}|;:,.<>?)"
-    
-    return True, "Contraseña válida"
-
-def validate_all_fields(call_sign, operator_name, estado, ciudad, signal_report, zona, sistema, grid_locator=""):
-    """Valida todos los campos del formulario"""
-    errors = []
-    
-    valid, msg = validate_call_sign(call_sign)
-    if not valid:
-        errors.append(f"Indicativo: {msg}")
-    
-    valid, msg = validate_operator_name(operator_name)
-    if not valid:
-        errors.append(f"Nombre: {msg}")
-    
-    valid, msg = validate_estado(estado)
-    if not valid:
-        errors.append(f"Estado: {msg}")
-    
-    valid, msg = validate_ciudad(ciudad)
-    if not valid:
-        errors.append(f"Ciudad: {msg}")
-    
-    valid, msg = validate_signal_report(signal_report)
-    if not valid:
-        errors.append(f"Señal: {msg}")
-    
-    valid, msg = validate_zona(zona)
-    if not valid:
-        errors.append(f"Zona: {msg}")
-    
-    valid, msg = validate_sistema(sistema)
-    if not valid:
-        errors.append(f"Sistema: {msg}")
-    
-    # Validar consistencia entre indicativo y zona
-    valid, msg = validate_call_sign_zone_consistency(call_sign, zona)
-    if not valid:
-        errors.append(f"Indicativo/Zona: {msg}")
-    
-    # Validar Grid Locator (opcional pero si se proporciona debe ser válido)
-    if grid_locator and grid_locator.strip():
-        from database import FMREDatabase
-        db = FMREDatabase()
-        is_valid_grid, grid_error = db._validate_grid_locator(grid_locator.strip())
-        if not is_valid_grid:
-            errors.append(f"Grid Locator: {grid_error}")
-    
-    return len(errors) == 0, errors
-
-def validate_hf_frequency(frequency):
-    """Valida frecuencia HF (1.8-30 MHz)"""
-    if not frequency:
-        return True, ""  # Opcional para HF
-    
-    try:
-        freq_float = float(frequency)
-        if 1.8 <= freq_float <= 30.0:
+    # Verificar si el prefijo coincide con la zona
+    if zona.startswith('XE') and prefix.startswith('XE'):
+        # Verificar el número de zona
+        zone_number = zona[2]  # Obtener el número de zona (1, 2 o 3)
+        if len(prefix) > 2 and prefix[2] == zone_number:
             return True, ""
-        return False, "Frecuencia debe estar entre 1.8-30 MHz"
-    except:
-        return False, "Frecuencia inválida (usar formato: 14.230)"
+    
+    return False, f"El prefijo del indicativo no coincide con la zona {zona}"
 
-def validate_hf_fields(sistema, hf_frequency="", hf_band="", hf_mode="", hf_power=""):
-    """Valida campos específicos de HF"""
-    errors = []
+def detect_inconsistent_data(report):
+    """Detecta datos inconsistentes en un reporte"""
+    warnings = []
     
-    if sistema == "HF":
-        # Validar frecuencia si se proporciona
-        if hf_frequency:
-            valid, msg = validate_hf_frequency(hf_frequency)
-            if not valid:
-                errors.append(f"Frecuencia HF: {msg}")
+    # Verificar consistencia entre indicativo y zona
+    if 'call_sign' in report and 'zona' in report:
+        is_valid, message = validate_call_sign_zone_consistency(report['call_sign'], report['zona'])
+        if not is_valid:
+            warnings.append(message)
     
-    return len(errors) == 0, errors
+    return warnings
 
-
-
-import re
-from typing import Optional
-
-def extract_prefix_from_callsign(call_sign: str) -> Optional[str]:
-    """
-    Extrae el prefijo de un indicativo mexicano para determinar la zona automáticamente.
+def map_qth_to_estado(qth):
+    """Mapea un QTH a un estado de México desde la base de datos"""
+    if not qth:
+        return ""
     
-    Args:
-        call_sign: Indicativo completo (ej: XE1ABC, XE3DEF, W1ABC, JA1ABC)
-        
-    Returns:
-        Prefijo extraído (ej: XE1, XE3) o 'FOREIGN' para indicativos extranjeros
-    """
-    if not call_sign:
-        return None
+    qth_upper = qth.upper().strip()
+    estados = get_mexican_states()
     
-    call_sign = call_sign.upper().strip()
-    
-    # Patrones para indicativos mexicanos
-    mexican_patterns = [
-        r'^(XE[1-3])[A-Z]*$',  # XE1, XE2, XE3 seguido de letras
-        r'^(XF[1-3])[A-Z]*$',  # XF1, XF2, XF3 seguido de letras  
-        r'^(4A[1-3])[A-Z]*$',  # 4A1, 4A2, 4A3 seguido de letras
-        r'^(6D[1-3])[A-Z]*$',  # 6D1, 6D2, 6D3 seguido de letras
-    ]
-    
-    # Verificar si es mexicano
-    for pattern in mexican_patterns:
-        match = re.match(pattern, call_sign)
-        if match:
-            return match.group(1)
-    
-    # Si no es mexicano pero parece un indicativo válido, es extranjero
-    # Patrones básicos para indicativos internacionales
-    foreign_patterns = [
-        r'^[A-Z]{1,2}[0-9][A-Z]{1,4}$',  # Formato típico: W1ABC, JA1ABC, etc.
-        r'^[0-9][A-Z]{1,2}[0-9][A-Z]{1,4}$',  # Formato con número inicial: 9A1ABC
-        r'^[A-Z]{1,2}[0-9]{1,2}[A-Z]{1,4}$',  # Variaciones con más números
-    ]
-    
-    for pattern in foreign_patterns:
-        if re.match(pattern, call_sign):
-            return 'FOREIGN'
-    
-    return None
-
-def get_zone_from_prefix(prefix: str) -> Optional[str]:
-    """
-    Obtiene la zona correspondiente al prefijo mexicano o extranjero.
-    
-    Args:
-        prefix: Prefijo extraído (ej: XE1, XE3, 'FOREIGN')
-        
-    Returns:
-        Zona correspondiente o None si no se encuentra
-    """
-    if not prefix:
-        return None
-    
-    # Mapeo de prefijos a zonas
-    prefix_to_zone = {
-        'XE1': 'XE1', 'XF1': 'XE1', '4A1': 'XE1', '6D1': 'XE1',
-        'XE2': 'XE2', 'XF2': 'XE2', '4A2': 'XE2', '6D2': 'XE2', 
-        'XE3': 'XE3', 'XF3': 'XE3', '4A3': 'XE3', '6D3': 'XE3',
-        'FOREIGN': 'Extranjera'  # Para indicativos extranjeros
-    }
-    
-    return prefix_to_zone.get(prefix.upper())
-
-def map_qth_to_estado(qth_code):
-    """Mapea código QTH a nombre completo del estado"""
-    if not qth_code:
-        return 'Extranjera'
-    
-    qth_clean = qth_code.strip()
-    if not qth_clean:
-        return 'Extranjera'
-    
-    # Si ya es un nombre completo de estado válido, devolverlo tal como está
-    estados_list = get_estados_list()
-    if qth_clean in estados_list:
-        return qth_clean
-    
-    # Intentar mapeo por código de estado mexicano
-    qth_upper = qth_clean.upper()
-    mexican_states = get_mexican_states()
-    if qth_upper in mexican_states:
-        return mexican_states[qth_upper]
-    
-    # Intentar mapeo case-insensitive para nombres de estados
-    for estado in estados_list:
-        if estado.lower() == qth_clean.lower():
+    # Buscar coincidencia exacta por abreviatura o nombre
+    for abbr, estado in estados.items():
+        if qth_upper == abbr or qth_upper == estado.upper():
             return estado
     
-    # Si no coincide con nada, es extranjera
-    return 'Extranjera'
+    # Búsqueda parcial
+    for abbr, estado in estados.items():
+        if abbr in qth_upper or estado.upper() in qth_upper:
+            return estado
+    
+    # Si no se encuentra, verificar en la base de datos
+    try:
+        # Intentar obtener el estado por abreviatura
+        estado = db.get_estado_by_abreviatura(qth_upper)
+        if estado:
+            return estado
+    except:
+        pass
+    
+    return qth  # Si no se encuentra, devolver el valor original

@@ -531,7 +531,7 @@ def show_db_admin():
                     columns_df = pd.DataFrame(columns, columns=["cid", "name", "type", "notnull", "dflt_value", "pk"])
                     columns_df = columns_df[["name", "type", "notnull", "dflt_value", "pk"]]
                     columns_df.columns = ["Columna", "Tipo", "No Nulo", "Valor por Defecto", "Clave Primaria"]
-                    st.dataframe(columns_df, hide_index=True, use_container_width=True)
+                    st.dataframe(columns_df, hide_index=True, width='stretch')
                     
                     # Obtener índices
                     cursor.execute(f"PRAGMA index_list({selected_table})")
@@ -554,7 +554,7 @@ def show_db_admin():
                         data = pd.read_sql_query(f"SELECT * FROM {selected_table} LIMIT {limit}", conn)
                         
                         if not data.empty:
-                            st.dataframe(data, use_container_width=True)
+                            st.dataframe(data, width='stretch')
                             
                             # Opciones adicionales
                             col1, col2 = st.columns(2)
@@ -592,7 +592,7 @@ def show_db_admin():
                     fk_df = pd.DataFrame(fks, columns=["id", "seq", "table", "from", "to", "on_update", "on_delete", "match"])
                     fk_df = fk_df[["table", "from", "to", "on_update", "on_delete"]]
                     fk_df.columns = ["Tabla Referenciada", "Columna Origen", "Columna Destino", "On Update", "On Delete"]
-                    st.dataframe(fk_df, hide_index=True, use_container_width=True)
+                    st.dataframe(fk_df, hide_index=True, width='stretch')
             
             # Mostrar resumen de la base de datos
             st.markdown("---")
@@ -626,7 +626,7 @@ def show_db_admin():
             # Mostrar tabla con conteos
             st.markdown("#### Conteo de Registros por Tabla")
             counts_df = pd.DataFrame(table_counts, columns=["Tabla", "Registros"])
-            st.dataframe(counts_df, hide_index=True, use_container_width=True)
+            st.dataframe(counts_df, hide_index=True, width='stretch')
             
         except Exception as e:
             st.error(f"❌ Error al acceder a la base de datos: {str(e)}")
@@ -1457,11 +1457,11 @@ def registro_reportes():
             
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("✅ Entendido, continuar", type="primary", use_container_width=True):
+                if st.button("✅ Entendido, continuar", type="primary", width='stretch'):
                     st.session_state.show_report_instructions = False
                     st.rerun()
             with col2:
-                if st.button("❌ Cancelar", use_container_width=True):
+                if st.button("❌ Cancelar", width='stretch'):
                     st.session_state.show_report_instructions = False
                     st.switch_page("app.py")
             
@@ -1747,16 +1747,16 @@ def registro_reportes():
                 col1_top, col2_top, col3_top, col4_top = st.columns([2, 1.5, 1.5, 1])
                 
                 with col1_top:
-                    save_clicked_top = st.form_submit_button("💾 Agregar Seleccionadas", type="primary", use_container_width=True)
+                    save_clicked_top = st.form_submit_button("💾 Agregar Seleccionadas", type="primary", width='stretch')
                 
                 with col2_top:
-                    select_all_clicked_top = st.form_submit_button("✅ Seleccionar Todas", use_container_width=True)
+                    select_all_clicked_top = st.form_submit_button("✅ Seleccionar Todas", width='stretch')
                 
                 with col3_top:
-                    deselect_all_clicked_top = st.form_submit_button("❌ Deseleccionar Todas", use_container_width=True)
+                    deselect_all_clicked_top = st.form_submit_button("❌ Deseleccionar Todas", width='stretch')
                 
                 with col4_top:
-                    cancel_clicked_top = st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True)
+                    cancel_clicked_top = st.form_submit_button("❌ Cancelar", type="secondary", width='stretch')
                 
                 st.markdown("---")  # Línea divisoria
                 
@@ -1785,16 +1785,16 @@ def registro_reportes():
                 col1_bottom, col2_bottom, col3_bottom, col4_bottom = st.columns([2, 1.5, 1.5, 1])
                 
                 with col1_bottom:
-                    save_clicked_bottom = st.form_submit_button("💾 Agregar Seleccionadas", key="save_bottom_btn", type="primary", use_container_width=True)
+                    save_clicked_bottom = st.form_submit_button("💾 Agregar Seleccionadas", key="save_bottom_btn", type="primary", width='stretch')
                 
                 with col2_bottom:
-                    select_all_clicked_bottom = st.form_submit_button("✅ Seleccionar Todas", key="select_all_bottom_btn", use_container_width=True)
+                    select_all_clicked_bottom = st.form_submit_button("✅ Seleccionar Todas", key="select_all_bottom_btn", width='stretch')
                 
                 with col3_bottom:
-                    deselect_all_clicked_bottom = st.form_submit_button("❌ Deseleccionar Todas", key="deselect_all_bottom_btn", use_container_width=True)
+                    deselect_all_clicked_bottom = st.form_submit_button("❌ Deseleccionar Todas", key="deselect_all_bottom_btn", width='stretch')
                 
                 with col4_bottom:
-                    cancel_clicked_bottom = st.form_submit_button("❌ Cancelar", key="cancel_bottom_btn", type="secondary", use_container_width=True)
+                    cancel_clicked_bottom = st.form_submit_button("❌ Cancelar", key="cancel_bottom_btn", type="secondary", width='stretch')
                 
                 # Procesar clics en los botones
                 save_clicked = save_clicked_top or save_clicked_bottom
@@ -3060,7 +3060,7 @@ def show_participation_report(current_date, previous_date, bulletin1, bulletin2,
                         )
                     },
                     hide_index=True,
-                    use_container_width=True,
+                    width='stretch',
                     height=min(250, 35 * len(new_stations_data) + 40)
                 )
             else:
@@ -3097,7 +3097,7 @@ def show_participation_report(current_date, previous_date, bulletin1, bulletin2,
                         )
                     },
                     hide_index=True,
-                    use_container_width=True,
+                    width='stretch',
                     height=min(250, 35 * len(repeated_stations_data) + 40)
                 )
             else:
@@ -3127,7 +3127,7 @@ def show_participation_report(current_date, previous_date, bulletin1, bulletin2,
                         )
                     },
                     hide_index=True,
-                    use_container_width=True,
+                    width='stretch',
                     height=min(250, 35 * len(missing_stations_data) + 40)
                 )
             else:
@@ -3308,7 +3308,7 @@ def show_geographic_report(current_date, previous_date, bulletin1, bulletin2, fe
                 height=500
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         else:
             st.warning("No hay datos suficientes para mostrar la comparación")
         
@@ -3521,7 +3521,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
                 height=500
             )
             
-            st.plotly_chart(fig_sistemas, use_container_width=True)
+            st.plotly_chart(fig_sistemas, width='stretch')
         
         # Mostrar tablas de sistemas
         col1, col2 = st.columns(2)
@@ -3591,7 +3591,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
             col1, col2 = st.columns([2, 1])
             
             with col1:
-                st.plotly_chart(fig_señales, use_container_width=True)
+                st.plotly_chart(fig_señales, width='stretch')
             
             with col2:
                 st.write("### Detalle de Calidad")
@@ -3645,7 +3645,7 @@ def show_technical_report(current_date, previous_date, bulletin1, bulletin2, fec
                     hovermode='x unified'
                 )
                 
-                st.plotly_chart(fig_tendencia, use_container_width=True)
+                st.plotly_chart(fig_tendencia, width='stretch')
                 
         except Exception as e:
             st.warning(f"No se pudo cargar el análisis de tendencia: {str(e)}")
@@ -3731,7 +3731,7 @@ def show_event_type_report():
                     "last_seen": "Último Reporte"
                 },
                 hide_index=True,
-                use_container_width=True
+                width='stretch'
             )
             
             # Mostrar gráfico de distribución
@@ -3763,7 +3763,7 @@ def show_event_type_report():
                     margin=dict(l=20, r=20, t=50, b=150)
                 )
                 
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
                 
                 # Agregar gráfico de pastel para mostrar la distribución
                 st.markdown("### Distribución Porcentual de Reportes")
@@ -3793,7 +3793,7 @@ def show_event_type_report():
                     margin=dict(t=50, b=20, l=20, r=20)
                 )
                 
-                st.plotly_chart(pie_fig, use_container_width=True)
+                st.plotly_chart(pie_fig, width='stretch')
                 
         else:
             st.info("No hay datos de reportes por tipo de evento para mostrar.")
@@ -4068,7 +4068,7 @@ def show_trends_report(current_date, previous_date, bulletin1, bulletin2, fecha1
                     )
                 )
             
-            st.plotly_chart(fig_tendencia, use_container_width=True)
+            st.plotly_chart(fig_tendencia, width='stretch')
             
             # 4.2 Evolución de Sistemas
             st.subheader("📡 Evolución de Sistemas (Últimos 12 Boletines)")
@@ -4177,7 +4177,7 @@ def show_trends_report(current_date, previous_date, bulletin1, bulletin2, fecha1
                             borderwidth=1
                         )
             
-            st.plotly_chart(fig_sistemas_evol, use_container_width=True)
+            st.plotly_chart(fig_sistemas_evol, width='stretch')
             
             # 4.3 Evolución de Cobertura Geográfica por Zona
             st.subheader("🌍 Evolución de la Participación por Zona (Últimos 12 Boletines)")
@@ -4307,7 +4307,7 @@ def show_trends_report(current_date, previous_date, bulletin1, bulletin2, fecha1
                                     yshift=5
                                 )
                     
-                    st.plotly_chart(fig_zonas_evol, use_container_width=True)
+                    st.plotly_chart(fig_zonas_evol, width='stretch')
                     
                     # Agregar tabla resumen debajo del gráfico
                     st.subheader("📊 Resumen de Participación por Zona")
@@ -4340,7 +4340,7 @@ def show_trends_report(current_date, previous_date, bulletin1, bulletin2, fecha1
                             )
                         },
                         hide_index=True,
-                        use_container_width=True
+                        width='stretch'
                     )
                 else:
                     st.warning("No se encontraron datos de zonas para mostrar.")

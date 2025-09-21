@@ -811,6 +811,54 @@ def show_user_management():
                         if st.button(f"✏️ Editar", key=f"edit_user_{user['id']}"):
                             st.session_state[f"editing_user_{user['id']}"] = True
                         
+                        # Botón para reenviar correo de bienvenida
+                        if st.button(f"📧 Reenviar correo", key=f"resend_email_{user['id']}"):
+                            try:
+                                # Generar una contraseña temporal segura
+                                import secrets
+                                import string
+                                import hashlib
+                                
+                                alphabet = string.ascii_letters + string.digits + string.punctuation
+                                temp_password = ''.join(secrets.choice(alphabet) for i in range(12))
+                                
+                                try:
+                                    # Actualizar la contraseña en la base de datos
+                                    hashed_password = hashlib.sha256(temp_password.encode()).hexdigest()
+                                    
+                                    # Obtener conexión a la base de datos
+                                    conn = sqlite3.connect('fmre_reports.db')
+                                    cursor = conn.cursor()
+                                    
+                                    try:
+                                        # Actualizar la contraseña usando el método correcto
+                                        cursor.execute('''
+                                            UPDATE users 
+                                            SET password_hash = ? 
+                                            WHERE id = ?
+                                        ''', (hashed_password, user['id']))
+                                        
+                                        # Enviar el correo de bienvenida
+                                        if email_service.send_welcome_email(user, temp_password):
+                                            conn.commit()  # Confirmar los cambios si el correo se envía correctamente
+                                            st.success(f"✅ Correo de bienvenida reenviado a {user.get('email', '')}")
+                                            st.warning("⚠️ Se generó una nueva contraseña temporal. El usuario deberá cambiarla al iniciar sesión.")
+                                        else:
+                                            conn.rollback()  # Revertir si hay un error al enviar el correo
+                                            st.error("❌ Error al enviar el correo. Verifica la configuración SMTP.")
+                                    except Exception as e:
+                                        conn.rollback()  # Revertir en caso de error
+                                        st.error(f"❌ Error al actualizar la contraseña: {str(e)}")
+                                        raise
+                                    finally:
+                                        conn.close()
+                                        
+                                except Exception as db_error:
+                                    st.error(f"❌ Error al actualizar la contraseña: {str(db_error)}")
+                                    db.rollback()
+                            except Exception as e:
+                                st.error(f"❌ Error al enviar el correo: {str(e)}")
+                        
                         # Botón para eliminar usuario (solo si no es admin)
                         if user['username'] != 'admin':
                             if st.button(f"🗑️ Eliminar", key=f"delete_user_{user['id']}"):
@@ -5282,6 +5330,54 @@ def show_user_management():
                         # Botón para editar usuario
                         if st.button(f"✏️ Editar", key=f"edit_user_{user['id']}"):
                             st.session_state[f"editing_user_{user['id']}"] = True
+                        
+                        # Botón para reenviar correo de bienvenida
+                        if st.button(f"📧 Reenviar correo", key=f"resend_email_{user['id']}"):
+                            try:
+                                # Generar una contraseña temporal segura
+                                import secrets
+                                import string
+                                import hashlib
+                                
+                                alphabet = string.ascii_letters + string.digits + string.punctuation
+                                temp_password = ''.join(secrets.choice(alphabet) for i in range(12))
+                                
+                                try:
+                                    # Actualizar la contraseña en la base de datos
+                                    hashed_password = hashlib.sha256(temp_password.encode()).hexdigest()
+                                    
+                                    # Obtener conexión a la base de datos
+                                    conn = sqlite3.connect('fmre_reports.db')
+                                    cursor = conn.cursor()
+                                    
+                                    try:
+                                        # Actualizar la contraseña usando el método correcto
+                                        cursor.execute('''
+                                            UPDATE users 
+                                            SET password_hash = ? 
+                                            WHERE id = ?
+                                        ''', (hashed_password, user['id']))
+                                        
+                                        # Enviar el correo de bienvenida
+                                        if email_service.send_welcome_email(user, temp_password):
+                                            conn.commit()  # Confirmar los cambios si el correo se envía correctamente
+                                            st.success(f"✅ Correo de bienvenida reenviado a {user.get('email', '')}")
+                                            st.warning("⚠️ Se generó una nueva contraseña temporal. El usuario deberá cambiarla al iniciar sesión.")
+                                        else:
+                                            conn.rollback()  # Revertir si hay un error al enviar el correo
+                                            st.error("❌ Error al enviar el correo. Verifica la configuración SMTP.")
+                                    except Exception as e:
+                                        conn.rollback()  # Revertir en caso de error
+                                        st.error(f"❌ Error al actualizar la contraseña: {str(e)}")
+                                        raise
+                                    finally:
+                                        conn.close()
+                                        
+                                except Exception as db_error:
+                                    st.error(f"❌ Error al actualizar la contraseña: {str(db_error)}")
+                                    db.rollback()
+                            except Exception as e:
+                                st.error(f"❌ Error al enviar el correo: {str(e)}")
                         
                         # Botón para eliminar usuario (solo si no es admin)
                         if user['username'] != 'admin':

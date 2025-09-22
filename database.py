@@ -652,6 +652,18 @@ class FMREDatabase:
             result = cursor.fetchone()
             return dict(result) if result else None
             
+    def get_estados(self):
+        """Obtiene la lista de estados únicos de la tabla QTH
+        
+        Returns:
+            list: Lista de diccionarios con los estados disponibles
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT DISTINCT estado FROM qth WHERE estado IS NOT NULL ORDER BY estado')
+            estados = [dict(row)['estado'] for row in cursor.fetchall()]
+            return estados
+            
     def activar_radioexperimentador(self, id_radio):
         """Activa un radioexperimentador previamente desactivado
         

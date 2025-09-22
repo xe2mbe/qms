@@ -883,12 +883,19 @@ def _show_lista_zonas():
 
 def show_gestion_radioexperimentadores():
     """Muestra la gestión de radioexperimentadores con pestañas"""
-    tab1, tab2 = st.tabs(["📋 Lista de Radioexperimentadores", "📤 Importar desde Excel"])
+    tab1, tab2, tab3 = st.tabs([
+        "📋 Lista de Radioexperimentadores",
+        "➕ Agregar Radioexperimentador",
+        "📤 Importar desde Excel"
+    ])
     
     with tab1:
         _show_lista_radioexperimentadores()
     
     with tab2:
+        _show_crear_radioexperimentador()
+    
+    with tab3:
         _show_importar_radioexperimentadores()
 
 def _show_lista_radioexperimentadores():
@@ -1388,6 +1395,104 @@ def _show_crear_zona():
                 if 'editing_zona' in st.session_state:
                     del st.session_state.editing_zona
                 st.rerun()
+
+def _show_crear_radioexperimentador():
+    """Muestra el formulario para crear un nuevo radioexperimentador"""
+    st.header("➕ Agregar Nuevo Radioexperimentador")
+    
+    with st.form(key='crear_radio_form'):
+        # Campos del formulario
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            indicativo = st.text_input("Indicativo", "")
+            nombre = st.text_input("Nombre completo", "")
+            municipio = st.text_input("Municipio", "")
+            
+            # Obtener la lista de estados desde la base de datos
+            try:
+                estados = db.get_estados()
+                estado_seleccionado = st.selectbox(
+                    "Estado",
+                    [""] + estados,
+                    index=0
+                )
+            except Exception as e:
+                st.error(f"Error al cargar los estados: {str(e)}")
+                estado_seleccionado = ""
+                
+            pais = st.text_input("País", "México")
+            
+        with col2:
+            fecha_nac = st.date_input("Fecha de Nacimiento", None)
+            fecha_exp = st.date_input("Fecha de Expedición", None)
+            nacionalidad = st.text_input("Nacionalidad", "MEXICANA")
+            
+            genero = st.selectbox(
+                "Género", 
+                ["", "MASCULINO", "FEMENINO", "OTRO"],
+                index=0
+            )
+            
+            tipo_licencia = st.selectbox(
+                "Tipo de Licencia",
+                ["", "NOVATO", "AVANZADO", "GENERAL", "EXTRA"],
+                index=0
+            )
+            
+            estatus = st.selectbox(
+                "Estatus",
+                ["ACTIVO", "INACTIVO", "SUSPENDIDO", "EN TRÁMITE"],
+                index=0
+            )
+        
+        observaciones = st.text_area("Observaciones", "")
+        
+        # Botones de acción
+        col1, col2, _ = st.columns([1, 1, 4])
+        
+        with col1:
+            if st.form_submit_button("💾 Guardar", type="primary"):
+                # Validar campos obligatorios
+                if not indicativo or not nombre:
+                    st.error("Los campos de indicativo y nombre son obligatorios")
+                else:
+                    # Preparar datos para guardar
+                    datos = {
+                        'indicativo': indicativo.upper(),
+                        'nombre_completo': nombre,
+                        'municipio': municipio if municipio else None,
+                        'estado': estado_seleccionado if estado_seleccionado else None,
+                        'pais': pais if pais else None,
+                        'fecha_nacimiento': fecha_nac.strftime('%Y-%m-%d') if fecha_nac else None,
+                        'nacionalidad': nacionalidad if nacionalidad else None,
+                        'genero': genero if genero else None,
+                        'tipo_licencia': tipo_licencia if tipo_licencia else None,
+                        'fecha_expedicion': fecha_exp.strftime('%Y-%m-%d') if fecha_exp else None,
+                        'estatus': estatus if estatus else 'ACTIVO',
+                        'observaciones': observaciones if observaciones else None,
+                        'activo': 1 if estatus == 'ACTIVO' else 0
+                    }
+                    
+                    try:
+                        # Intentar crear el radioexperimentador
+                        radio_id = db.create_radioexperimentador(datos)
+                        if radio_id:
+                            st.success("¡Radioexperimentador creado exitosamente!")
+                            # Limpiar el formulario
+                            st.rerun()
+                        else:
+                            st.error("No se pudo crear el radioexperimentador. Verifica los datos e intenta nuevamente.")
+                    except Exception as e:
+                        if "UNIQUE constraint failed: radioexperimentadores.indicativo" in str(e):
+                            st.error("Ya existe un radioexperimentador con este indicativo.")
+                        else:
+                            st.error(f"Error al crear el radioexperimentador: {str(e)}")
+        
+        with col2:
+            if st.form_submit_button("❌ Cancelar"):
+                st.rerun()
+
 
 if __name__ == "__main__":
     main()

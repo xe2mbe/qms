@@ -954,6 +954,10 @@ def _show_lista_radioexperimentadores():
                 incluir_inactivos=incluir_inactivos
             )
         
+        # Mostrar contador de resultados
+        total_aficionados = len(radioexperimentadores)
+        st.subheader(f"📊 {total_aficionados} aficionado{'s' if total_aficionados != 1 else ''} encontrado{'s' if total_aficionados != 1 else ''}")
+        
         if radioexperimentadores:
             # Mostrar la lista en un formato de tabla mejorado
             for radio in radioexperimentadores:

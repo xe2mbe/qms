@@ -315,28 +315,38 @@ def show_gestion_usuarios():
                 else:
                     st.error("❌ Por favor completa todos los campos")
 
+# Variable para almacenar la pestaña activa
+if 'active_tab' not in st.session_state:
+    st.session_state.active_tab = "👥 Usuarios"
+
+# Función para cambiar de pestaña
+def set_active_tab(tab_name):
+    st.session_state.active_tab = tab_name
+
 def show_gestion():
     """Muestra el panel de gestión con pestañas para diferentes secciones"""
     st.title("🔧 Gestión")
     
     # Crear pestañas
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "👥 Usuarios", 
-        "📅 Eventos", 
-        "📍 Zonas", 
-        "📻 Radioexperimentadores"
-    ])
+    tabs = ["👥 Usuarios", "📅 Eventos", "📍 Zonas", "📻 Radioexperimentadores"]
     
-    with tab1:
+    # Crear botones de pestaña personalizados
+    cols = st.columns(len(tabs))
+    for i, tab in enumerate(tabs):
+        with cols[i]:
+            if st.button(tab, key=f"tab_{i}", use_container_width=True):
+                set_active_tab(tab)
+    
+    st.markdown("---")  # Línea separadora
+    
+    # Mostrar el contenido de la pestaña activa
+    if st.session_state.active_tab == "👥 Usuarios":
         show_gestion_usuarios()
-    
-    with tab2:
+    elif st.session_state.active_tab == "📅 Eventos":
         show_gestion_eventos()
-    
-    with tab3:
+    elif st.session_state.active_tab == "📍 Zonas":
         show_gestion_zonas()
-    
-    with tab4:
+    elif st.session_state.active_tab == "📻 Radioexperimentadores":
         show_gestion_radioexperimentadores()
 
 def show_gestion_eventos():
@@ -898,6 +908,15 @@ def show_gestion_radioexperimentadores():
     with tab3:
         _show_importar_radioexperimentadores()
 
+@st.cache_data(ttl=300)  # Cache por 5 minutos
+def _get_radioexperimentadores(incluir_inactivos=False):
+    """Obtiene la lista de radioexperimentadores con caché"""
+    try:
+        return db.get_radioexperimentadores(incluir_inactivos=incluir_inactivos)
+    except Exception as e:
+        st.error(f"Error al cargar los radioexperimentadores: {str(e)}")
+        return []
+
 def _show_lista_radioexperimentadores():
     """Muestra la lista de radioexperimentadores con opciones de búsqueda y acciones"""
     st.header("📋 Lista de Radioexperimentadores")
@@ -950,7 +969,7 @@ def _show_lista_radioexperimentadores():
                 ]
         else:
             # Si no hay búsqueda, obtener todos los activos (o inactivos si está marcado)
-            radioexperimentadores = db.get_radioexperimentadores(
+            radioexperimentadores = _get_radioexperimentadores(
                 incluir_inactivos=incluir_inactivos
             )
         
@@ -1041,13 +1060,22 @@ def _show_lista_radioexperimentadores():
     except Exception as e:
         st.error(f"Error al cargar la lista de radioexperimentadores: {str(e)}")
 
+@st.cache_data(ttl=300)  # Cache por 5 minutos
+def _get_radioexperimentador_por_id(radio_id):
+    """Obtiene un radioexperimentador por su ID con caché"""
+    try:
+        return db.get_radioexperimentador_por_id(radio_id)
+    except Exception as e:
+        st.error(f"Error al cargar el radioexperimentador: {str(e)}")
+        return None
+
 def _mostrar_formulario_edicion(radio_id):
     """Muestra el formulario para editar un radioexperimentador existente"""
     st.header("✏️ Editar Radioexperimentador")
     
     try:
         # Obtener los datos actuales del radioexperimentador
-        radio = db.get_radioexperimentador_por_id(radio_id)
+        radio = _get_radioexperimentador_por_id(radio_id)
         
         if not radio:
             st.error("No se encontró el radioexperimentador especificado")
@@ -1407,6 +1435,7 @@ def _show_crear_zona():
                 st.rerun()
 
 @st.cache_data(ttl=3600)  # Cache por 1 hora
+@st.cache_data(ttl=3600)  # Cache por 1 hora
 def _get_estados():
     """Obtiene la lista de estados con caché"""
     try:
@@ -1415,107 +1444,231 @@ def _get_estados():
         st.error(f"Error al cargar los estados: {str(e)}")
         return []
 
-def _show_crear_radioexperimentador():
-    """Muestra el formulario para crear un nuevo radioexperimentador"""
-    st.header(" Agregar Nuevo Radioexperimentador")
-    
-    # Obtener datos estáticos con caché
+@st.cache_data(ttl=3600)  # Cache por 1 hora
+def get_estados_list():
+    """Obtiene la lista de estados formateada para selectbox"""
     estados = _get_estados()
-    opciones_genero = ["", "MASCULINO", "FEMENINO", "OTRO"]
-    opciones_licencia = ["", "NOVATO", "AVANZADO", "GENERAL", "EXTRA"]
-    opciones_estatus = ["ACTIVO", "INACTIVO", "SUSPENDIDO", "EN TRÁMITE"]
+    return [""] + list(estados.values())
+
+@st.cache_data(ttl=3600)  # Cache por 1 hora
+def get_zonas_list():
+    """Obtiene la lista de zonas formateada para selectbox"""
+    try:
+        zonas = db.get_zonas()
+        return [""] + [zona['zona'] for zona in zonas]
+    except Exception as e:
+        st.error(f"Error al cargar las zonas: {str(e)}")
+        return [""]
+
+# Función de utilidad fuera del manejador de eventos
+@st.cache_data(ttl=3600, show_spinner=False)
+def _get_opciones_estaticas():
+    """Obtiene opciones estáticas con caché"""
+    return {
+        'genero': ["", "MASCULINO", "FEMENINO", "OTRO"],
+        'licencia': ["", "NOVATO", "AVANZADO", "GENERAL", "EXTRA"],
+        'estatus': ["ACTIVO", "INACTIVO", "SUSPENDIDO", "EN TRÁMITE"],
+        'paises': ["México", "Estados Unidos", "España", "Colombia", "Argentina", "Otro"]
+    }
+
+def _formatear_oracion(texto):
+    """Formatea el texto en formato oración"""
+    if not texto or not isinstance(texto, str):
+        return texto
+    return ' '.join(word.capitalize() for word in texto.split())
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _get_estados_list():
+    """Obtiene la lista de estados con caché"""
+    try:
+        estados = db.get_estados()
+        return [""] + list(estados.values())
+    except Exception as e:
+        st.error(f"Error al cargar los estados: {str(e)}")
+        return [""]
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _get_estados_cached():
+    """Obtiene la lista de estados con caché mejorada"""
+    try:
+        estados = db.get_estados()
+        # get_estados() returns a list of state names, not a dictionary
+        return [""] + [estado for estado in estados if estado]  # Filter out any None or empty values
+    except Exception as e:
+        st.error(f"Error al cargar los estados: {str(e)}")
+        return [""]
+
+def _show_crear_radioexperimentador():
+    """Muestra el formulario para crear un nuevo radioexperimentador con mejoras de rendimiento"""
+    st.header("🆕 Agregar Nuevo Radioexperimentador")
     
-    # Campos del formulario
+    # Obtener opciones estáticas y estados con caché
+    opciones = _get_opciones_estaticas()
+    estados_list = _get_estados_cached()
+    
+    # Inicializar el estado del formulario si no existe
+    if 'form_data' not in st.session_state:
+        st.session_state.form_data = {
+            'indicativo': '',
+            'nombre': '',
+            'municipio': '',
+            'estado': '',
+            'pais': 'México',
+            'fecha_nac': None,
+            'fecha_exp': None,
+            'nacionalidad': 'MEXICANA',
+            'genero': '',
+            'tipo_licencia': '',
+            'estatus': 'ACTIVO',
+            'observaciones': ''
+        }
+    
+    # Usar st.form para agrupar los campos
     with st.form(key='crear_radio_form'):
+        form_data = st.session_state.form_data
         col1, col2 = st.columns(2)
         
         with col1:
-            indicativo = st.text_input("Indicativo", "")
-            nombre = st.text_input("Nombre completo", "")
-            municipio = st.text_input("Municipio", "")
+            # Usar st.text_input con key única para cada campo
+            form_data['indicativo'] = st.text_input(
+                "Indicativo*", 
+                value=form_data['indicativo'],
+                key='form_indicativo'
+            )
+            
+            form_data['nombre'] = st.text_input(
+                "Nombre completo*", 
+                value=form_data['nombre'],
+                key='form_nombre'
+            )
+            
+            form_data['municipio'] = st.text_input(
+                "Municipio", 
+                value=form_data['municipio'],
+                key='form_municipio'
+            )
             
             # Estado con datos en caché
-            estado_seleccionado = st.selectbox(
+            estado_index = estados_list.index(form_data['estado']) if form_data['estado'] in estados_list else 0
+            form_data['estado'] = st.selectbox(
                 "Estado",
-                [""] + estados,
-                index=0
+                estados_list,
+                index=estado_index,
+                key='form_estado'
             )
-                
-            pais = st.text_input("País", "México")
+            
+            pais_index = opciones['paises'].index(form_data['pais']) if form_data['pais'] in opciones['paises'] else 0
+            form_data['pais'] = st.selectbox(
+                "País",
+                opciones['paises'],
+                index=pais_index,
+                key='form_pais'
+            )
             
         with col2:
-            fecha_nac = st.date_input("Fecha de Nacimiento", None)
-            fecha_exp = st.date_input("Fecha de Expedición", None)
-            nacionalidad = st.text_input("Nacionalidad", "MEXICANA")
+            form_data['fecha_nac'] = st.date_input(
+                "Fecha de Nacimiento", 
+                value=form_data['fecha_nac'],
+                key='form_fecha_nac'
+            )
             
-            genero = st.selectbox(
+            form_data['fecha_exp'] = st.date_input(
+                "Fecha de Expedición", 
+                value=form_data['fecha_exp'],
+                key='form_fecha_exp'
+            )
+            
+            form_data['nacionalidad'] = st.text_input(
+                "Nacionalidad", 
+                value=form_data['nacionalidad'],
+                key='form_nacionalidad'
+            )
+            
+            genero_index = opciones['genero'].index(form_data['genero']) if form_data['genero'] in opciones['genero'] else 0
+            form_data['genero'] = st.selectbox(
                 "Género", 
-                opciones_genero,
-                index=0
+                opciones['genero'],
+                index=genero_index,
+                key='form_genero'
             )
             
-            tipo_licencia = st.selectbox(
+            licencia_index = opciones['licencia'].index(form_data['tipo_licencia']) if form_data['tipo_licencia'] in opciones['licencia'] else 0
+            form_data['tipo_licencia'] = st.selectbox(
                 "Tipo de Licencia",
-                opciones_licencia,
-                index=0
+                opciones['licencia'],
+                index=licencia_index,
+                key='form_licencia'
             )
             
-            estatus = st.selectbox(
+            estatus_index = opciones['estatus'].index(form_data['estatus']) if form_data['estatus'] in opciones['estatus'] else 0
+            form_data['estatus'] = st.selectbox(
                 "Estatus",
-                opciones_estatus,
-                index=0
+                opciones['estatus'],
+                index=estatus_index,
+                key='form_estatus'
             )
         
-        observaciones = st.text_area("Observaciones", "")
+        form_data['observaciones'] = st.text_area(
+            "Observaciones", 
+            value=form_data['observaciones'],
+            key='form_observaciones'
+        )
         
         # Botones del formulario
-        col1, col2, _ = st.columns([1, 1, 4])
+        col_btn1, col_btn2, _ = st.columns([1, 1, 4])
         
-        with col1:
-            guardar = st.form_submit_button(" Guardar", type="primary", width='stretch')
+        with col_btn1:
+            guardar = st.form_submit_button("💾 Guardar", type="primary", use_container_width=True)
         
-        with col2:
-            cancelar = st.form_submit_button("❌ Cancelar", type="secondary", width='stretch')
+        with col_btn2:
+            cancelar = st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True)
         
         # Procesar guardado o cancelación
-        if cancelar:
-            # Limpiar el formulario sin recargar la página
-            st.session_state.form_cleared = True
-            st.rerun()
-        elif guardar:
+        if guardar:
             # Validar campos obligatorios
-            if not indicativo or not nombre:
-                st.error("Los campos de indicativo y nombre son obligatorios")
+            if not form_data['indicativo'] or not form_data['nombre']:
+                st.error("Los campos marcados con * son obligatorios")
             else:
-                # Función para formatear texto en formato oración
-                def formatear_oracion(texto):
-                    if not texto or not isinstance(texto, str):
-                        return texto
-                    return ' '.join(word.capitalize() for word in texto.split())
-                
-                # Preparar datos para guardar
-                datos = {
-                    'indicativo': indicativo.upper(),
-                    'nombre_completo': formatear_oracion(nombre),
-                    'municipio': formatear_oracion(municipio) if municipio else None,
-                    'estado': formatear_oracion(estado_seleccionado) if estado_seleccionado else None,
-                    'pais': formatear_oracion(pais) if pais else None,
-                    'fecha_nacimiento': fecha_nac.strftime('%Y-%m-%d') if fecha_nac else None,
-                    'nacionalidad': nacionalidad.upper(),
-                    'genero': genero.upper() if genero else None,
-                    'tipo_licencia': tipo_licencia.upper() if tipo_licencia else None,
-                    'fecha_expedicion': fecha_exp.strftime('%Y-%m-%d') if fecha_exp else None,
-                    'estatus': estatus.upper() if estatus else 'ACTIVO',
-                    'observaciones': observaciones,
-                    'activo': 1 if estatus == 'ACTIVO' else 0
-                }
-                
                 try:
+                    # Preparar datos para guardar
+                    datos = {
+                        'indicativo': form_data['indicativo'].upper(),
+                        'nombre_completo': _formatear_oracion(form_data['nombre']),
+                        'municipio': _formatear_oracion(form_data['municipio']) if form_data['municipio'] else None,
+                        'estado': _formatear_oracion(form_data['estado']) if form_data['estado'] else None,
+                        'pais': _formatear_oracion(form_data['pais']) if form_data['pais'] else None,
+                        'fecha_nacimiento': form_data['fecha_nac'].strftime('%Y-%m-%d') if form_data['fecha_nac'] else None,
+                        'nacionalidad': form_data['nacionalidad'].upper(),
+                        'genero': form_data['genero'].upper() if form_data['genero'] else None,
+                        'tipo_licencia': form_data['tipo_licencia'].upper() if form_data['tipo_licencia'] else None,
+                        'fecha_expedicion': form_data['fecha_exp'].strftime('%Y-%m-%d') if form_data['fecha_exp'] else None,
+                        'estatus': form_data['estatus'].upper(),
+                        'observaciones': form_data['observaciones'],
+                        'activo': 1 if form_data['estatus'] == 'ACTIVO' else 0
+                    }
+                    
                     # Intentar crear el radioexperimentador
-                    radio_id = db.create_radioexperimentador(datos)
+                    with st.spinner('Guardando radioexperimentador...'):
+                        radio_id = db.create_radioexperimentador(datos)
+                    
                     if radio_id:
                         st.success("¡Radioexperimentador creado exitosamente!")
                         time.sleep(1)
+                        # Limpiar el formulario después de guardar exitosamente
+                        st.session_state.form_data = {
+                            'indicativo': '',
+                            'nombre': '',
+                            'municipio': '',
+                            'estado': '',
+                            'pais': 'México',
+                            'fecha_nac': None,
+                            'fecha_exp': None,
+                            'nacionalidad': 'MEXICANA',
+                            'genero': '',
+                            'tipo_licencia': '',
+                            'estatus': 'ACTIVO',
+                            'observaciones': ''
+                        }
                         st.rerun()
                     else:
                         st.error("No se pudo crear el radioexperimentador. Verifica los datos e intenta nuevamente.")
@@ -1524,6 +1677,25 @@ def _show_crear_radioexperimentador():
                         st.error("Ya existe un radioexperimentador con este indicativo.")
                     else:
                         st.error(f"Error al crear el radioexperimentador: {str(e)}")
+        
+        # Manejar cancelación
+        if cancelar:
+            # Restablecer el formulario a los valores por defecto
+            st.session_state.form_data = {
+                'indicativo': '',
+                'nombre': '',
+                'municipio': '',
+                'estado': '',
+                'pais': 'México',
+                'fecha_nac': None,
+                'fecha_exp': None,
+                'nacionalidad': 'MEXICANA',
+                'genero': '',
+                'tipo_licencia': '',
+                'estatus': 'ACTIVO',
+                'observaciones': ''
+            }
+            st.rerun()
         
 
 if __name__ == "__main__":

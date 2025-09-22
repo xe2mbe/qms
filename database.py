@@ -191,8 +191,52 @@ class FMREDatabase:
             
             conn.commit()
     
+    def _normalizar_datos_existentes(self, cursor):
+        """Normaliza los datos existentes en la base de datos para mantener consistencia"""
+        try:
+            # Normalizar radioexperimentadores
+            cursor.execute("SELECT id, nombre_completo, municipio, estado, pais, nacionalidad, genero, tipo_licencia, estatus FROM radioexperimentadores")
+            radios = cursor.fetchall()
+            
+            for radio in radios:
+                datos_actualizados = {}
+                
+                # Función para formatear texto en formato oración
+                def formatear_oracion(texto):
+                    if not texto or not isinstance(texto, str):
+                        return texto
+                    return ' '.join(word.capitalize() for word in texto.split())
+                
+                # Aplicar formato a los campos que deben estar en formato oración
+                for campo in ['nombre_completo', 'municipio', 'estado', 'pais']:
+                    if radio[campo]:
+                        datos_actualizados[campo] = formatear_oracion(radio[campo])
+                
+                # Asegurar que los campos de códigos estén en mayúsculas
+                for campo in ['nacionalidad', 'genero', 'tipo_licencia', 'estatus']:
+                    if radio[campo]:
+                        datos_actualizados[campo] = radio[campo].upper()
+                
+                # Actualizar solo si hay cambios
+                if datos_actualizados:
+                    set_clause = ", ".join(f"{campo} = ?" for campo in datos_actualizados.keys())
+                    valores = list(datos_actualizados.values())
+                    valores.append(radio['id'])
+                    
+                    sql = f"UPDATE radioexperimentadores SET {set_clause} WHERE id = ?"
+                    cursor.execute(sql, valores)
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error al normalizar datos existentes: {str(e)}")
+            return False
+
     def _insert_initial_data(self, cursor):
         """Inserta los datos iniciales en las tablas"""
+        # Normalizar datos existentes primero
+        self._normalizar_datos_existentes(cursor)
+        
         # Insertar estados de México
         estados_mexico = [
             ('Aguascalientes', 'AGS'), ('Baja California', 'BC'), 
@@ -598,8 +642,8 @@ class FMREDatabase:
             
             if conditions:
                 query += ' WHERE ' + ' AND '.join(conditions)
-                
-            query += ' ORDER BY nombre_completo'
+            # Ordenar por indicativo
+            query += " ORDER BY indicativo"
             cursor.execute(query, params)
             
             return [dict(row) for row in cursor.fetchall()]

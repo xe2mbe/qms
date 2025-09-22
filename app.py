@@ -1117,19 +1117,25 @@ def _mostrar_formulario_edicion(radio_id):
                     if not nombre or not radio['indicativo']:
                         st.error("Los campos de nombre e indicativo son obligatorios")
                     else:
+                        # Función para formatear texto en formato oración
+                        def formatear_oracion(texto):
+                            if not texto or not isinstance(texto, str):
+                                return texto
+                            return ' '.join(word.capitalize() for word in texto.split())
+                        
                         # Preparar datos para actualizar
                         datos_actualizados = {
-                            'nombre_completo': nombre,
-                            'municipio': municipio,
-                            'estado': estado,
-                            'pais': pais,
+                            'nombre_completo': formatear_oracion(nombre),
+                            'municipio': formatear_oracion(municipio) if municipio else None,
+                            'estado': formatear_oracion(estado) if estado else None,
+                            'pais': formatear_oracion(pais) if pais else None,
                             'fecha_nacimiento': fecha_nac.strftime('%Y-%m-%d') if fecha_nac else None,
-                            'nacionalidad': nacionalidad,
-                            'genero': genero,
-                            'tipo_licencia': tipo_licencia,
+                            'nacionalidad': nacionalidad.upper() if nacionalidad else None,  # Se mantiene en mayúsculas
+                            'genero': genero.upper() if genero else None,  # Se mantiene en mayúsculas
+                            'tipo_licencia': tipo_licencia.upper() if tipo_licencia else None,  # Se mantiene en mayúsculas
                             'fecha_expedicion': fecha_exp.strftime('%Y-%m-%d') if fecha_exp else None,
-                            'estatus': estatus,
-                            'observaciones': observaciones,
+                            'estatus': estatus.upper() if estatus else 'ACTIVO',  # Se mantiene en mayúsculas
+                            'observaciones': observaciones,  # No se formatea para mantener el formato original
                             'activo': 1 if estatus == "ACTIVO" else 0
                         }
                         
@@ -1457,20 +1463,26 @@ def _show_crear_radioexperimentador():
                 if not indicativo or not nombre:
                     st.error("Los campos de indicativo y nombre son obligatorios")
                 else:
+                    # Función para formatear texto en formato oración
+                    def formatear_oracion(texto):
+                        if not texto or not isinstance(texto, str):
+                            return texto
+                        return ' '.join(word.capitalize() for word in texto.split())
+                    
                     # Preparar datos para guardar
                     datos = {
-                        'indicativo': indicativo.upper(),
-                        'nombre_completo': nombre,
-                        'municipio': municipio if municipio else None,
-                        'estado': estado_seleccionado if estado_seleccionado else None,
-                        'pais': pais if pais else None,
+                        'indicativo': indicativo.upper(),  # Se mantiene en mayúsculas
+                        'nombre_completo': formatear_oracion(nombre),
+                        'municipio': formatear_oracion(municipio) if municipio else None,
+                        'estado': formatear_oracion(estado_seleccionado) if estado_seleccionado else None,
+                        'pais': formatear_oracion(pais) if pais else None,
                         'fecha_nacimiento': fecha_nac.strftime('%Y-%m-%d') if fecha_nac else None,
-                        'nacionalidad': nacionalidad if nacionalidad else None,
-                        'genero': genero if genero else None,
-                        'tipo_licencia': tipo_licencia if tipo_licencia else None,
+                        'nacionalidad': nacionalidad.upper() if nacionalidad else None,  # Se mantiene en mayúsculas
+                        'genero': genero.upper() if genero else None,  # Se mantiene en mayúsculas
+                        'tipo_licencia': tipo_licencia.upper() if tipo_licencia else None,  # Se mantiene en mayúsculas
                         'fecha_expedicion': fecha_exp.strftime('%Y-%m-%d') if fecha_exp else None,
-                        'estatus': estatus if estatus else 'ACTIVO',
-                        'observaciones': observaciones if observaciones else None,
+                        'estatus': estatus.upper() if estatus else 'ACTIVO',  # Se mantiene en mayúsculas
+                        'observaciones': observaciones,  # No se formatea para mantener el formato original
                         'activo': 1 if estatus == 'ACTIVO' else 0
                     }
                     

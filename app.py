@@ -337,8 +337,7 @@ def show_gestion():
         show_gestion_zonas()
     
     with tab4:
-        st.subheader("📻 Gestión de Radioexperimentadores")
-        st.info("Próximamente...")
+        show_gestion_radioexperimentadores()
 
 def show_gestion_eventos():
     """Muestra la gestión de eventos con pestañas para listar y crear eventos"""
@@ -552,7 +551,7 @@ def show_crear_evento():
                             if db.update_evento(
                                 evento_id=evento['id'],
                                 tipo=tipo,
-                                descripcion=descripcion if descripcion else None,
+                                descripcion=descripcion,
                                 activo=1 if activo else 0
                             ):
                                 st.success("✅ Tipo de evento actualizado correctamente")
@@ -881,6 +880,433 @@ def _show_lista_zonas():
             st.info("No se encontraron zonas que coincidan con los criterios de búsqueda")
     else:
         st.info("No hay zonas registradas")
+
+def show_gestion_radioexperimentadores():
+    """Muestra la gestión de radioexperimentadores con pestañas"""
+    tab1, tab2 = st.tabs(["📋 Lista de Radioexperimentadores", "📤 Importar desde Excel"])
+    
+    with tab1:
+        _show_lista_radioexperimentadores()
+    
+    with tab2:
+        _show_importar_radioexperimentadores()
+
+def _show_lista_radioexperimentadores():
+    """Muestra la lista de radioexperimentadores con opciones de búsqueda y acciones"""
+    st.header("📋 Lista de Radioexperimentadores")
+    
+    # Inicializar variables de sesión si no existen
+    if 'editando_radio_id' not in st.session_state:
+        st.session_state.editando_radio_id = None
+    if 'eliminando_radio_id' not in st.session_state:
+        st.session_state.eliminando_radio_id = None
+    
+    # Si estamos en modo edición, mostrar el formulario de edición
+    if st.session_state.editando_radio_id:
+        _mostrar_formulario_edicion(st.session_state.editando_radio_id)
+        return
+    
+    # Barra de búsqueda y filtros
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        busqueda = st.text_input("Buscar por indicativo, nombre o municipio:", "")
+    
+    with col2:
+        incluir_inactivos = st.checkbox("Mostrar inactivos", False, key="mostrar_inactivos_radio")
+    
+    # Obtener y mostrar la lista de radioexperimentadores
+    try:
+        radioexperimentadores = []
+        
+        if busqueda:
+            # Primero intentar buscar por indicativo exacto
+            busqueda_upper = busqueda.upper()
+            radio = db.get_radioexperimentador_por_indicativo(busqueda_upper)
+            
+            if radio:
+                # Si encontramos por indicativo exacto, mostramos solo ese
+                radioexperimentadores = [radio]
+            else:
+                radioexperimentadores = db.get_radioexperimentadores(
+                    incluir_inactivos=incluir_inactivos
+                )
+                
+                # Filtrar localmente para mejor control de la búsqueda
+                busqueda_terms = busqueda_upper.split()
+                radioexperimentadores = [
+                    r for r in radioexperimentadores
+                    if (busqueda_upper in r['indicativo'].upper() or
+                        all(term in r['nombre_completo'].upper() for term in busqueda_terms) or
+                        busqueda_upper in (r['municipio'] or '').upper() or
+                        busqueda_upper in (r['estado'] or '').upper())
+                ]
+        else:
+            # Si no hay búsqueda, obtener todos los activos (o inactivos si está marcado)
+            radioexperimentadores = db.get_radioexperimentadores(
+                incluir_inactivos=incluir_inactivos
+            )
+        
+        if radioexperimentadores:
+            # Mostrar la lista en un formato de tabla mejorado
+            for radio in radioexperimentadores:
+                with st.expander(f"{radio['indicativo']} - {radio['nombre_completo']}"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write(f"**Municipio:** {radio['municipio'] or 'No especificado'}")
+                        st.write(f"**Estado:** {radio['estado'] or 'No especificado'}")
+                        st.write(f"**País:** {radio['pais'] or 'No especificado'}")
+                        
+                    with col2:
+                        st.write(f"**Tipo de licencia:** {radio['tipo_licencia'] or 'No especificado'}")
+                        st.write(f"**Estatus:** {radio['estatus'] or 'No especificado'}")
+                        st.write(f"**Activo:** {'Sí' if radio.get('activo', 1) == 1 else 'No'}")
+                    
+                    # Mostrar botones de acción
+                    col_btn1, col_btn2, col_btn3 = st.columns(3)
+                    
+                    with col_btn1:
+                        if st.button(f"✏️ Editar", key=f"editar_{radio['id']}"):
+                            st.session_state.editando_radio_id = radio['id']
+                            st.rerun()
+                    
+                    with col_btn2:
+                        if radio.get('activo', 1) == 1:
+                            if st.button(f"⏸️ Desactivar", key=f"desactivar_{radio['id']}"):
+                                try:
+                                    if db.delete_radioexperimentador(radio['id']):
+                                        st.success(f"Radioexperimentador {radio['indicativo']} desactivado correctamente")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("No se pudo desactivar el radioexperimentador")
+                                except Exception as e:
+                                    st.error(f"Error al desactivar: {str(e)}")
+                        else:
+                            if st.button(f"▶️ Activar", key=f"activar_{radio['id']}"):
+                                try:
+                                    if db.activar_radioexperimentador(radio['id']):
+                                        st.success(f"Radioexperimentador {radio['indicativo']} activado correctamente")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("No se pudo activar el radioexperimentador")
+                                except Exception as e:
+                                    st.error(f"Error al activar: {str(e)}")
+                    
+                    with col_btn3:
+                        if st.button(f"🗑️ Eliminar", key=f"eliminar_{radio['id']}"):
+                            st.session_state.eliminando_radio_id = radio['id']
+                            st.rerun()
+                    
+                    # Mostrar confirmación de eliminación si corresponde
+                    if st.session_state.get('eliminando_radio_id') == radio['id']:
+                        st.warning("¿Estás seguro de que deseas eliminar permanentemente este registro? Esta acción no se puede deshacer.")
+                        
+                        col_conf1, col_conf2 = st.columns(2)
+                        
+                        with col_conf1:
+                            if st.button("✅ Confirmar eliminación", type="primary", key=f"confirmar_eliminar_{radio['id']}"):
+                                try:
+                                    if db.delete_radioexperimentador(radio['id'], force_delete=True):
+                                        st.success(f"Radioexperimentador {radio['indicativo']} eliminado permanentemente")
+                                        del st.session_state.eliminando_radio_id
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("No se pudo eliminar el radioexperimentador")
+                                except Exception as e:
+                                    st.error(f"Error al eliminar: {str(e)}")
+                        
+                        with col_conf2:
+                            if st.button("❌ Cancelar", key=f"cancelar_eliminar_{radio['id']}"):
+                                if 'eliminando_radio_id' in st.session_state:
+                                    del st.session_state.eliminando_radio_id
+                                st.rerun()
+        else:
+            st.info("No se encontraron radioexperimentadores que coincidan con los criterios de búsqueda")
+    
+    except Exception as e:
+        st.error(f"Error al cargar la lista de radioexperimentadores: {str(e)}")
+
+def _mostrar_formulario_edicion(radio_id):
+    """Muestra el formulario para editar un radioexperimentador existente"""
+    st.header("✏️ Editar Radioexperimentador")
+    
+    try:
+        # Obtener los datos actuales del radioexperimentador
+        radio = db.get_radioexperimentador_por_id(radio_id)
+        
+        if not radio:
+            st.error("No se encontró el radioexperimentador especificado")
+            if st.button("Volver a la lista"):
+                del st.session_state.editando_radio_id
+                st.rerun()
+            return
+        
+        # Mostrar el indicativo como texto (no editable)
+        st.write(f"**Indicativo:** {radio['indicativo']}")
+        
+        # Campos editables
+        with st.form(key='editar_radio_form'):
+            nombre = st.text_input("Nombre completo", value=radio['nombre_completo'])
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                municipio = st.text_input("Municipio", value=radio['municipio'] or '')
+            with col2:
+                estado = st.text_input("Estado", value=radio['estado'] or '')
+            
+            pais = st.text_input("País", value=radio['pais'] or 'México')
+            
+            # Convertir fechas de string a date si existen
+            fecha_nacimiento = None
+            if radio['fecha_nacimiento']:
+                try:
+                    fecha_nacimiento = datetime.strptime(radio['fecha_nacimiento'], '%Y-%m-%d').date()
+                except (ValueError, TypeError):
+                    pass
+            
+            fecha_expedicion = None
+            if radio['fecha_expedicion']:
+                try:
+                    fecha_expedicion = datetime.strptime(radio['fecha_expedicion'], '%Y-%m-%d').date()
+                except (ValueError, TypeError):
+                    pass
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                fecha_nac = st.date_input("Fecha de Nacimiento", value=fecha_nacimiento)
+            with col2:
+                fecha_exp = st.date_input("Fecha de Expedición", value=fecha_expedicion)
+            
+            nacionalidad = st.text_input("Nacionalidad", value=radio['nacionalidad'] or 'MEXICANA')
+            
+            genero = st.selectbox("Género", ["MASCULINO", "FEMENINO", "OTRO"], 
+                                index=0 if not radio['genero'] else ["MASCULINO", "FEMENINO", "OTRO"].index(radio['genero'])
+                                if radio['genero'] in ["MASCULINO", "FEMENINO", "OTRO"] else 0)
+            
+            tipo_licencia = st.selectbox("Tipo de Licencia", 
+                                       ["NOVATO", "AVANZADO", "GENERAL", "EXTRA"],
+                                       index=0 if not radio['tipo_licencia'] else 
+                                       ["NOVATO", "AVANZADO", "GENERAL", "EXTRA"].index(radio['tipo_licencia'])
+                                       if radio['tipo_licencia'] in ["NOVATO", "AVANZADO", "GENERAL", "EXTRA"] else 0)
+            
+            estatus = st.selectbox("Estatus", 
+                                 ["ACTIVO", "INACTIVO", "SUSPENDIDO", "EN TRÁMITE"],
+                                 index=0 if not radio['estatus'] else 
+                                 ["ACTIVO", "INACTIVO", "SUSPENDIDO", "EN TRÁMITE"].index(radio['estatus'])
+                                 if radio['estatus'] in ["ACTIVO", "INACTIVO", "SUSPENDIDO", "EN TRÁMITE"] else 0)
+            
+            observaciones = st.text_area("Observaciones", value=radio['observaciones'] or '')
+            
+            # Botones de acción
+            col1, col2, col3 = st.columns([1, 1, 2])
+            
+            with col1:
+                if st.form_submit_button("💾 Guardar Cambios", type="primary"):
+                    # Validar campos obligatorios
+                    if not nombre or not radio['indicativo']:
+                        st.error("Los campos de nombre e indicativo son obligatorios")
+                    else:
+                        # Preparar datos para actualizar
+                        datos_actualizados = {
+                            'nombre_completo': nombre,
+                            'municipio': municipio,
+                            'estado': estado,
+                            'pais': pais,
+                            'fecha_nacimiento': fecha_nac.strftime('%Y-%m-%d') if fecha_nac else None,
+                            'nacionalidad': nacionalidad,
+                            'genero': genero,
+                            'tipo_licencia': tipo_licencia,
+                            'fecha_expedicion': fecha_exp.strftime('%Y-%m-%d') if fecha_exp else None,
+                            'estatus': estatus,
+                            'observaciones': observaciones,
+                            'activo': 1 if estatus == "ACTIVO" else 0
+                        }
+                        
+                        try:
+                            if db.update_radioexperimentador(radio['id'], datos_actualizados):
+                                st.success("¡Los cambios se guardaron correctamente!")
+                                time.sleep(1)
+                                del st.session_state.editando_radio_id
+                                st.rerun()
+                            else:
+                                st.error("No se pudieron guardar los cambios. Intente nuevamente.")
+                        except Exception as e:
+                            st.error(f"Error al guardar los cambios: {str(e)}")
+            
+            with col2:
+                if st.form_submit_button("❌ Cancelar"):
+                    del st.session_state.editando_radio_id
+                    st.rerun()
+            
+            with col3:
+                if st.form_submit_button("🗑️ Eliminar Radioexperimentador", type="secondary"):
+                    st.session_state.eliminando_radio_id = radio['id']
+                    st.session_state.volver_a_editar = True
+                    st.rerun()
+    
+    except Exception as e:
+        st.error(f"Error al cargar el formulario de edición: {str(e)}")
+        if st.button("Volver a la lista"):
+            if 'editando_radio_id' in st.session_state:
+                del st.session_state.editando_radio_id
+            st.rerun()
+
+def _show_importar_radioexperimentadores():
+    """Muestra el formulario para importar radioexperimentadores desde Excel"""
+    st.header("📤 Importar Radioexperimentadores desde Excel")
+    
+    # Sección de descarga de plantilla
+    st.subheader("📥 Descargar plantilla")
+    st.write("Descarga esta plantilla para asegurar el formato correcto:")
+    
+    # Crear un DataFrame de ejemplo
+    import pandas as pd
+    from io import BytesIO
+    
+    # Datos de ejemplo
+    data = {
+        'INDICATIVO': ['XE1ABC', 'XE2DEF'],
+        'NOMBRE': ['JUAN PEREZ LOPEZ', 'MARIA GONZALEZ'],
+        'MUNICIPIO': ['TOLUCA', 'GUADALAJARA'],
+        'ESTADO': ['MEXICO', 'JALISCO'],
+        'PAIS': ['MEXICO', 'MEXICO'],
+        'FECHA_NACIMIENTO': ['1980-01-15', '1985-05-20'],
+        'NACIONALIDAD': ['MEXICANA', 'MEXICANA'],
+        'GENERO': ['MASCULINO', 'FEMENINO'],
+        'TIPO_LICENCIA': ['NOVATO', 'AVANZADO'],
+        'FECHA_EXPEDICION': ['2023-01-01', '2023-01-01'],
+        'ESTATUS': ['ACTIVO', 'ACTIVO'],
+        'OBSERVACIONES': ['', '']
+    }
+    
+    df_template = pd.DataFrame(data)
+    
+    # Crear un buffer para el archivo Excel
+    output = BytesIO()
+    
+    try:
+        # Intentar usar xlsxwriter si está disponible
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df_template.to_excel(writer, index=False, sheet_name='Plantilla')
+            
+            # Formato de la hoja solo disponible con xlsxwriter
+            workbook = writer.book
+            worksheet = writer.sheets['Plantilla']
+            
+            # Ajustar el ancho de las columnas
+            for i, col in enumerate(df_template.columns):
+                max_length = max(df_template[col].astype(str).apply(len).max(), len(col)) + 2
+                worksheet.set_column(i, i, max_length)
+    except ImportError:
+        # Si xlsxwriter no está instalado, usar openpyxl (menos opciones de formato)
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df_template.to_excel(writer, index=False, sheet_name='Plantilla')
+    
+    # Crear botón de descarga
+    st.download_button(
+        label="📥 Descargar Plantilla de Ejemplo",
+        data=output.getvalue(),
+        file_name="plantilla_radioexperimentadores.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    
+    st.markdown("---")
+    st.subheader("Subir archivo")
+    st.info("""
+    **Instrucciones para la importación:**
+    1. Usa la plantilla de arriba o asegúrate que tu archivo Excel tenga al menos estas columnas:
+       - `INDICATIVO` (obligatorio)
+       - `NOMBRE` o `NOMBRE COMPLETO` (obligatorio)
+    2. La primera fila debe contener los nombres de las columnas.
+    3. Los demás campos son opcionales.
+    """)
+    
+    # Usar una clave de sesión para controlar la importación
+    if 'import_in_progress' not in st.session_state:
+        st.session_state.import_in_progress = False
+        st.session_state.import_complete = False
+        st.session_state.import_errors = []
+    
+    uploaded_file = st.file_uploader("Selecciona un archivo Excel", type=["xlsx", "xls"])
+    
+    # Mostrar vista previa del archivo
+    if uploaded_file is not None and not st.session_state.import_in_progress and not st.session_state.import_complete:
+        st.subheader("Vista previa del archivo")
+        try:
+            import pandas as pd
+            df_preview = pd.read_excel(uploaded_file)
+            st.dataframe(df_preview.head(5))  # Mostrar solo las primeras 5 filas
+            st.caption(f"Total de filas en el archivo: {len(df_preview)}")
+            
+            # Mostrar botón de confirmación
+            if st.button("✅ Confirmar e importar", type="primary"):
+                st.session_state.import_in_progress = True
+                
+                # Guardar el archivo temporalmente
+                import tempfile
+                import os
+                
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
+                    tmp_file.write(uploaded_file.getvalue())
+                    tmp_file_path = tmp_file.name
+                
+                try:
+                    # Importar el archivo
+                    with st.spinner('Procesando archivo...'):
+                        total, creados, actualizados, errores = db.import_radioexperimentadores_from_excel(tmp_file_path)
+                    
+                    # Mostrar resultados
+                    st.success(f"✅ Importación completada con éxito!")
+                    st.info(f"• Total de registros: {total}")
+                    st.info(f"• Nuevos registros: {creados}")
+                    st.info(f"• Registros actualizados: {actualizados}")
+                    
+                    if errores:
+                        st.session_state.import_errors = errores
+                        with st.expander(f"⚠️ {len(errores)} errores encontrados (haz clic para ver)", expanded=False):
+                            for error in errores[:10]:  # Mostrar solo los primeros 10 errores
+                                st.error(f"• {error}")
+                            if len(errores) > 10:
+                                st.warning(f"... y {len(errores) - 10} errores más.")
+                    
+                    st.balloons()  # Efecto de animación al completar
+                    st.session_state.import_complete = True
+                    
+                except Exception as e:
+                    st.error(f"❌ Error al importar el archivo: {str(e)}")
+                    st.session_state.import_in_progress = False
+                finally:
+                    # Limpiar archivo temporal
+                    try:
+                        os.unlink(tmp_file_path)
+                    except:
+                        pass
+                    
+        except Exception as e:
+            st.error(f"❌ No se pudo leer el archivo: {str(e)}")
+    
+    # Mostrar botón para reiniciar la importación
+    if st.session_state.import_complete:
+        if st.button("🔄 Realizar nueva importación"):
+            st.session_state.import_in_progress = False
+            st.session_state.import_complete = False
+            st.session_state.import_errors = []
+            st.rerun()
+            
+        # Botón para descargar reporte de errores si hay errores
+        if st.session_state.import_errors:
+            import pandas as pd
+            df_errores = pd.DataFrame({"Errores": st.session_state.import_errors})
+            st.download_button(
+                label="📥 Descargar reporte de errores",
+                data=df_errores.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'),
+                file_name="errores_importacion_radioexperimentadores.csv",
+                mime="text/csv"
+            )
 
 def _show_crear_zona():
     """Muestra el formulario para crear o editar una zona"""

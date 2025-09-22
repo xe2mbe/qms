@@ -158,7 +158,35 @@ class FMREDatabase:
                 )
             ''')
             
-            # Insertar datos iniciales si no existen
+            # Tabla de Radioexperimentadores
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS radioexperimentadores (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    indicativo TEXT NOT NULL UNIQUE,
+                    nombre_completo TEXT NOT NULL,
+                    municipio TEXT,
+                    estado TEXT,
+                    pais TEXT,
+                    fecha_nacimiento TEXT,
+                    nacionalidad TEXT,
+                    genero TEXT,
+                    tipo_licencia TEXT,
+                    fecha_expedicion TEXT,
+                    estatus TEXT,
+                    observaciones TEXT,
+                    activo BOOLEAN DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Crear índices para búsquedas frecuentes
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_radioexperimentadores_indicativo ON radioexperimentadores(indicativo)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_radioexperimentadores_estado ON radioexperimentadores(estado)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_radioexperimentadores_municipio ON radioexperimentadores(municipio)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_radioexperimentadores_estatus ON radioexperimentadores(estatus)')
+            
+            # Insertar datos iniciales
             self._insert_initial_data(cursor)
             
             conn.commit()
@@ -264,19 +292,20 @@ class FMREDatabase:
         ).hex()
         return f"{salt}${pwd_hash}"
         
-    def _check_password(self, password, hashed_password):
+    def _check_password(self, password, stored_hash):
         """Verifica si la contraseña coincide con el hash almacenado"""
-        if not hashed_password or '$' not in hashed_password:
+        if not stored_hash or '$' not in stored_hash:
             return False
             
-        salt, stored_hash = hashed_password.split('$', 1)
+        salt, pwd_hash = stored_hash.split('$', 1)
         new_hash = hashlib.pbkdf2_hmac(
             'sha256',
             password.encode('utf-8'),
             salt.encode('utf-8'),
             100000
         ).hex()
-        return new_hash == stored_hash
+        
+        return pwd_hash == new_hash
         
     def create_user(self, username, password, full_name, email, phone=None, role='operator'):
         """Crea un nuevo usuario en la base de datos"""
@@ -538,71 +567,395 @@ class FMREDatabase:
         
         return None
     
-# ... (rest of the code remains the same)
-        """Genera un hash seguro de la contraseña"""
-        salt = secrets.token_hex(16)
-        pwd_hash = hashlib.pbkdf2_hmac(
-            'sha256',
-            password.encode('utf-8'),
-            salt.encode('utf-8'),
-            100000
-        ).hex()
-        return f"{salt}${pwd_hash}"
+    # =============================================
+    # MÉTODOS PARA GESTIÓN DE RADIOEXPERIMENTADORES
+    # =============================================
     
-    def _check_password(self, password, stored_hash):
-        """Verifica si la contraseña coincide con el hash almacenado"""
-        if not stored_hash or '$' not in stored_hash:
-            return False
-            
-        salt, pwd_hash = stored_hash.split('$', 1)
-        new_hash = hashlib.pbkdf2_hmac(
-            'sha256',
-            password.encode('utf-8'),
-            salt.encode('utf-8'),
-            100000
-        ).hex()
-        
-        return pwd_hash == new_hash
-        
-    # Métodos para consultar datos maestros
-    def get_estados(self):
-        """Obtiene todos los estados de la base de datos"""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT abreviatura, estado FROM qth ORDER BY estado')
-            return {row['abreviatura']: row['estado'] for row in cursor.fetchall()}
-    
-    def get_zona(self, zona):
-        """Obtiene una zona por su código"""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT * FROM zonas WHERE zona = ?', (zona,))
-            row = cursor.fetchone()
-            if row:
-                return dict(row)
-            return None
-    
-    def get_zonas(self, incluir_inactivas=False):
-        """
-        Obtiene todas las zonas de la base de datos
+    def get_radioexperimentadores(self, incluir_inactivos=False, filtro=None):
+        """Obtiene todos los radioexperimentadores
         
         Args:
-            incluir_inactivas (bool): Si es True, incluye las zonas inactivas.
-                                    Si es False (por defecto), solo muestra las activas.
+            incluir_inactivos: Si es True, incluye los registros inactivos
+            filtro: Diccionario con filtros opcionales (ej: {'indicativo': 'XE1ABC'})
+            
+        Returns:
+            list: Lista de diccionarios con los datos de los radioexperimentadores
         """
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            if incluir_inactivas:
-                cursor.execute('''
-                    SELECT * FROM zonas 
-                    ORDER BY nombre
-                ''')
+            query = 'SELECT * FROM radioexperimentadores'
+            params = []
+            conditions = []
+            
+            if not incluir_inactivos:
+                conditions.append('activo = 1')
+                
+            if filtro:
+                for key, value in filtro.items():
+                    if value:
+                        conditions.append(f"{key} LIKE ?")
+                        params.append(f"%{value}%")
+            
+            if conditions:
+                query += ' WHERE ' + ' AND '.join(conditions)
+                
+            query += ' ORDER BY nombre_completo'
+            cursor.execute(query, params)
+            
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def get_radioexperimentador(self, id_or_indicativo):
+        """Obtiene un radioexperimentador por su ID o indicativo"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if str(id_or_indicativo).isdigit():
+                cursor.execute('SELECT * FROM radioexperimentadores WHERE id = ?', (int(id_or_indicativo),))
             else:
-                cursor.execute('''
-                    SELECT * FROM zonas 
-                    WHERE activo = 1 
-                    ORDER BY nombre
-                ''')
+                cursor.execute('SELECT * FROM radioexperimentadores WHERE indicativo = ?', (str(id_or_indicativo).upper(),))
+            
+            row = cursor.fetchone()
+            return dict(row) if row else None
+    
+    def get_radioexperimentador_por_indicativo(self, indicativo):
+        """Obtiene un radioexperimentador por su indicativo
+        
+        Args:
+            indicativo: El indicativo del radioexperimentador
+            
+        Returns:
+            dict: Los datos del radioexperimentador o None si no se encuentra
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                'SELECT * FROM radioexperimentadores WHERE indicativo = ?',
+                (indicativo.upper(),)
+            )
+            result = cursor.fetchone()
+            return dict(result) if result else None
+            
+    def get_radioexperimentador_por_id(self, id_radio):
+        """Obtiene un radioexperimentador por su ID
+        
+        Args:
+            id_radio: El ID del radioexperimentador
+            
+        Returns:
+            dict: Los datos del radioexperimentador o None si no se encuentra
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                'SELECT * FROM radioexperimentadores WHERE id = ?',
+                (id_radio,)
+            )
+            result = cursor.fetchone()
+            return dict(result) if result else None
+            
+    def activar_radioexperimentador(self, id_radio):
+        """Activa un radioexperimentador previamente desactivado
+        
+        Args:
+            id_radio: ID del radioexperimentador a activar
+            
+        Returns:
+            bool: True si la operación fue exitosa, False en caso contrario
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    'UPDATE radioexperimentadores SET activo = 1, updated_at = ? WHERE id = ?',
+                    (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), id_radio)
+                )
+                conn.commit()
+                return cursor.rowcount > 0
+            except Exception as e:
+                conn.rollback()
+                raise e
+    
+    def create_radioexperimentador(self, data):
+        """Crea un nuevo registro de radioexperimentador
+        
+        Args:
+            data: Diccionario con los datos del radioexperimentador
+            
+        Returns:
+            int: ID del registro creado, o None en caso de error
+        """
+        required_fields = ['indicativo', 'nombre_completo']
+        for field in required_fields:
+            if field not in data or not data[field]:
+                raise ValueError(f"El campo {field} es requerido")
+        
+        # Asegurar que el indicativo esté en mayúsculas
+        data['indicativo'] = data['indicativo'].upper()
+        
+        # Filtrar solo los campos que existen en la tabla
+        campos_permitidos = [
+            'indicativo', 'nombre_completo', 'municipio', 'estado', 'pais',
+            'fecha_nacimiento', 'nacionalidad', 'genero', 'tipo_licencia',
+            'fecha_expedicion', 'estatus', 'observaciones', 'activo'
+        ]
+        
+        data_filtrado = {k: v for k, v in data.items() if k in campos_permitidos}
+        
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                # Construir la consulta dinámicamente
+                columns = ', '.join(data_filtrado.keys())
+                placeholders = ', '.join(['?'] * len(data_filtrado))
+                values = list(data_filtrado.values())
+                
+                cursor.execute(
+                    f'INSERT INTO radioexperimentadores ({columns}) VALUES ({placeholders})',
+                    values
+                )
+                conn.commit()
+                return cursor.lastrowid
+            except sqlite3.IntegrityError as e:
+                if 'UNIQUE constraint failed: radioexperimentadores.indicativo' in str(e):
+                    raise ValueError("Ya existe un radioexperimentador con este indicativo")
+                else:
+                    raise
+    
+    def update_radioexperimentador(self, id_or_indicativo, data):
+        """Actualiza los datos de un radioexperimentador
+        
+        Args:
+            id_or_indicativo: ID o indicativo del radioexperimentador a actualizar
+            data: Diccionario con los campos a actualizar
+            
+        Returns:
+            bool: True si la actualización fue exitosa, False en caso contrario
+        """
+        if not data:
+            return False
+            
+        # Filtrar solo los campos que existen en la tabla
+        campos_permitidos = [
+            'indicativo', 'nombre_completo', 'municipio', 'estado', 'pais',
+            'fecha_nacimiento', 'nacionalidad', 'genero', 'tipo_licencia',
+            'fecha_expedicion', 'estatus', 'observaciones', 'activo', 'updated_at'
+        ]
+        
+        data_filtrado = {k: v for k, v in data.items() if k in campos_permitidos}
+        
+        if not data_filtrado:
+            return False
+            
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                # Asegurar que el indicativo esté en mayúsculas si se está actualizando
+                if 'indicativo' in data_filtrado:
+                    data_filtrado['indicativo'] = data_filtrado['indicativo'].upper()
+                
+                # Agregar la fecha de actualización
+                data_filtrado['updated_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                
+                # Construir la consulta dinámicamente
+                set_clause = ', '.join([f"{key} = ?" for key in data_filtrado.keys()])
+                values = list(data_filtrado.values())
+                
+                # Agregar el ID o indicativo a los valores
+                if str(id_or_indicativo).isdigit():
+                    where_clause = 'id = ?'
+                else:
+                    where_clause = 'indicativo = ?'
+                    
+                values.append(id_or_indicativo)
+                
+                cursor.execute(
+                    f'UPDATE radioexperimentadores SET {set_clause} WHERE {where_clause}',
+                    values
+                )
+                conn.commit()
+                return cursor.rowcount > 0
+            except sqlite3.IntegrityError as e:
+                if 'UNIQUE constraint failed: radioexperimentadores.indicativo' in str(e):
+                    raise ValueError("Ya existe otro radioexperimentador con este indicativo")
+                else:
+                    raise
+    
+    def delete_radioexperimentador(self, id_or_indicativo, force_delete=False):
+        """Elimina un radioexperimentador
+        
+        Args:
+            id_or_indicativo: ID o indicativo del radioexperimentador a eliminar
+            force_delete: Si es True, elimina físicamente el registro. Si es False, lo marca como inactivo
+            
+        Returns:
+            bool: True si la operación fue exitosa, False en caso contrario
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                # Primero obtenemos el ID si se pasó un indicativo
+                if isinstance(id_or_indicativo, str) and not id_or_indicativo.isdigit():
+                    cursor.execute('SELECT id FROM radioexperimentadores WHERE indicativo = ?', 
+                                 (id_or_indicativo.upper(),))
+                    result = cursor.fetchone()
+                    if not result:
+                        return False
+                    id_or_indicativo = result[0]
+                
+                if force_delete:
+                    # Eliminación física del registro
+                    cursor.execute('DELETE FROM radioexperimentadores WHERE id = ?', (id_or_indicativo,))
+                else:
+                    # Eliminación lógica (marcar como inactivo)
+                    cursor.execute(
+                        'UPDATE radioexperimentadores SET activo = 0, updated_at = ? WHERE id = ?',
+                        (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), id_or_indicativo)
+                    )
+                
+                conn.commit()
+                return cursor.rowcount > 0
+                
+            except sqlite3.IntegrityError as e:
+                conn.rollback()
+                if 'FOREIGN KEY constraint failed' in str(e):
+                    raise ValueError("No se puede eliminar este registro porque tiene datos relacionados.")
+                raise
+            except Exception as e:
+                conn.rollback()
+                raise e
+    
+    def import_radioexperimentadores_from_excel(self, file_path):
+        """Importa radioexperimentadores desde un archivo Excel
+        
+        Args:
+            file_path: Ruta al archivo Excel
+            
+        Returns:
+            tuple: (total, creados, actualizados, errores) con el resumen de la importación
+        """
+        try:
+            import pandas as pd
+            
+            # Mapeo de columnas del Excel a los campos de la base de datos
+            # Clave: nombre de columna en Excel (en mayúsculas)
+            # Valor: tupla (nombre_campo_bd, es_requerido)
+            column_mapping = {
+                # Columna obligatoria
+                'INDICATIVO': ('indicativo', True),
+                
+                # Columnas con múltiples nombres posibles (solo el primero es requerido si lo es)
+                'NOMBRE COMPLETO': ('nombre_completo', True),  # Nombre preferido
+                'NOMBRE': ('nombre_completo', False),  # Alternativa
+                
+                # Columnas opcionales
+                'MUNICIPIO': ('municipio', False),
+                'ESTADO': ('estado', False),
+                'PAIS': ('pais', False),
+                
+                # Fechas con múltiples formatos
+                'FECHA DE NACIMIENTO': ('fecha_nacimiento', False),
+                'FECHA_NACIMIENTO': ('fecha_nacimiento', False),
+                'FECHA_NAC': ('fecha_nacimiento', False),
+                
+                'NACIONALIDAD': ('nacionalidad', False),
+                'GENERO': ('genero', False),
+                
+                # Tipo de licencia con múltiples formatos
+                'TIPO DE LICENCIA': ('tipo_licencia', False),
+                'TIPO_LICENCIA': ('tipo_licencia', False),
+                'TIPO': ('tipo_licencia', False),
+                'LICENCIA': ('tipo_licencia', False),
+                
+                # Fecha de expedición con múltiples formatos
+                'FECHA DE EXPEDICION': ('fecha_expedicion', False),
+                'FECHA_EXPEDICION': ('fecha_expedicion', False),
+                'FECHA_EXP': ('fecha_expedicion', False),
+                
+                'ESTATUS': ('estatus', False),
+                'OBSERVACIONES': ('observaciones', False)
+            }
+            
+            # Leer el archivo Excel
+            df = pd.read_excel(file_path)
+            
+            # Normalizar los nombres de las columnas (mayúsculas y sin espacios extra)
+            df.columns = [col.strip().upper() for col in df.columns]
+            
+            # Verificar columnas requeridas
+            required_columns = [col for col, (_, required) in column_mapping.items() if required]
+            missing_required = [col for col in required_columns if col not in df.columns]
+            
+            if missing_required:
+                raise ValueError(f"Faltan columnas requeridas en el archivo: {', '.join(missing_required)}")
+                
+            # Mapeo inverso para encontrar el nombre de columna preferido
+            field_to_col = {}
+            for col, (field, _) in column_mapping.items():
+                if col in df.columns and field not in field_to_col:
+                    field_to_col[field] = col
+            
+            # Crear un diccionario de mapeo de columnas para renombrar
+            rename_columns = {}
+            for col in df.columns:
+                for map_col, (field, _) in column_mapping.items():
+                    if col == map_col:
+                        rename_columns[col] = field
+                        break
+            
+            # Renombrar las columnas
+            df = df.rename(columns=rename_columns)
+            
+            # Convertir a lista de diccionarios
+            records = df.to_dict('records')
+            
+            # Procesar cada registro
+            total = len(records)
+            creados = 0
+            actualizados = 0
+            errores = []
+            
+            for i, record in enumerate(records, 1):
+                try:
+                    # Verificar si el registro ya existe (por indicativo)
+                    existente = self.get_radioexperimentador(record['indicativo'])
+                    
+                    if existente:
+                        # Actualizar registro existente
+                        self.update_radioexperimentador(existente['id'], record)
+                        actualizados += 1
+                    else:
+                        # Crear nuevo registro
+                        self.create_radioexperimentador(record)
+                        creados += 1
+                        
+                except Exception as e:
+                    errores.append({
+                        'fila': i + 1,  # +1 porque los DataFrames empiezan en 0
+                        'indicativo': record.get('indicativo', 'Desconocido'),
+                        'error': str(e)
+                    })
+            
+            return total, creados, actualizados, errores
+            
+        except Exception as e:
+            raise Exception(f"Error al procesar el archivo: {str(e)}")
+    
+    # =============================================
+    # MÉTODOS PARA GESTIÓN DE ZONAS
+    # =============================================
+    
+    def get_zonas(self, incluir_inactivas=False):
+        """Obtiene todas las zonas"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            query = 'SELECT * FROM zonas'
+            params = []
+            
+            if not incluir_inactivas:
+                query += ' WHERE activo = 1'
+                
+            query += ' ORDER BY zona'
+            cursor.execute(query, params)
+            
             # Asegurarse de que el resultado tenga el formato correcto
             zonas = []
             for row in cursor.fetchall():

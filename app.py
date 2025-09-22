@@ -11,6 +11,7 @@ from database import FMREDatabase
 from auth import AuthManager
 from email_sender import EmailSender
 import utils
+import re
 
 # Inicializar la base de datos y autenticación
 db = FMREDatabase()
@@ -45,7 +46,7 @@ def show_sidebar():
         
         # Menú de navegación
         st.markdown("### Menú")
-        menu_options = ["🏠 Inicio", "📊 Reportes"]
+        menu_options = ["🏠 Inicio", "📝 Toma de Reportes", "📊 Reportes"]
         
         # Mostrar opciones de administración solo para administradores
         if user['role'] == 'admin':
@@ -56,6 +57,8 @@ def show_sidebar():
         # Navegación
         if selected == "🔧 Gestión":
             st.session_state.current_page = "gestion"
+        elif selected == "📝 Toma de Reportes":
+            st.session_state.current_page = "toma_reportes"
         elif selected == "📊 Reportes":
             st.session_state.current_page = "reports"
         elif selected == "⚙️ Configuración":
@@ -685,6 +688,234 @@ def show_settings():
         st.write("Configuración general del sistema.")
         # Aquí puedes agregar más opciones de configuración en el futuro
 
+def show_toma_reportes():
+    """Muestra la sección de Toma de Reportes"""
+    st.title("📝 Toma de Reportes")
+    st.markdown("### Registro de Reportes")
+    
+    st.markdown("""
+    <div style="background-color: #f0f8ff; padding: 15px; border-radius: 10px; border-left: 4px solid #1f77b4; margin-bottom: 20px;">
+        <h4 style="color: #1f77b4; margin-top: 0;">📋 Configuración de Parámetros</h4>
+        <p style="margin-bottom: 10px;">
+            <strong>Selecciona los parámetros iniciales</strong> para la generación de reportes. 
+            Estos valores se utilizarán como <strong>configuración predeterminada</strong> en todos tus registros.
+        </p>
+        <p style="margin-bottom: 5px;">
+            <strong>📅 Fecha del Reporte:</strong> Establece la fecha para el reporte actual. 
+            Por defecto se muestra la fecha del sistema.
+        </p>
+        <p style="margin-bottom: 0;">
+            <strong>📋 Tipo de Boletín:</strong> Selecciona el tipo de boletín para clasificar 
+            tu reporte. Las opciones disponibles se cargan automáticamente 
+            desde la configuración del sistema.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Inicializar el estado del expander y parámetros si no existen
+    if 'expander_abierto' not in st.session_state:
+        st.session_state.expander_abierto = True  # Siempre inicia expandido
+    if 'parametros_reporte' not in st.session_state:
+        st.session_state.parametros_reporte = {}
+    
+    # Resetear el estado del expander si se recarga la página
+    if 'just_saved' in st.session_state and st.session_state.just_saved:
+        st.session_state.expander_abierto = False
+        st.session_state.just_saved = False
+    
+    # Mostrar parámetros guardados si existen
+    if st.session_state.parametros_reporte:
+        st.info(f"📅 **Fecha de Reporte:** {st.session_state.parametros_reporte['fecha_reporte']} | "
+                f"📋 **Tipo de Reporte:** {st.session_state.parametros_reporte['tipo_reporte']} | "
+                f"🖥️ **Sistema Preferido:** {st.session_state.parametros_reporte['sistema_preferido'] or 'Ninguno'} | "
+                f"📝 **Pre-Registros:** {st.session_state.parametros_reporte['pre_registro']}")
+    
+    # Formulario de parámetros de captura - Siempre expandido al inicio
+    with st.expander("📋 Parámetros de Captura", expanded=st.session_state.expander_abierto):
+        with st.form("reporte_form"):
+            # Campos del formulario en el orden solicitado
+            fecha_actual = datetime.now().date()
+            fecha = st.date_input("Fecha de Reporte", fecha_actual)
+            
+            # Mostrar advertencia si la fecha no es la actual
+            if fecha != fecha_actual:
+                st.warning("⚠️ Los reportes se están capturando con fecha distinta a la actual y así serán guardados.")
+            
+            # Obtener la lista de eventos activos
+            try:
+                eventos = db.get_all_eventos()
+                opciones_eventos = [e['tipo'] for e in eventos]
+                if not opciones_eventos:
+                    opciones_eventos = ["Actividad de Radio"]  # Valor por defecto si no hay eventos
+                    st.warning("No se encontraron tipos de eventos configurados")
+            except Exception as e:
+                st.error(f"Error al cargar los tipos de eventos: {str(e)}")
+                opciones_eventos = ["Actividad de Radio"]  # Valor por defecto en caso de error
+                
+            tipo_reporte = st.selectbox(
+                "Tipo de Reporte",
+                opciones_eventos,
+                index=0
+            )
+            
+            # Obtener la lista de sistemas para el selectbox
+            try:
+                sistemas_dict = db.get_sistemas()
+                opciones_sistemas = sorted(list(sistemas_dict.keys()))  # Ordenar alfabéticamente
+                if not opciones_sistemas:
+                    st.error("No se encontraron sistemas configurados en la base de datos")
+                    opciones_sistemas = ["ASL"]
+            except Exception as e:
+                st.error(f"Error al cargar los sistemas: {str(e)}")
+                opciones_sistemas = ["ASL"]
+            
+            # Obtener el sistema actual del usuario si existe
+            sistema_actual = None
+            if 'user' in st.session_state and 'sistema_preferido' in st.session_state.user:
+                sistema_actual = st.session_state.user['sistema_preferido']
+            
+            # Si no hay sistema actual, usar 'ASL' como predeterminado
+            sistema_default = sistema_actual if sistema_actual in opciones_sistemas else (opciones_sistemas[0] if opciones_sistemas else "ASL")
+                
+            sistema_preferido = st.selectbox(
+                "Sistema Preferido *",
+                opciones_sistemas,
+                index=opciones_sistemas.index(sistema_default) if sistema_default in opciones_sistemas else 0,
+                help="Selecciona un sistema de la lista"
+            )
+            
+            # Campo Pre-registro con slider
+            # Obtener el valor guardado del usuario o usar 1 como predeterminado
+            pre_registro_guardado = 1
+            if 'user' in st.session_state and st.session_state.user and 'id' in st.session_state.user:
+                usuario = db.get_user_by_id(st.session_state.user['id'])
+                if usuario and 'pre_registro' in usuario and usuario['pre_registro'] is not None:
+                    pre_registro_guardado = usuario['pre_registro']
+            
+            pre_registro = st.slider(
+                "Pre-Registros",
+                min_value=1,
+                max_value=10,
+                value=pre_registro_guardado,
+                help=f"Valor actual: {pre_registro_guardado}. Selecciona un valor entre 1 y 10 para el pre-registro"
+            )
+            
+            # Botones del formulario centrados
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    guardar = st.form_submit_button("💾 Guardar Parámetros", type="primary", use_container_width=True)
+                with col_btn2:
+                    cancelar = st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True)
+            
+            if guardar:
+                try:
+                    # Validar que se haya seleccionado un sistema
+                    if not sistema_preferido:
+                        st.error("Por favor selecciona un Sistema Preferido")
+                        st.session_state.expander_abierto = True  # Mantener expandido si hay error
+                        st.stop()
+                    
+                    # Marcar que se acaba de guardar para cerrar el expander
+                    st.session_state.just_saved = True
+                        
+                    # Obtener el ID del usuario actual
+                    user_id = st.session_state.user['id']
+                    
+                    # Actualizar los datos del usuario
+                    db.update_user(
+                        user_id=user_id,
+                        sistema_preferido=sistema_preferido,
+                        pre_registro=pre_registro
+                    )
+                    
+                    # Guardar parámetros en la sesión
+                    st.session_state.parametros_reporte = {
+                        'fecha_reporte': fecha.strftime('%d/%m/%Y'),
+                        'tipo_reporte': tipo_reporte,
+                        'sistema_preferido': sistema_preferido,
+                        'pre_registro': pre_registro
+                    }
+                    
+                    st.success("✅ Parámetros guardados correctamente")
+                    # Cerrar el expander después de guardar
+                    st.session_state.expander_abierto = False
+                    time.sleep(2)
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Error al guardar los parámetros: {str(e)}")
+                    st.stop()
+            
+            if cancelar:
+                st.session_state.expander_abierto = False
+                st.rerun()
+    
+    # Mostrar tabla de pre-registros si los parámetros están guardados
+    if st.session_state.parametros_reporte and not st.session_state.expander_abierto:
+        st.markdown("### Pre-Registros")
+        
+        # Crear un formulario para los pre-registros
+        with st.form("pre_registros_form"):
+            # Crear un DataFrame para los pre-registros
+            pre_registros = []
+            for i in range(st.session_state.parametros_reporte['pre_registro']):
+                pre_registros.append({
+                    'Indicativo': '',
+                    'Sistema': st.session_state.parametros_reporte['sistema_preferido']
+                })
+            
+            # Mostrar la tabla de pre-registros
+            for i, registro in enumerate(pre_registros):
+                cols = st.columns([3, 3, 2])
+                with cols[0]:
+                    registro['Indicativo'] = st.text_input(
+                        f"Indicativo {i+1}", 
+                        value=registro['Indicativo'],
+                        key=f"indicativo_{i}",
+                        placeholder="Ingrese el indicativo"
+                    )
+                with cols[1]:
+                    # Obtener el índice del sistema guardado o 0 si no existe
+                    sistema_idx = 0
+                    if registro['Sistema'] in opciones_sistemas:
+                        sistema_idx = opciones_sistemas.index(registro['Sistema'])
+                    
+                    registro['Sistema'] = st.selectbox(
+                        "Sistema",
+                        options=opciones_sistemas,
+                        index=sistema_idx,
+                        key=f"sistema_{i}",
+                        help="Sistema de comunicación utilizado"
+                    )
+                with cols[2]:
+                    st.write("")
+                    st.write("")
+                    pre_registrar = st.form_submit_button(
+                        f"📝 Pre-Registrar {i+1}", 
+                        type="primary",
+                        key=f"btn_pre_registrar_{i}",
+                        use_container_width=True
+                    )
+                    
+                    if pre_registrar:
+                        # Aquí iría la lógica para guardar el pre-registro
+                        st.success(f"Pre-registro {i+1} guardado correctamente!")
+            
+            # Botón para pre-registrar todos
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                pre_registrar_todos = st.form_submit_button(
+                    "📋 Pre-Registrar Todos", 
+                    type="primary",
+                    use_container_width=True
+                )
+                if pre_registrar_todos:
+                    # Aquí iría la lógica para guardar todos los pre-registros
+                    st.success("Todos los pre-registros se han guardado correctamente!")
+
+
 def main():
     # Inicializar variables de sesión si no existen
     if 'current_page' not in st.session_state:
@@ -717,6 +948,8 @@ def main():
             show_home()
         elif current_page == 'gestion':
             show_gestion()
+        elif current_page == 'toma_reportes':
+            show_toma_reportes()
         elif current_page == 'reports':
             show_reports()
         elif current_page == 'settings':
@@ -1628,6 +1861,11 @@ def _show_crear_radioexperimentador():
             if not form_data['indicativo'] or not form_data['nombre']:
                 st.error("Los campos marcados con * son obligatorios")
             else:
+                # Validar formato del indicativo
+                es_valido, mensaje_error = utils.validate_call_sign(form_data['indicativo'])
+                if not es_valido:
+                    st.error(f"Error en el indicativo: {mensaje_error}")
+                    st.stop()  # Detener la ejecución para evitar procesamiento adicional
                 try:
                     # Preparar datos para guardar
                     datos = {

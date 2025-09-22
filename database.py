@@ -154,10 +154,31 @@ class FMREDatabase:
                     is_active BOOLEAN DEFAULT 1,
                     last_login DATETIME,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    sistema_preferido TEXT,
+                    frecuencia TEXT,
+                    modo TEXT,
+                    potencia TEXT,
+                    pre_registro INTEGER DEFAULT 0
                 )
             ''')
             
+            # Verificar y agregar columnas faltantes en la tabla users
+            cursor.execute("PRAGMA table_info(users)")
+            columns = {column[1] for column in cursor.fetchall()}
+            
+            # Agregar columnas si no existen
+            if 'sistema_preferido' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN sistema_preferido TEXT')
+            if 'frecuencia' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN frecuencia TEXT')
+            if 'modo' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN modo TEXT')
+            if 'potencia' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN potencia TEXT')
+            if 'pre_registro' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN pre_registro INTEGER DEFAULT 0')
+                        
             # Tabla de Radioexperimentadores
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS radioexperimentadores (
@@ -174,17 +195,60 @@ class FMREDatabase:
                     fecha_expedicion TEXT,
                     estatus TEXT,
                     observaciones TEXT,
+                    origen TEXT,
                     activo BOOLEAN DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             
+            # Verificar y agregar la columna 'origen' si no existe
+            cursor.execute("PRAGMA table_info(radioexperimentadores)")
+            columns = [column[1] for column in cursor.fetchall()]
+            if 'origen' not in columns:
+                cursor.execute('ALTER TABLE radioexperimentadores ADD COLUMN origen TEXT')
+            
             # Crear índices para búsquedas frecuentes
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_radioexperimentadores_indicativo ON radioexperimentadores(indicativo)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_radioexperimentadores_estado ON radioexperimentadores(estado)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_radioexperimentadores_municipio ON radioexperimentadores(municipio)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_radioexperimentadores_estatus ON radioexperimentadores(estatus)')
+            
+            # Tabla de Reportes - Primero creamos la tabla si no existe
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS reportes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    indicativo TEXT NOT NULL,
+                    nombre TEXT NOT NULL,
+                    zona TEXT,
+                    sistema TEXT,
+                    ciudad TEXT,
+                    estado TEXT,
+                    senal INTEGER,
+                    observaciones TEXT,
+                    reportado BOOLEAN DEFAULT 0,
+                    origen TEXT,
+                    tipo_reporte TEXT,
+                    fecha_reporte DATE NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (indicativo) REFERENCES radioexperimentadores(indicativo) ON DELETE CASCADE
+                )
+            ''')
+            
+            # Verificar y agregar la columna 'tipo_reporte' si no existe
+            cursor.execute("PRAGMA table_info(reportes)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            # Si la tabla ya existía, verificar y agregar columnas faltantes
+            if 'tipo_reporte' not in columns:
+                cursor.execute('ALTER TABLE reportes ADD COLUMN tipo_reporte TEXT')
+            
+            # Crear índices para búsquedas frecuentes en reportes
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_reportes_indicativo ON reportes(indicativo)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_reportes_fecha ON reportes(fecha_reporte)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_reportes_estado ON reportes(estado)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_reportes_sistema ON reportes(sistema)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_reportes_tipo_reporte ON reportes(tipo_reporte)')
             
             # Insertar datos iniciales
             self._insert_initial_data(cursor)
@@ -470,7 +534,7 @@ class FMREDatabase:
                 conn.rollback()
                 raise
     
-    def update_user(self, user_id, username=None, full_name=None, email=None, phone=None, role=None, password=None, is_active=None):
+    def update_user(self, user_id, username=None, full_name=None, email=None, phone=None, role=None, password=None, is_active=None, sistema_preferido=None, pre_registro=None):
         """
         Actualiza los datos de un usuario existente
         
@@ -483,6 +547,8 @@ class FMREDatabase:
             role: Nuevo rol (opcional)
             password: Nueva contraseña en texto plano (opcional)
             is_active: Estado de la cuenta (True/False) (opcional)
+            sistema_preferido: Código del sistema preferido (opcional)
+            pre_registro: Valor de pre-registro (opcional)
             
         Returns:
             bool: True si la actualización fue exitosa
@@ -523,6 +589,14 @@ class FMREDatabase:
                     password_hash = self._hash_password(password)
                     update_fields.append("password_hash = ?")
                     params.append(password_hash)
+                    
+                if sistema_preferido is not None:
+                    update_fields.append("sistema_preferido = ?")
+                    params.append(sistema_preferido)
+                    
+                if pre_registro is not None:
+                    update_fields.append("pre_registro = ?")
+                    params.append(pre_registro)
                 
                 # Agregar siempre la actualización de updated_at
                 update_fields.append("updated_at = CURRENT_TIMESTAMP")
@@ -555,7 +629,7 @@ class FMREDatabase:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT id, username, full_name, email, phone, role, 
-                       last_login, created_at, updated_at
+                       last_login, created_at, updated_at, sistema_preferido, pre_registro
                 FROM users 
                 WHERE id = ?
             ''', (user_id,))
@@ -566,9 +640,14 @@ class FMREDatabase:
         """Obtiene un usuario por su nombre de usuario"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
-            user = cursor.fetchone()
-            return dict(user) if user else None
+            cursor.execute('''
+                SELECT id, username, password_hash, full_name, email, phone, role, 
+                       last_login, created_at, updated_at, sistema_preferido, pre_registro
+                FROM users 
+                WHERE username = ?
+            ''', (username,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
     
     def get_smtp_settings(self):
         """Obtiene la configuración SMTP"""

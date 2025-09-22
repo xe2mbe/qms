@@ -48,14 +48,11 @@ class FMREDatabase:
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS eventos (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    nombre TEXT NOT NULL,
+                    tipo TEXT NOT NULL,
                     descripcion TEXT,
-                    fecha_inicio DATETIME NOT NULL,
-                    fecha_fin DATETIME NOT NULL,
-                    ubicacion TEXT,
                     activo BOOLEAN DEFAULT 1,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             
@@ -191,26 +188,20 @@ class FMREDatabase:
         
         # Insertar eventos iniciales si no existen
         eventos_iniciales = [
-            ('Boletín', 'Boletín Dominical', 'Boletín informativo semanal', '2024-01-01 00:00:00', '2024-12-31 23:59:59', 'Estación XE1L'),
-            ('Retransmisión', 'Retransmisión del boletín por el CREBC', 'Retransmisión del boletín en el Centro de Retransmisión', '2024-01-01 00:00:00', '2024-12-31 23:59:59', 'CREBC'),
-            ('RNE 40', 'Prácticas de la Red Nacional de Emergencias en 40 m', 'Prácticas de la RNE en la banda de 40 metros', '2024-01-01 00:00:00', '2024-12-31 23:59:59', '40m banda'),
-            ('RNE 80', 'Prácticas de la Red Nacional de Emergencias en 80 m', 'Prácticas de la RNE en la banda de 80 metros', '2024-01-01 00:00:00', '2024-12-31 23:59:59', '80m banda'),
-            ('Facebook', 'Transmisión por Live Facebook', 'Transmisión en vivo por Facebook', '2024-01-01 00:00:00', '2024-12-31 23:59:59', 'Facebook Live'),
-            ('Otro', 'Otros eventos', 'Otros eventos no especificados', '2024-01-01 00:00:00', '2024-12-31 23:59:59', 'Varios')
+            ('Boletín', 'Boletín informativo semanal'),
+            ('Retransmisión', 'Retransmisión del boletín en el Centro de Retransmisión'),
+            ('RNE 40', 'Prácticas de la RNE en la banda de 40 metros'),
+            ('RNE 80', 'Prácticas de la RNE en la banda de 80 metros'),
+            ('Facebook', 'Transmisión en vivo por Facebook'),
+            ('Otro', 'Otros eventos no especificados')
         ]
         
-        for nombre, descripcion, notas, fecha_inicio, fecha_fin, ubicacion in eventos_iniciales:
-            # Verificar si el evento ya existe
-            evento_existente = cursor.execute(
-                'SELECT id FROM eventos WHERE nombre = ?', 
-                (nombre,)
-            ).fetchone()
-            
-            if not evento_existente:
-                cursor.execute(
-                    'INSERT INTO eventos (nombre, descripcion, fecha_inicio, fecha_fin, ubicacion) VALUES (?, ?, ?, ?, ?)',
-                    (nombre, f"{descripcion}\n\n{notas}", fecha_inicio, fecha_fin, ubicacion)
-                )
+        cursor.execute('SELECT COUNT(*) as count FROM eventos')
+        if cursor.fetchone()['count'] == 0:
+            cursor.executemany('''
+                INSERT INTO eventos (tipo, descripcion)
+                VALUES (?, ?)
+            ''', eventos_iniciales)
         
         # Crear usuario admin por defecto si no existe
         admin_exists = cursor.execute(
@@ -588,14 +579,14 @@ class FMREDatabase:
     # Métodos para Eventos
     # ========================
     
-    def create_evento(self, nombre, descripcion, fecha_inicio, fecha_fin, ubicacion):
-        """Crea un nuevo evento en la base de datos"""
+    def create_evento(self, tipo, descripcion=None):
+        """Crea un nuevo evento"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO eventos (nombre, descripcion, fecha_inicio, fecha_fin, ubicacion)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (nombre, descripcion, fecha_inicio, fecha_fin, ubicacion))
+                INSERT INTO eventos (tipo, descripcion)
+                VALUES (?, ?)
+            ''', (tipo, descripcion))
             conn.commit()
             return cursor.lastrowid
     
@@ -609,54 +600,68 @@ class FMREDatabase:
                 return dict(row)
             return None
     
-    def get_all_eventos(self):
-        """Obtiene todos los eventos ordenados por fecha de inicio"""
+    def get_all_eventos(self, incluir_inactivos=False):
+        """
+        Obtiene todos los eventos ordenados por tipo
+        
+        Args:
+            incluir_inactivos (bool): Si es True, incluye los eventos inactivos.
+                                     Si es False (por defecto), solo muestra los activos.
+        """
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('''
-                SELECT * FROM eventos 
-                WHERE activo = 1 
-                ORDER BY fecha_inicio DESC
-            ''')
+            if incluir_inactivos:
+                cursor.execute('''
+                    SELECT * FROM eventos 
+                    ORDER BY tipo ASC
+                ''')
+            else:
+                cursor.execute('''
+                    SELECT * FROM eventos 
+                    WHERE activo = 1 
+                    ORDER BY tipo ASC
+                ''')
             return [dict(row) for row in cursor.fetchall()]
     
-    def update_evento(self, evento_id, nombre=None, descripcion=None, fecha_inicio=None, 
-                     fecha_fin=None, ubicacion=None, activo=None):
-        """Actualiza los datos de un evento"""
-        updates = []
-        params = []
-        
-        if nombre is not None:
-            updates.append("nombre = ?")
-            params.append(nombre)
-        if descripcion is not None:
-            updates.append("descripcion = ?")
-            params.append(descripcion)
-        if fecha_inicio is not None:
-            updates.append("fecha_inicio = ?")
-            params.append(fecha_inicio)
-        if fecha_fin is not None:
-            updates.append("fecha_fin = ?")
-            params.append(fecha_fin)
-        if ubicacion is not None:
-            updates.append("ubicacion = ?")
-            params.append(ubicacion)
-        if activo is not None:
-            updates.append("activo = ?")
-            params.append(activo)
-            
-        if not updates:
-            return False
-            
-        params.append(evento_id)
-        
+    def update_evento(self, evento_id, tipo=None, descripcion=None, activo=None):
+        """Actualiza un evento existente"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            
+            # Construir la consulta dinámicamente basada en los parámetros proporcionados
+            update_fields = []
+            params = []
+            
+            if tipo is not None:
+                update_fields.append("tipo = ?")
+                params.append(tipo)
+                
+            if descripcion is not None:
+                update_fields.append("descripcion = ?")
+                params.append(descripcion)
+                
+            if activo is not None:
+                update_fields.append("activo = ?")
+                params.append(activo)
+            
+            # Si no hay campos para actualizar, retornar False
+            if not update_fields:
+                return False
+                
+            # Agregar el campo updated_at
+            update_fields.append("updated_at = CURRENT_TIMESTAMP")
+            
+            # Construir la consulta final
             query = f"""
                 UPDATE eventos 
-                SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP
+                SET {', '.join(update_fields)}
                 WHERE id = ?
             """
+            
+            # Agregar el ID del evento a los parámetros
+            params.append(evento_id)
+            
+            # Ejecutar la consulta
             cursor.execute(query, params)
             conn.commit()
             return cursor.rowcount > 0

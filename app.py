@@ -370,34 +370,8 @@ def show_gestion():
 
 def show_gestion_eventos():
     """Muestra la gestión de eventos con pestañas para listar y crear eventos"""
-    # Verificar si estamos en modo edición para mostrar la pestaña correcta
-    tab_titles = ["📋 Lista de Eventos", "➕ Crear Evento"]
-    
-    # Usar st.tabs sin intentar establecer un índice inicial
-    tab_lista, tab_crear = st.tabs(tab_titles)
-    
-    # Si estamos editando, forzar la navegación a la pestaña de creación/edición
-    if 'editing_evento' in st.session_state and 'force_tab' not in st.session_state:
-        st.session_state.force_tab = True
-        st.rerun()
-    
-    if 'force_tab' in st.session_state and 'editing_evento' in st.session_state:
-        # Usar JavaScript para cambiar a la pestaña de creación/edición
-        st.markdown(
-            """
-            <script>
-                // Esperar a que se cargue el DOM
-                document.addEventListener('DOMContentLoaded', function() {
-                    // Encontrar el botón de la pestaña de creación/edición y hacer clic en él
-                    const buttons = document.querySelectorAll('div[role="tab"]');
-                    if (buttons.length > 1) {
-                        buttons[1].click();
-                    }
-                });
-            </script>
-            """,
-            unsafe_allow_html=True
-        )
+    # Mostrar pestañas
+    tab_lista, tab_crear = st.tabs(["📋 Lista de Eventos", "➕ Crear Evento"])
     
     with tab_lista:
         st.subheader("📅 Lista de Eventos")
@@ -410,17 +384,12 @@ def show_gestion_eventos():
             mostrar_inactivos = st.checkbox("Mostrar inactivos", value=False)
         
         # Obtener eventos con filtros
-        eventos = db.get_all_eventos()
-        
-        # Aplicar filtros
-        if not mostrar_inactivos:
-            eventos = [e for e in eventos if e.get('activo', 1) == 1]
+        eventos = db.get_all_eventos(incluir_inactivos=mostrar_inactivos)
             
         if busqueda:
             busqueda = busqueda.lower()
             eventos = [e for e in eventos if 
-                      busqueda in e['nombre'].lower() or 
-                      busqueda in e.get('ubicacion', '').lower() or
+                      busqueda in e['tipo'].lower() or 
                       busqueda in e.get('descripcion', '').lower()]
         
         if eventos:
@@ -431,190 +400,222 @@ def show_gestion_eventos():
             
             # Mostrar eventos en una tabla
             for evento in eventos:
-                # Determinar el ícono según el estado
-                icono = "✅" if evento.get('activo', 1) == 1 else "⏸️"
+                # Determinar si estamos editando este evento
+                is_editing = st.session_state.get(f'editing_evento_{evento["id"]}', False)
                 
-                with st.expander(f"{icono} {evento['nombre']} - {evento['fecha_inicio'].split()[0]}", 
-                              expanded=False):
-                    col1, col2 = st.columns([3, 1])
-                    
-                    with col1:
-                        # Mostrar estado
-                        estado = "Activo" if evento.get('activo', 1) == 1 else "Inactivo"
-                        st.markdown(f"**Estado:** {estado}")
+                with st.expander(
+                    f"{'✅' if evento.get('activo', 1) == 1 else '⏸️'} {evento['tipo']}",
+                    expanded=is_editing  # Expandir si está en modo edición
+                ):
+                    if not is_editing:
+                        # Vista normal del evento
+                        col1, col2 = st.columns([3, 1])
                         
-                        # Mostrar fechas formateadas
-                        fecha_inicio = format_datetime(evento['fecha_inicio'])
-                        fecha_fin = format_datetime(evento['fecha_fin'])
-                        st.markdown(f"**Fecha de inicio:** {fecha_inicio}")
-                        st.markdown(f"**Fecha de fin:** {fecha_fin}")
-                        
-                        # Mostrar ubicación si existe
-                        if evento.get('ubicacion'):
-                            st.markdown(f"**Ubicación:** {evento['ubicacion']}")
+                        with col1:
+                            # Mostrar estado
+                            estado = "Activo" if evento.get('activo', 1) == 1 else "Inactivo"
+                            st.markdown(f"**Estado:** {estado}")
                             
-                        # Mostrar descripción si existe
-                        if evento.get('descripcion'):
-                            st.markdown("---")
-                            st.markdown("**Descripción:**")
-                            st.markdown(evento['descripcion'])
-                    
-                    with col2:
-                        # Botones de acción
-                        if st.button("✏️ Editar", key=f"edit_{evento['id']}", use_container_width=True):
-                            st.session_state['editing_evento'] = evento['id']
-                            st.rerun()
+                            # Mostrar descripción si existe
+                            if evento.get('descripcion'):
+                                st.markdown("**Descripción:**")
+                                st.markdown(evento['descripcion'])
                         
-                        estado_btn = "❌ Desactivar" if evento.get('activo', 1) == 1 else "✅ Activar"
-                        if st.button(estado_btn, key=f"toggle_{evento['id']}", use_container_width=True):
-                            nuevo_estado = 0 if evento.get('activo', 1) == 1 else 1
-                            db.update_evento(evento['id'], activo=nuevo_estado)
-                            st.success(f"Evento {'activado' if nuevo_estado == 1 else 'desactivado'} correctamente")
-                            time.sleep(1)
-                            st.rerun()
-                        
-                        if st.button("🗑️ Eliminar", key=f"del_{evento['id']}", type="primary", use_container_width=True):
-                            if db.delete_evento(evento['id']):
-                                st.success("✅ Evento eliminado correctamente")
-                                time.sleep(1)
-                                st.rerun()
+                        with col2:
+                            # Botones de acción
+                            col_btn1, col_btn2 = st.columns(2)
+                            
+                            with col_btn1:
+                                if st.button("✏️ Editar", key=f"edit_{evento['id']}", use_container_width=True):
+                                    st.session_state[f'editing_evento_{evento["id"]}'] = True
+                                    st.rerun()
+                            
+                            with col_btn2:
+                                estado_btn = "❌ Desactivar" if evento.get('activo', 1) == 1 else "✅ Activar"
+                                if st.button(estado_btn, key=f"toggle_{evento['id']}", use_container_width=True):
+                                    nuevo_estado = 0 if evento.get('activo', 1) == 1 else 1
+                                    db.update_evento(evento['id'], activo=nuevo_estado)
+                                    st.success(f"Evento {'activado' if nuevo_estado == 1 else 'desactivado'} correctamente")
+                                    time.sleep(1)
+                                    st.rerun()
+                            
+                            # Botón de eliminar con confirmación
+                            if st.button("🗑️ Eliminar", key=f"delete_{evento['id']}", 
+                                       type="primary", use_container_width=True,
+                                       help="Eliminar permanentemente este evento"):
+                                # Mostrar diálogo de confirmación
+                                if st.session_state.get(f'confirm_delete_{evento["id"]}') != True:
+                                    st.session_state[f'confirm_delete_{evento["id"]}'] = True
+                                    st.rerun()
+                                else:
+                                    if db.delete_evento(evento['id']):
+                                        st.success("Evento eliminado correctamente")
+                                        time.sleep(1)
+                                        # Limpiar estado de confirmación
+                                        if f'confirm_delete_{evento["id"]}' in st.session_state:
+                                            del st.session_state[f'confirm_delete_{evento["id"]}']
+                                        st.rerun()
+                                    else:
+                                        st.error("Error al eliminar el evento")
+                                        if f'confirm_delete_{evento["id"]}' in st.session_state:
+                                            del st.session_state[f'confirm_delete_{evento["id"]}']
+                                        
+                            # Mostrar mensaje de confirmación si es necesario
+                            if st.session_state.get(f'confirm_delete_{evento["id"]}') == True:
+                                st.warning("¿Estás seguro de que quieres eliminar este evento? Esta acción no se puede deshacer.")
+                                if st.button("✅ Confirmar eliminación", key=f"confirm_del_{evento['id']}", 
+                                           type="primary", use_container_width=True):
+                                    if db.delete_evento(evento['id']):
+                                        st.success("Evento eliminado correctamente")
+                                        time.sleep(1)
+                                        # Limpiar estado de confirmación
+                                        if f'confirm_delete_{evento["id"]}' in st.session_state:
+                                            del st.session_state[f'confirm_delete_{evento["id"]}']
+                                        st.rerun()
+                                    else:
+                                        st.error("Error al eliminar el evento")
+                                
+                                if st.button("❌ Cancelar", key=f"cancel_del_{evento['id']}", 
+                                           use_container_width=True):
+                                    del st.session_state[f'confirm_delete_{evento["id"]}']
+                                    st.rerun()
+                    else:
+                        # Mostrar formulario de edición
+                        with st.form(f"edit_evento_{evento['id']}"):
+                            # Obtener datos actuales del evento
+                            evento_data = db.get_evento(evento['id'])
+                            
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                nombre = st.text_input("Nombre del evento", value=evento_data['tipo'])
+                                descripcion = st.text_area("Descripción", value=evento_data.get('descripcion', ''))
+                                #ubicacion = st.text_input("Ubicación", value=evento_data.get('ubicacion', ''))
+                            
+                            with col2:
+                                #fecha_inicio = st.date_input("Fecha de inicio", 
+                                #                           value=datetime.strptime(evento_data['fecha_inicio'], '%Y-%m-%d %H:%M:%S'))
+                                #hora_inicio = st.time_input("Hora de inicio",
+                                #                          value=datetime.strptime(evento_data['fecha_inicio'], '%Y-%m-%d %H:%M:%S').time())
+                                
+                                #fecha_fin = st.date_input("Fecha de fin",
+                                #                        value=datetime.strptime(evento_data['fecha_fin'], '%Y-%m-%d %H:%M:%S'))
+                                #hora_fin = st.time_input("Hora de fin",
+                                #                       value=datetime.strptime(evento_data['fecha_fin'], '%Y-%m-%d %H:%M:%S').time())
+                                activo = st.checkbox("Activo", value=bool(evento_data.get('activo', 1)))
+                            
+                            # Botones del formulario
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                if st.form_submit_button("💾 Guardar cambios", use_container_width=True):
+                                    try:
+                                        # Actualizar el evento
+                                        if db.update_evento(
+                                            evento_id=evento['id'],
+                                            tipo=nombre,
+                                            descripcion=descripcion,
+                                            activo=1 if activo else 0
+                                        ):
+                                            st.success("✅ Evento actualizado correctamente")
+                                            time.sleep(1)
+                                            # Limpiar estado de edición
+                                            del st.session_state[f'editing_evento_{evento["id"]}']
+                                            st.rerun()
+                                        else:
+                                            st.error("❌ Error al actualizar el evento")
+                                    except Exception as e:
+                                        st.error(f"Error al actualizar el evento: {str(e)}")
+                            
+                            with col2:
+                                if st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True):
+                                    # Cancelar edición
+                                    del st.session_state[f'editing_evento_{evento["id"]}']
+                                    st.rerun()
+            
+            if not eventos:
+                st.info("No se encontraron eventos que coincidan con los criterios de búsqueda")
         else:
-            st.info("No se encontraron eventos que coincidan con los criterios de búsqueda")
+            st.info("No hay eventos registrados")
     
     with tab_crear:
         show_crear_evento()
 
 def show_crear_evento():
-    """Muestra el formulario para crear o editar un evento"""
+    """Muestra el formulario para crear o editar un tipo de evento"""
     # Verificar si estamos en modo edición
     is_editing = 'editing_evento' in st.session_state
     evento = None
     
     if is_editing:
-        st.subheader("✏️ Editar Evento")
+        st.subheader("✏️ Editar Tipo de Evento")
         # Obtener datos del evento a editar
         evento = db.get_evento(st.session_state['editing_evento'])
         if not evento:
-            st.error("Evento no encontrado")
+            st.error("Tipo de evento no encontrado")
             del st.session_state['editing_evento']
             return
     else:
-        st.subheader("➕ Crear Nuevo Evento")
+        st.subheader("➕ Crear Nuevo Tipo de Evento")
     
-    with st.form("evento_form", clear_on_submit=not is_editing):
+    with st.form("evento_form"):
         col1, col2 = st.columns(2)
         
         with col1:
-            # Campo de nombre con valor por defecto si estamos editando
-            nombre = st.text_input(
-                "Nombre del Evento*", 
-                value=evento['nombre'] if is_editing else "",
-                max_chars=100,
-                help="Nombre descriptivo del evento (máx. 100 caracteres)"
-            )
+            tipo = st.text_input("Tipo de evento", 
+                               value=evento['tipo'] if evento else "",
+                               placeholder="Ej: Retransmisión, Facebook, etc.")
             
-            # Fecha y hora de inicio
-            fecha_inicio = st.date_input(
-                "Fecha de inicio*", 
-                value=datetime.strptime(evento['fecha_inicio'].split()[0], '%Y-%m-%d').date() if is_editing else datetime.now()
-            )
-            hora_inicio = st.time_input(
-                "Hora de inicio*", 
-                value=datetime.strptime(evento['fecha_inicio'].split()[1], '%H:%M:%S').time() if is_editing else datetime.now().time()
-            )
-            
-            # Estado (solo para edición)
-            if is_editing:
-                activo = st.checkbox(
-                    "Evento activo",
-                    value=bool(evento.get('activo', 1)),
-                    help="Desmarcar para desactivar temporalmente el evento"
-                )
+            descripcion = st.text_area("Descripción",
+                                    value=evento.get('descripcion', '') if evento else "",
+                                    placeholder="Descripción opcional del tipo de evento")
         
         with col2:
-            # Ubicación
-            ubicacion = st.text_input(
-                "Ubicación",
-                value=evento.get('ubicacion', '') if is_editing else "",
-                help="Lugar donde se llevará a cabo el evento"
-            )
-            
-            # Fecha y hora de fin
-            fecha_fin = st.date_input(
-                "Fecha de fin*", 
-                value=datetime.strptime(evento['fecha_fin'].split()[0], '%Y-%m-%d').date() if is_editing else datetime.now()
-            )
-            hora_fin = st.time_input(
-                "Hora de fin*", 
-                value=datetime.strptime(evento['fecha_fin'].split()[1], '%H:%M:%S').time() if is_editing else (datetime.now() + timedelta(hours=1)).time()
-            )
+            st.write("")
+            st.write("")
+            activo = st.checkbox("Activo", value=bool(evento.get('activo', 1)) if evento else True)
         
-        # Descripción
-        descripcion = st.text_area(
-            "Descripción",
-            value=evento.get('descripcion', '') if is_editing else "",
-            help="Descripción detallada del evento (puede incluir formato Markdown)"
-        )
+        # Botones del formulario
+        col1, col2 = st.columns(2)
         
-        # Botones de acción
-        col1, col2, _ = st.columns([1, 1, 2])
         with col1:
-            if st.form_submit_button("✅ Guardar" if is_editing else "➕ Crear Evento"):
-                if not nombre:
-                    st.error("El nombre del evento es obligatorio")
+            if st.form_submit_button("💾 Guardar"):
+                if not tipo:
+                    st.error("El tipo de evento es obligatorio")
                 else:
-                    # Validar fechas
-                    fecha_hora_inicio = datetime.combine(fecha_inicio, hora_inicio)
-                    fecha_hora_fin = datetime.combine(fecha_fin, hora_fin)
-                    
-                    if fecha_hora_fin <= fecha_hora_inicio:
-                        st.error("La fecha/hora de fin debe ser posterior a la de inicio")
-                    else:
-                        try:
-                            if is_editing:
-                                # Actualizar evento existente
-                                if db.update_evento(
-                                    evento_id=evento['id'],
-                                    nombre=nombre,
-                                    descripcion=descripcion,
-                                    fecha_inicio=fecha_hora_inicio.strftime('%Y-%m-%d %H:%M:%S'),
-                                    fecha_fin=fecha_hora_fin.strftime('%Y-%m-%d %H:%M:%S'),
-                                    ubicacion=ubicacion,
-                                    activo=1 if activo else 0
-                                ):
-                                    st.success("✅ Evento actualizado correctamente")
-                                    time.sleep(1)
-                                    if 'editing_evento' in st.session_state:
-                                        del st.session_state['editing_evento']
-                                    if 'force_tab' in st.session_state:
-                                        del st.session_state['force_tab']
-                                    st.rerun()
-                                else:
-                                    st.error("❌ Error al actualizar el evento")
+                    try:
+                        if is_editing:
+                            # Actualizar evento existente
+                            if db.update_evento(
+                                evento_id=evento['id'],
+                                tipo=tipo,
+                                descripcion=descripcion if descripcion else None,
+                                activo=1 if activo else 0
+                            ):
+                                st.success("✅ Tipo de evento actualizado correctamente")
+                                time.sleep(1)
+                                del st.session_state['editing_evento']
+                                st.rerun()
                             else:
-                                # Crear nuevo evento
-                                evento_id = db.create_evento(
-                                    nombre=nombre,
-                                    descripcion=descripcion,
-                                    fecha_inicio=fecha_hora_inicio.strftime('%Y-%m-%d %H:%M:%S'),
-                                    fecha_fin=fecha_hora_fin.strftime('%Y-%m-%d %H:%M:%S'),
-                                    ubicacion=ubicacion
-                                )
-                                
-                                if evento_id:
-                                    st.success("✅ Evento creado exitosamente")
-                                    time.sleep(1)
-                                    st.rerun()
-                        except Exception as e:
-                            st.error(f"Error al {'guardar' if is_editing else 'crear'} el evento: {str(e)}")
-            
+                                st.error("❌ Error al actualizar el tipo de evento")
+                        else:
+                            # Crear nuevo tipo de evento
+                            evento_id = db.create_evento(
+                                tipo=tipo,
+                                descripcion=descripcion if descripcion else None
+                            )
+                            
+                            if evento_id:
+                                st.success("✅ Tipo de evento creado exitosamente")
+                                time.sleep(1)
+                                st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al {'guardar' if is_editing else 'crear'} el tipo de evento: {str(e)}")
+        
         with col2:
-            if is_editing and st.form_submit_button("❌ Cancelar"):
-                # Limpiar estados de edición
-                if 'editing_evento' in st.session_state:
+            if st.form_submit_button("❌ Cancelar"):
+                if is_editing:
                     del st.session_state['editing_evento']
-                if 'force_tab' in st.session_state:
-                    del st.session_state['force_tab']
                 st.rerun()
 
 def show_reports():

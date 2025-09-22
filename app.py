@@ -77,33 +77,6 @@ def show_home():
     Utilice el menú lateral para navegar por las diferentes secciones del sistema.
     """)
 
-def show_gestion():
-    """Muestra el panel de gestión con pestañas para diferentes secciones"""
-    st.title("🔧 Gestión")
-    
-    # Crear pestañas
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "👥 Usuarios", 
-        "📅 Eventos", 
-        "📍 Zonas", 
-        "📻 Radioexperimentadores"
-    ])
-    
-    with tab1:
-        show_gestion_usuarios()
-    
-    with tab2:
-        st.subheader("📅 Gestión de Eventos")
-        st.info("Próximamente...")
-    
-    with tab3:
-        st.subheader("📍 Gestión de Zonas")
-        st.info("Próximamente...")
-    
-    with tab4:
-        st.subheader("📻 Gestión de Radioexperimentadores")
-        st.info("Próximamente...")
-
 def show_gestion_usuarios():
     """Muestra la gestión de usuarios dentro de la sección de Gestión"""
     # El título ya no es necesario aquí ya que está en la pestaña
@@ -361,8 +334,7 @@ def show_gestion():
         show_gestion_eventos()
     
     with tab3:
-        st.subheader("📍 Gestión de Zonas")
-        st.info("Próximamente...")
+        show_gestion_zonas()
     
     with tab4:
         st.subheader("📻 Gestión de Radioexperimentadores")
@@ -493,15 +465,6 @@ def show_gestion_eventos():
                                 #ubicacion = st.text_input("Ubicación", value=evento_data.get('ubicacion', ''))
                             
                             with col2:
-                                #fecha_inicio = st.date_input("Fecha de inicio", 
-                                #                           value=datetime.strptime(evento_data['fecha_inicio'], '%Y-%m-%d %H:%M:%S'))
-                                #hora_inicio = st.time_input("Hora de inicio",
-                                #                          value=datetime.strptime(evento_data['fecha_inicio'], '%Y-%m-%d %H:%M:%S').time())
-                                
-                                #fecha_fin = st.date_input("Fecha de fin",
-                                #                        value=datetime.strptime(evento_data['fecha_fin'], '%Y-%m-%d %H:%M:%S'))
-                                #hora_fin = st.time_input("Hora de fin",
-                                #                       value=datetime.strptime(evento_data['fecha_fin'], '%Y-%m-%d %H:%M:%S').time())
                                 activo = st.checkbox("Activo", value=bool(evento_data.get('activo', 1)))
                             
                             # Botones del formulario
@@ -750,6 +713,255 @@ def main():
         elif current_page == 'users':
             st.session_state.current_page = 'gestion'
             st.rerun()
+
+def show_gestion_zonas():
+    """Muestra la gestión de zonas con pestañas para listar y crear zonas"""
+    # Mostrar pestañas
+    tab_lista, tab_crear = st.tabs(["📋 Lista de Zonas", "➕ Crear Zona"])
+    
+    with tab_lista:
+        _show_lista_zonas()
+    
+    with tab_crear:
+        _show_crear_zona()
+
+def _show_lista_zonas():
+    """Muestra la lista de zonas con opciones de búsqueda y filtrado"""
+    st.subheader("📍 Lista de Zonas")
+    
+    # Barra de búsqueda y filtros
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        busqueda = st.text_input("Buscar zona", "", placeholder="Buscar por código o nombre...")
+    with col2:
+        mostrar_inactivas = st.checkbox("Mostrar inactivas", value=False)
+    
+    # Obtener zonas con filtros
+    zonas = db.get_zonas(incluir_inactivas=mostrar_inactivas)
+        
+    if busqueda:
+        busqueda = busqueda.lower()
+        zonas = [z for z in zonas if 
+                busqueda in z['zona'].lower() or 
+                busqueda in z['nombre'].lower()]
+    
+    if zonas:
+        # Mostrar estadísticas rápidas
+        activas = sum(1 for z in zonas if z.get('activo', 1) == 1)
+        inactivas = len(zonas) - activas
+        st.caption(f"Mostrando {len(zonas)} zonas ({activas} activas, {inactivas} inactivas)")
+        
+        # Mostrar zonas en una tabla
+        for zona in zonas:
+            # Determinar si estamos editando esta zona
+            is_editing = st.session_state.get(f'editing_zona_{zona["zona"]}', False)
+            
+            with st.expander(
+                f"{'✅' if zona.get('activo', 1) == 1 else '⏸️'} {zona['zona']} - {zona['nombre']}",
+                expanded=is_editing  # Expandir si está en modo edición
+            ):
+                if not is_editing:
+                    # Vista normal de la zona
+                    col1, col2 = st.columns([3, 1])
+                    
+                    with col1:
+                        # Mostrar estado
+                        estado = "Activa" if zona.get('activo', 1) == 1 else "Inactiva"
+                        st.markdown(f"**Zona:** {zona['zona']}")
+                        st.markdown(f"**Estado:** {estado}")
+                    
+                    with col2:
+                        # Botones de acción
+                        col_btn1, col_btn2 = st.columns(2)
+                        
+                        with col_btn1:
+                            if st.button("✏️ Editar", key=f"edit_{zona['zona']}", use_container_width=True):
+                                st.session_state[f'editing_zona_{zona["zona"]}'] = True
+                                st.rerun()
+                        
+                        with col_btn2:
+                            estado_btn = "❌ Desactivar" if zona.get('activo', 1) == 1 else "✅ Activar"
+                            if st.button(estado_btn, key=f"toggle_{zona['zona']}", use_container_width=True):
+                                nuevo_estado = 0 if zona.get('activo', 1) == 1 else 1
+                                db.update_zona(zona['zona'], activo=nuevo_estado)
+                                st.success(f"Zona {'activada' if nuevo_estado == 1 else 'desactivada'} correctamente")
+                                time.sleep(1)
+                                st.rerun()
+                        
+                        # Botón de eliminar con confirmación
+                        if st.button("🗑️ Eliminar", key=f"delete_{zona['zona']}", 
+                                   type="primary", use_container_width=True,
+                                   help="Eliminar permanentemente esta zona"):
+                            # Mostrar diálogo de confirmación
+                            if st.session_state.get(f'confirm_delete_{zona["zona"]}') != True:
+                                st.session_state[f'confirm_delete_{zona["zona"]}'] = True
+                                st.rerun()
+                            else:
+                                if db.delete_zona(zona['zona']):
+                                    st.success("Zona eliminada correctamente")
+                                    time.sleep(1)
+                                    # Limpiar estado de confirmación
+                                    if f'confirm_delete_{zona["zona"]}' in st.session_state:
+                                        del st.session_state[f'confirm_delete_{zona["zona"]}']
+                                    st.rerun()
+                                else:
+                                    st.error("Error al eliminar la zona")
+                                    if f'confirm_delete_{zona["zona"]}' in st.session_state:
+                                        del st.session_state[f'confirm_delete_{zona["zona"]}']
+                        
+                        # Mostrar mensaje de confirmación si es necesario
+                        if st.session_state.get(f'confirm_delete_{zona["zona"]}') == True:
+                            st.warning("¿Estás seguro de que quieres eliminar esta zona? Esta acción no se puede deshacer.")
+                            if st.button("✅ Confirmar eliminación", key=f"confirm_del_{zona['zona']}", 
+                                       type="primary", use_container_width=True):
+                                if db.delete_zona(zona['zona']):
+                                    st.success("Zona eliminada correctamente")
+                                    time.sleep(1)
+                                    # Limpiar estado de confirmación
+                                    if f'confirm_delete_{zona["zona"]}' in st.session_state:
+                                        del st.session_state[f'confirm_delete_{zona["zona"]}']
+                                    st.rerun()
+                                else:
+                                    st.error("Error al eliminar la zona")
+                            
+                            if st.button("❌ Cancelar", key=f"cancel_del_{zona['zona']}", 
+                                       use_container_width=True):
+                                del st.session_state[f'confirm_delete_{zona["zona"]}']
+                                st.rerun()
+                else:
+                    # Mostrar formulario de edición
+                    with st.form(f"edit_zona_{zona['zona']}"):
+                        # Obtener datos actuales de la zona
+                        zona_data = db.get_zona(zona['zona'])
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            zona_valor = st.text_input("Zona", value=zona_data['zona'])
+                            nombre = st.text_input("Nombre de la zona", value=zona_data['nombre'])
+                        
+                        with col2:
+                            st.write("")
+                            st.write("")
+                            activo = st.checkbox("Activa", value=bool(zona_data.get('activo', 1)))
+                        
+                        # Botones del formulario
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            if st.form_submit_button("💾 Guardar cambios", use_container_width=True):
+                                if not zona_valor or not nombre:
+                                    st.error("La zona y el nombre son campos obligatorios")
+                                else:
+                                    try:
+                                        # Actualizar la zona
+                                        if db.update_zona(
+                                            zona_original=zona['zona'],
+                                            zona=zona_valor,
+                                            nombre=nombre,
+                                            activo=1 if activo else 0
+                                        ):
+                                            st.success("✅ Zona actualizada correctamente")
+                                            time.sleep(1)
+                                            # Limpiar estado de edición
+                                            del st.session_state[f'editing_zona_{zona["zona"]}']
+                                            st.rerun()
+                                        else:
+                                            st.error("❌ Error al actualizar la zona. Verifica que la zona no esté duplicada.")
+                                    except Exception as e:
+                                        st.error(f"Error al actualizar la zona: {str(e)}")
+                        
+                        with col2:
+                            if st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True):
+                                # Cancelar edición
+                                del st.session_state[f'editing_zona_{zona["zona"]}']
+                                st.rerun()
+        
+        if not zonas:
+            st.info("No se encontraron zonas que coincidan con los criterios de búsqueda")
+    else:
+        st.info("No hay zonas registradas")
+
+def _show_crear_zona():
+    """Muestra el formulario para crear o editar una zona"""
+    # Verificar si estamos en modo edición
+    if 'editing_zona' in st.session_state:
+        st.subheader("✏️ Editar Zona")
+        zona_data = db.get_zona(st.session_state.editing_zona)
+        
+        if not zona_data:
+            st.error("No se encontró la zona a editar")
+            del st.session_state.editing_zona
+            return
+            
+        # Inicializar valores por defecto
+        zona_valor = zona_data.get('zona', '')
+        nombre = zona_data.get('nombre', '')
+        activo = zona_data.get('activo', 1) == 1
+    else:
+        st.subheader("➕ Crear Nueva Zona")
+        # Valores por defecto para nueva zona
+        zona_valor = ""
+        nombre = ""
+        activo = True
+    
+    # Formulario para crear/editar zona
+    with st.form("zona_form"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            zona_valor = st.text_input("Zona*", value=zona_valor, 
+                                     disabled='editing_zona' in st.session_state)
+            nombre = st.text_input("Nombre de la zona*", value=nombre)
+        
+        with col2:
+            st.write("")
+            st.write("")
+            activo = st.checkbox("Activa", value=activo)
+        
+        # Botones del formulario
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.form_submit_button("💾 Guardar Zona", use_container_width=True):
+                if not zona_valor or not nombre:
+                    st.error("Los campos marcados con * son obligatorios")
+                else:
+                    try:
+                        if 'editing_zona' in st.session_state:
+                            # Actualizar zona existente
+                            if db.update_zona(
+                                zona_original=st.session_state.editing_zona,
+                                zona=zona_valor,
+                                nombre=nombre,
+                                activo=1 if activo else 0
+                            ):
+                                st.success("✅ Zona actualizada correctamente")
+                                time.sleep(1)
+                                # Limpiar estado de edición
+                                del st.session_state.editing_zona
+                                st.rerun()
+                            else:
+                                st.error("❌ Error al actualizar la zona. Verifica que la zona no esté duplicada.")
+                        else:
+                            # Crear nueva zona
+                            if db.create_zona(
+                                zona=zona_valor,
+                                nombre=nombre
+                            ):
+                                st.success("✅ Zona creada correctamente")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("❌ Error al crear la zona. Verifica que la zona no esté duplicada.")
+                    except Exception as e:
+                        st.error(f"Error al procesar la solicitud: {str(e)}")
+        
+        with col2:
+            if st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True):
+                if 'editing_zona' in st.session_state:
+                    del st.session_state.editing_zona
+                st.rerun()
 
 if __name__ == "__main__":
     main()

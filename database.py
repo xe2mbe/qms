@@ -92,10 +92,45 @@ class FMREDatabase:
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS zonas (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    codigo TEXT NOT NULL UNIQUE,
-                    nombre TEXT NOT NULL UNIQUE
+                    zona TEXT NOT NULL UNIQUE,
+                    nombre TEXT NOT NULL UNIQUE,
+                    activo BOOLEAN DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            
+            # Verificar y agregar columnas faltantes si es necesario
+            cursor.execute('PRAGMA table_info(zonas)')
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            # Función para agregar una columna si no existe
+            def add_column_if_not_exists(column_name, column_definition):
+                if column_name not in columns:
+                    try:
+                        cursor.execute(f'ALTER TABLE zonas ADD COLUMN {column_name} {column_definition}')
+                        print(f'Columna {column_name} agregada correctamente')
+                        return True
+                    except sqlite3.OperationalError as e:
+                        print(f'Error al agregar columna {column_name}: {str(e)}')
+                        return False
+                return True
+            
+            # Agregar columnas una por una
+            add_column_if_not_exists('descripcion', 'TEXT')
+            add_column_if_not_exists('activo', 'BOOLEAN DEFAULT 1')
+            
+            # Para columnas con valores por defecto no constantes, primero las agregamos sin valor por defecto
+            if 'created_at' not in columns:
+                cursor.execute('ALTER TABLE zonas ADD COLUMN created_at TIMESTAMP')
+                cursor.execute("UPDATE zonas SET created_at = datetime('now') WHERE created_at IS NULL")
+                
+            if 'updated_at' not in columns:
+                cursor.execute('ALTER TABLE zonas ADD COLUMN updated_at TIMESTAMP')
+                cursor.execute("UPDATE zonas SET updated_at = datetime('now') WHERE updated_at IS NULL")
+            
+            # Actualizar registros existentes para establecer valores por defecto
+            cursor.execute('UPDATE zonas SET activo = 1 WHERE activo IS NULL')
             
             # Tabla de Sistemas
             cursor.execute('''
@@ -165,7 +200,7 @@ class FMREDatabase:
         ]
         
         cursor.executemany(
-            'INSERT OR IGNORE INTO zonas (codigo, nombre) VALUES (?, ?)',
+            'INSERT OR IGNORE INTO zonas (zona, nombre) VALUES (?, ?)',
             zonas
         )
         
@@ -537,12 +572,111 @@ class FMREDatabase:
             cursor.execute('SELECT abreviatura, estado FROM qth ORDER BY estado')
             return {row['abreviatura']: row['estado'] for row in cursor.fetchall()}
     
-    def get_zonas(self):
-        """Obtiene todas las zonas de la base de datos"""
+    def get_zona(self, zona):
+        """Obtiene una zona por su código"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT codigo, nombre FROM zonas ORDER BY nombre')
-            return {row['codigo']: row['nombre'] for row in cursor.fetchall()}
+            cursor.execute('SELECT * FROM zonas WHERE zona = ?', (zona,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+    
+    def get_zonas(self, incluir_inactivas=False):
+        """
+        Obtiene todas las zonas de la base de datos
+        
+        Args:
+            incluir_inactivas (bool): Si es True, incluye las zonas inactivas.
+                                    Si es False (por defecto), solo muestra las activas.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if incluir_inactivas:
+                cursor.execute('''
+                    SELECT * FROM zonas 
+                    ORDER BY nombre
+                ''')
+            else:
+                cursor.execute('''
+                    SELECT * FROM zonas 
+                    WHERE activo = 1 
+                    ORDER BY nombre
+                ''')
+            # Asegurarse de que el resultado tenga el formato correcto
+            zonas = []
+            for row in cursor.fetchall():
+                zona = dict(row)
+                # Si la zona tiene 'codigo' en lugar de 'zona', lo mapeamos
+                if 'codigo' in zona and 'zona' not in zona:
+                    zona['zona'] = zona.pop('codigo')
+                zonas.append(zona)
+            return zonas
+    
+    def create_zona(self, zona=None, nombre=None, codigo=None):
+        """Crea una nueva zona
+        
+        Args:
+            zona: Código de la zona (sinónimo de 'codigo' para compatibilidad)
+            nombre: Nombre de la zona
+            codigo: Sinónimo de 'zona' para compatibilidad (obsoleto)
+            
+        Returns:
+            bool: True si la zona se creó correctamente, False en caso contrario
+        """
+        # Manejar compatibilidad con el parámetro 'codigo'
+        if codigo is not None and zona is None:
+            zona = codigo
+            
+        if zona is None or nombre is None:
+            return False
+            
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    INSERT INTO zonas (zona, nombre, activo)
+                    VALUES (?, ?, 1)
+                ''', (zona, nombre))
+                conn.commit()
+                return True
+            except sqlite3.IntegrityError as e:
+                print(f"Error al crear zona: {str(e)}")
+                return False
+    
+    def update_zona(self, zona, nombre=None, activo=None):
+        """Actualiza una zona existente"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Construir la consulta dinámicamente
+            update_fields = []
+            params = []
+            
+            if nombre is not None:
+                update_fields.append("nombre = ?")
+                params.append(nombre)
+            if activo is not None:
+                update_fields.append("activo = ?")
+                params.append(1 if activo else 0)
+            
+            if not update_fields:
+                return False  # No hay nada que actualizar
+            
+            query = f"""
+                UPDATE zonas 
+                SET {', '.join(update_fields)}
+                WHERE zona = ?
+            """
+            params.append(zona)
+            
+            cursor.execute(query, params)
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def delete_zona(self, zona):
+        """Elimina lógicamente una zona (la marca como inactiva)"""
+        return self.update_zona(zona, activo=0)
     
     def get_sistemas(self):
         """Obtiene todos los sistemas de la base de datos"""
@@ -559,11 +693,11 @@ class FMREDatabase:
             result = cursor.fetchone()
             return result['estado'] if result else None
     
-    def get_zona_by_codigo(self, codigo):
-        """Obtiene una zona por su código"""
+    def get_nombre_zona(self, zona):
+        """Obtiene el nombre de una zona por su código"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT nombre FROM zonas WHERE codigo = ?', (codigo,))
+            cursor.execute('SELECT nombre FROM zonas WHERE zona = ?', (zona,))
             result = cursor.fetchone()
             return result['nombre'] if result else None
     

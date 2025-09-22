@@ -5,7 +5,7 @@ import secrets
 import string
 from time_utils import format_datetime
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
 from database import FMREDatabase
 from auth import AuthManager
@@ -27,7 +27,7 @@ def show_sidebar():
         # Usar una versión más grande del logo con un ancho máximo
         st.image(
             "assets/LogoFMRE_medium.png",
-            use_container_width=False,  # Parámetro actualizado
+            width='content'  # Ancho fijo en lugar de usar el contenedor
             output_format='PNG',
             #width=200  # Ancho máximo en píxeles
         )
@@ -64,7 +64,7 @@ def show_sidebar():
             st.session_state.current_page = "home"
         
         # Botón de cierre de sesión
-        if st.button("🚪 Cerrar sesión", use_container_width=True):
+        if st.button("🚪 Cerrar sesión", width='stretch'):
             auth.logout()
             st.rerun()
 
@@ -136,6 +136,7 @@ def show_gestion_usuarios():
                                 if email_service.send_user_credentials(user, temp_password):
                                     st.success(f"✅ Correo de bienvenida reenviado a {user.get('email', '')}")
                                     st.warning("⚠️ Se generó una nueva contraseña temporal. El usuario deberá cambiarla al iniciar sesión.")
+
                                 else:
                                     st.error("❌ Error al enviar el correo. Verifica la configuración SMTP.")
                                     
@@ -222,6 +223,8 @@ def show_gestion_usuarios():
                                                 db.change_password(user['username'], password_hash)
                                             
                                             st.success("✅ Usuario actualizado exitosamente")
+                                            import time
+                                            time.sleep(2)
                                             
                                             # Limpiar estado de edición
                                             del st.session_state[f"editing_user_{user['id']}"]
@@ -334,7 +337,7 @@ def show_gestion():
     cols = st.columns(len(tabs))
     for i, tab in enumerate(tabs):
         with cols[i]:
-            if st.button(tab, key=f"tab_{i}", use_container_width=True):
+            if st.button(tab, key=f"tab_{i}", width='stretch'):
                 set_active_tab(tab)
     
     st.markdown("---")  # Línea separadora
@@ -407,22 +410,22 @@ def show_gestion_eventos():
                             col_btn1, col_btn2 = st.columns(2)
                             
                             with col_btn1:
-                                if st.button("✏️ Editar", key=f"edit_{evento['id']}", use_container_width=True):
+                                if st.button("✏️ Editar", key=f"edit_{evento['id']}", width='stretch'):
                                     st.session_state[f'editing_evento_{evento["id"]}'] = True
                                     st.rerun()
                             
                             with col_btn2:
                                 estado_btn = "❌ Desactivar" if evento.get('activo', 1) == 1 else "✅ Activar"
-                                if st.button(estado_btn, key=f"toggle_{evento['id']}", use_container_width=True):
+                                if st.button(estado_btn, key=f"toggle_{evento['id']}", width='stretch'):
                                     nuevo_estado = 0 if evento.get('activo', 1) == 1 else 1
                                     db.update_evento(evento['id'], activo=nuevo_estado)
                                     st.success(f"Evento {'activado' if nuevo_estado == 1 else 'desactivado'} correctamente")
-                                    time.sleep(1)
+                                    time.sleep(2)
                                     st.rerun()
                             
                             # Botón de eliminar con confirmación
                             if st.button("🗑️ Eliminar", key=f"delete_{evento['id']}", 
-                                       type="primary", use_container_width=True,
+                                       type="primary", width='stretch',
                                        help="Eliminar permanentemente este evento"):
                                 # Mostrar diálogo de confirmación
                                 if st.session_state.get(f'confirm_delete_{evento["id"]}') != True:
@@ -431,7 +434,7 @@ def show_gestion_eventos():
                                 else:
                                     if db.delete_evento(evento['id']):
                                         st.success("Evento eliminado correctamente")
-                                        time.sleep(1)
+                                        time.sleep(2)
                                         # Limpiar estado de confirmación
                                         if f'confirm_delete_{evento["id"]}' in st.session_state:
                                             del st.session_state[f'confirm_delete_{evento["id"]}']
@@ -445,10 +448,10 @@ def show_gestion_eventos():
                             if st.session_state.get(f'confirm_delete_{evento["id"]}') == True:
                                 st.warning("¿Estás seguro de que quieres eliminar este evento? Esta acción no se puede deshacer.")
                                 if st.button("✅ Confirmar eliminación", key=f"confirm_del_{evento['id']}", 
-                                           type="primary", use_container_width=True):
+                                           type="primary", width='stretch'):
                                     if db.delete_evento(evento['id']):
                                         st.success("Evento eliminado correctamente")
-                                        time.sleep(1)
+                                        time.sleep(2)
                                         # Limpiar estado de confirmación
                                         if f'confirm_delete_{evento["id"]}' in st.session_state:
                                             del st.session_state[f'confirm_delete_{evento["id"]}']
@@ -457,7 +460,7 @@ def show_gestion_eventos():
                                         st.error("Error al eliminar el evento")
                                 
                                 if st.button("❌ Cancelar", key=f"cancel_del_{evento['id']}", 
-                                           use_container_width=True):
+                                           width='stretch'):
                                     del st.session_state[f'confirm_delete_{evento["id"]}']
                                     st.rerun()
                     else:
@@ -480,7 +483,7 @@ def show_gestion_eventos():
                             col1, col2 = st.columns(2)
                             
                             with col1:
-                                if st.form_submit_button("💾 Guardar cambios", use_container_width=True):
+                                if st.form_submit_button("💾 Guardar cambios", width='stretch'):
                                     try:
                                         # Actualizar el evento
                                         if db.update_evento(
@@ -490,7 +493,7 @@ def show_gestion_eventos():
                                             activo=1 if activo else 0
                                         ):
                                             st.success("✅ Evento actualizado correctamente")
-                                            time.sleep(1)
+                                            time.sleep(2)
                                             # Limpiar estado de edición
                                             del st.session_state[f'editing_evento_{evento["id"]}']
                                             st.rerun()
@@ -565,7 +568,7 @@ def show_crear_evento():
                                 activo=1 if activo else 0
                             ):
                                 st.success("✅ Tipo de evento actualizado correctamente")
-                                time.sleep(1)
+                                time.sleep(2)
                                 del st.session_state['editing_evento']
                                 st.rerun()
                             else:
@@ -579,7 +582,7 @@ def show_crear_evento():
                             
                             if evento_id:
                                 st.success("✅ Tipo de evento creado exitosamente")
-                                time.sleep(1)
+                                time.sleep(2)
                                 st.rerun()
                     except Exception as e:
                         st.error(f"Error al {'guardar' if is_editing else 'crear'} el tipo de evento: {str(e)}")
@@ -784,22 +787,22 @@ def _show_lista_zonas():
                         col_btn1, col_btn2 = st.columns(2)
                         
                         with col_btn1:
-                            if st.button("✏️ Editar", key=f"edit_{zona['zona']}", use_container_width=True):
+                            if st.button("✏️ Editar", key=f"edit_{zona['zona']}", width='stretch'):
                                 st.session_state[f'editing_zona_{zona["zona"]}'] = True
                                 st.rerun()
                         
                         with col_btn2:
                             estado_btn = "❌ Desactivar" if zona.get('activo', 1) == 1 else "✅ Activar"
-                            if st.button(estado_btn, key=f"toggle_{zona['zona']}", use_container_width=True):
+                            if st.button(estado_btn, key=f"toggle_{zona['zona']}", width='stretch'):
                                 nuevo_estado = 0 if zona.get('activo', 1) == 1 else 1
                                 db.update_zona(zona['zona'], activo=nuevo_estado)
                                 st.success(f"Zona {'activada' if nuevo_estado == 1 else 'desactivada'} correctamente")
-                                time.sleep(1)
+                                time.sleep(2)
                                 st.rerun()
                         
                         # Botón de eliminar con confirmación
                         if st.button("🗑️ Eliminar", key=f"delete_{zona['zona']}", 
-                                   type="primary", use_container_width=True,
+                                   type="primary", width='stretch',
                                    help="Eliminar permanentemente esta zona"):
                             # Mostrar diálogo de confirmación
                             if st.session_state.get(f'confirm_delete_{zona["zona"]}') != True:
@@ -808,7 +811,7 @@ def _show_lista_zonas():
                             else:
                                 if db.delete_zona(zona['zona']):
                                     st.success("Zona eliminada correctamente")
-                                    time.sleep(1)
+                                    time.sleep(2)
                                     # Limpiar estado de confirmación
                                     if f'confirm_delete_{zona["zona"]}' in st.session_state:
                                         del st.session_state[f'confirm_delete_{zona["zona"]}']
@@ -822,10 +825,10 @@ def _show_lista_zonas():
                         if st.session_state.get(f'confirm_delete_{zona["zona"]}') == True:
                             st.warning("¿Estás seguro de que quieres eliminar esta zona? Esta acción no se puede deshacer.")
                             if st.button("✅ Confirmar eliminación", key=f"confirm_del_{zona['zona']}", 
-                                       type="primary", use_container_width=True):
+                                       type="primary", width='stretch'):
                                 if db.delete_zona(zona['zona']):
                                     st.success("Zona eliminada correctamente")
-                                    time.sleep(1)
+                                    time.sleep(2)
                                     # Limpiar estado de confirmación
                                     if f'confirm_delete_{zona["zona"]}' in st.session_state:
                                         del st.session_state[f'confirm_delete_{zona["zona"]}']
@@ -834,7 +837,7 @@ def _show_lista_zonas():
                                     st.error("Error al eliminar la zona")
                             
                             if st.button("❌ Cancelar", key=f"cancel_del_{zona['zona']}", 
-                                       use_container_width=True):
+                                       width='stretch'):
                                 del st.session_state[f'confirm_delete_{zona["zona"]}']
                                 st.rerun()
                 else:
@@ -871,7 +874,7 @@ def _show_lista_zonas():
                                             activo=1 if activo else 0
                                         ):
                                             st.success("✅ Zona actualizada correctamente")
-                                            time.sleep(1)
+                                            time.sleep(2)
                                             # Limpiar estado de edición
                                             del st.session_state[f'editing_zona_{zona["zona"]}']
                                             st.rerun()
@@ -1007,7 +1010,7 @@ def _show_lista_radioexperimentadores():
                                 try:
                                     if db.delete_radioexperimentador(radio['id']):
                                         st.success(f"Radioexperimentador {radio['indicativo']} desactivado correctamente")
-                                        time.sleep(1)
+                                        time.sleep(2)
                                         st.rerun()
                                     else:
                                         st.error("No se pudo desactivar el radioexperimentador")
@@ -1018,7 +1021,7 @@ def _show_lista_radioexperimentadores():
                                 try:
                                     if db.activar_radioexperimentador(radio['id']):
                                         st.success(f"Radioexperimentador {radio['indicativo']} activado correctamente")
-                                        time.sleep(1)
+                                        time.sleep(2)
                                         st.rerun()
                                     else:
                                         st.error("No se pudo activar el radioexperimentador")
@@ -1042,7 +1045,7 @@ def _show_lista_radioexperimentadores():
                                     if db.delete_radioexperimentador(radio['id'], force_delete=True):
                                         st.success(f"Radioexperimentador {radio['indicativo']} eliminado permanentemente")
                                         del st.session_state.eliminando_radio_id
-                                        time.sleep(1)
+                                        time.sleep(2)
                                         st.rerun()
                                     else:
                                         st.error("No se pudo eliminar el radioexperimentador")
@@ -1174,7 +1177,7 @@ def _mostrar_formulario_edicion(radio_id):
                         try:
                             if db.update_radioexperimentador(radio['id'], datos_actualizados):
                                 st.success("¡Los cambios se guardaron correctamente!")
-                                time.sleep(1)
+                                time.sleep(2)
                                 del st.session_state.editando_radio_id
                                 st.rerun()
                             else:
@@ -1408,7 +1411,7 @@ def _show_crear_zona():
                                 activo=1 if activo else 0
                             ):
                                 st.success("✅ Zona actualizada correctamente")
-                                time.sleep(1)
+                                time.sleep(2)
                                 # Limpiar estado de edición
                                 del st.session_state.editing_zona
                                 st.rerun()
@@ -1421,7 +1424,7 @@ def _show_crear_zona():
                                 nombre=nombre
                             ):
                                 st.success("✅ Zona creada correctamente")
-                                time.sleep(1)
+                                time.sleep(2)
                                 st.rerun()
                             else:
                                 st.error("❌ Error al crear la zona. Verifica que la zona no esté duplicada.")
@@ -1618,10 +1621,10 @@ def _show_crear_radioexperimentador():
         col_btn1, col_btn2, _ = st.columns([1, 1, 4])
         
         with col_btn1:
-            guardar = st.form_submit_button("💾 Guardar", type="primary", use_container_width=True)
+            guardar = st.form_submit_button("💾 Guardar", type="primary", width='stretch')
         
         with col_btn2:
-            cancelar = st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True)
+            cancelar = st.form_submit_button("❌ Cancelar", type="secondary", width='stretch')
         
         # Procesar guardado o cancelación
         if guardar:
@@ -1653,7 +1656,7 @@ def _show_crear_radioexperimentador():
                     
                     if radio_id:
                         st.success("¡Radioexperimentador creado exitosamente!")
-                        time.sleep(1)
+                        time.sleep(2)
                         # Limpiar el formulario después de guardar exitosamente
                         st.session_state.form_data = {
                             'indicativo': '',
@@ -1680,21 +1683,18 @@ def _show_crear_radioexperimentador():
         
         # Manejar cancelación
         if cancelar:
-            # Restablecer el formulario a los valores por defecto
-            st.session_state.form_data = {
-                'indicativo': '',
-                'nombre': '',
-                'municipio': '',
-                'estado': '',
-                'pais': 'México',
-                'fecha_nac': None,
-                'fecha_exp': None,
-                'nacionalidad': 'MEXICANA',
-                'genero': '',
-                'tipo_licencia': '',
-                'estatus': 'ACTIVO',
-                'observaciones': ''
-            }
+            # Restablecer el formulario a los valores por defecto sin recargar la página
+            for key in st.session_state.form_data:
+                if key in ['pais', 'estatus']:
+                    st.session_state.form_data[key] = 'México' if key == 'pais' else 'ACTIVO'
+                elif key in ['fecha_nac', 'fecha_exp']:
+                    st.session_state.form_data[key] = None
+                elif key == 'nacionalidad':
+                    st.session_state.form_data[key] = 'MEXICANA'
+                else:
+                    st.session_state.form_data[key] = ''
+            
+            # Usar st.rerun() para forzar la actualización
             st.rerun()
         
 

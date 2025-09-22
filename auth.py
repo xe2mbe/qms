@@ -20,7 +20,7 @@ class AuthManager:
                 if user:
                     st.session_state.user = user
                     st.success(f"Bienvenido, {user['full_name']}!")
-                    time.sleep(1)
+                    time.sleep(2)
                     st.rerun()
                 else:
                     st.error("Usuario o contraseña incorrectos")

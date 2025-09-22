@@ -44,6 +44,21 @@ class FMREDatabase:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
+            # Tabla de eventos
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS eventos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nombre TEXT NOT NULL,
+                    descripcion TEXT,
+                    fecha_inicio DATETIME NOT NULL,
+                    fecha_fin DATETIME NOT NULL,
+                    ubicacion TEXT,
+                    activo BOOLEAN DEFAULT 1,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
             # Tabla de configuración SMTP
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS smtp_settings (
@@ -173,6 +188,29 @@ class FMREDatabase:
             'INSERT OR IGNORE INTO sistemas (codigo, nombre) VALUES (?, ?)',
             sistemas
         )
+        
+        # Insertar eventos iniciales si no existen
+        eventos_iniciales = [
+            ('Boletín', 'Boletín Dominical', 'Boletín informativo semanal', '2024-01-01 00:00:00', '2024-12-31 23:59:59', 'Estación XE1L'),
+            ('Retransmisión', 'Retransmisión del boletín por el CREBC', 'Retransmisión del boletín en el Centro de Retransmisión', '2024-01-01 00:00:00', '2024-12-31 23:59:59', 'CREBC'),
+            ('RNE 40', 'Prácticas de la Red Nacional de Emergencias en 40 m', 'Prácticas de la RNE en la banda de 40 metros', '2024-01-01 00:00:00', '2024-12-31 23:59:59', '40m banda'),
+            ('RNE 80', 'Prácticas de la Red Nacional de Emergencias en 80 m', 'Prácticas de la RNE en la banda de 80 metros', '2024-01-01 00:00:00', '2024-12-31 23:59:59', '80m banda'),
+            ('Facebook', 'Transmisión por Live Facebook', 'Transmisión en vivo por Facebook', '2024-01-01 00:00:00', '2024-12-31 23:59:59', 'Facebook Live'),
+            ('Otro', 'Otros eventos', 'Otros eventos no especificados', '2024-01-01 00:00:00', '2024-12-31 23:59:59', 'Varios')
+        ]
+        
+        for nombre, descripcion, notas, fecha_inicio, fecha_fin, ubicacion in eventos_iniciales:
+            # Verificar si el evento ya existe
+            evento_existente = cursor.execute(
+                'SELECT id FROM eventos WHERE nombre = ?', 
+                (nombre,)
+            ).fetchone()
+            
+            if not evento_existente:
+                cursor.execute(
+                    'INSERT INTO eventos (nombre, descripcion, fecha_inicio, fecha_fin, ubicacion) VALUES (?, ?, ?, ?, ?)',
+                    (nombre, f"{descripcion}\n\n{notas}", fecha_inicio, fecha_fin, ubicacion)
+                )
         
         # Crear usuario admin por defecto si no existe
         admin_exists = cursor.execute(
@@ -545,6 +583,87 @@ class FMREDatabase:
             cursor.execute('SELECT nombre FROM sistemas WHERE codigo = ?', (codigo,))
             result = cursor.fetchone()
             return result['nombre'] if result else None
+
+    # ========================
+    # Métodos para Eventos
+    # ========================
+    
+    def create_evento(self, nombre, descripcion, fecha_inicio, fecha_fin, ubicacion):
+        """Crea un nuevo evento en la base de datos"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO eventos (nombre, descripcion, fecha_inicio, fecha_fin, ubicacion)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (nombre, descripcion, fecha_inicio, fecha_fin, ubicacion))
+            conn.commit()
+            return cursor.lastrowid
+    
+    def get_evento(self, evento_id):
+        """Obtiene un evento por su ID"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM eventos WHERE id = ?', (evento_id,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+    
+    def get_all_eventos(self):
+        """Obtiene todos los eventos ordenados por fecha de inicio"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT * FROM eventos 
+                WHERE activo = 1 
+                ORDER BY fecha_inicio DESC
+            ''')
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def update_evento(self, evento_id, nombre=None, descripcion=None, fecha_inicio=None, 
+                     fecha_fin=None, ubicacion=None, activo=None):
+        """Actualiza los datos de un evento"""
+        updates = []
+        params = []
+        
+        if nombre is not None:
+            updates.append("nombre = ?")
+            params.append(nombre)
+        if descripcion is not None:
+            updates.append("descripcion = ?")
+            params.append(descripcion)
+        if fecha_inicio is not None:
+            updates.append("fecha_inicio = ?")
+            params.append(fecha_inicio)
+        if fecha_fin is not None:
+            updates.append("fecha_fin = ?")
+            params.append(fecha_fin)
+        if ubicacion is not None:
+            updates.append("ubicacion = ?")
+            params.append(ubicacion)
+        if activo is not None:
+            updates.append("activo = ?")
+            params.append(activo)
+            
+        if not updates:
+            return False
+            
+        params.append(evento_id)
+        
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            query = f"""
+                UPDATE eventos 
+                SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """
+            cursor.execute(query, params)
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def delete_evento(self, evento_id):
+        """Elimina lógicamente un evento (lo marca como inactivo)"""
+        return self.update_evento(evento_id, activo=0)
 
 if __name__ == "__main__":
     # Crear la base de datos y tablas si no existen

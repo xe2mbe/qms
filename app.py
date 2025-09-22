@@ -49,13 +49,13 @@ def show_sidebar():
         
         # Mostrar opciones de administración solo para administradores
         if user['role'] == 'admin':
-            menu_options.extend(["👥 Usuarios", "⚙️ Configuración"])
+            menu_options.extend(["🔧 Gestión", "⚙️ Configuración"])
             
         selected = st.selectbox("Navegación", menu_options)
         
         # Navegación
-        if selected == "👥 Usuarios":
-            st.session_state.current_page = "users"
+        if selected == "🔧 Gestión":
+            st.session_state.current_page = "gestion"
         elif selected == "📊 Reportes":
             st.session_state.current_page = "reports"
         elif selected == "⚙️ Configuración":
@@ -77,14 +77,36 @@ def show_home():
     Utilice el menú lateral para navegar por las diferentes secciones del sistema.
     """)
 
-def show_users():
-    """Muestra la gestión de usuarios con expanders para cada usuario"""
-    st.title("👥 Gestión de Usuarios")
+def show_gestion():
+    """Muestra el panel de gestión con pestañas para diferentes secciones"""
+    st.title("🔧 Gestión")
     
-    # Verificar si el usuario es admin
-    if st.session_state.user['role'] != 'admin':
-        st.error("❌ Acceso denegado. Solo los administradores pueden acceder a esta sección.")
-        st.stop()
+    # Crear pestañas
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "👥 Usuarios", 
+        "📅 Eventos", 
+        "📍 Zonas", 
+        "📻 Radioexperimentadores"
+    ])
+    
+    with tab1:
+        show_gestion_usuarios()
+    
+    with tab2:
+        st.subheader("📅 Gestión de Eventos")
+        st.info("Próximamente...")
+    
+    with tab3:
+        st.subheader("📍 Gestión de Zonas")
+        st.info("Próximamente...")
+    
+    with tab4:
+        st.subheader("📻 Gestión de Radioexperimentadores")
+        st.info("Próximamente...")
+
+def show_gestion_usuarios():
+    """Muestra la gestión de usuarios dentro de la sección de Gestión"""
+    # El título ya no es necesario aquí ya que está en la pestaña
     
     # Inicializar servicio de email
     if 'email_service' not in st.session_state:
@@ -320,6 +342,33 @@ def show_users():
                 else:
                     st.error("❌ Por favor completa todos los campos")
 
+def show_gestion():
+    """Muestra el panel de gestión con pestañas para diferentes secciones"""
+    st.title("🔧 Gestión")
+    
+    # Crear pestañas
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "👥 Usuarios", 
+        "📅 Eventos", 
+        "📍 Zonas", 
+        "📻 Radioexperimentadores"
+    ])
+    
+    with tab1:
+        show_gestion_usuarios()
+    
+    with tab2:
+        st.subheader("📅 Gestión de Eventos")
+        st.info("Próximamente...")
+    
+    with tab3:
+        st.subheader("📍 Gestión de Zonas")
+        st.info("Próximamente...")
+    
+    with tab4:
+        st.subheader("📻 Gestión de Radioexperimentadores")
+        st.info("Próximamente...")
+
 def show_reports():
     """Muestra la sección de reportes"""
     st.title("📊 Reportes")
@@ -437,15 +486,21 @@ def main():
         # Mostrar la barra lateral solo cuando está autenticado
         show_sidebar()
         
-        # Mostrar la página correspondiente
-        if st.session_state.current_page == "home":
+        # Navegación
+        current_page = st.session_state.get('current_page', 'home')
+        
+        if current_page == 'home':
             show_home()
-        elif st.session_state.current_page == "users":
-            show_users()
-        elif st.session_state.current_page == "reports":
+        elif current_page == 'gestion':
+            show_gestion()
+        elif current_page == 'reports':
             show_reports()
-        elif st.session_state.current_page == "settings":
+        elif current_page == 'settings':
             show_settings()
+        # Mantener compatibilidad con la navegación antigua
+        elif current_page == 'users':
+            st.session_state.current_page = 'gestion'
+            st.rerun()
 
 if __name__ == "__main__":
     main()

@@ -311,7 +311,7 @@ def show_gestion_usuarios():
                                 else:
                                     st.error("❌ Error al crear usuario (posiblemente el usuario ya existe)")
                             except Exception as e:
-                                st.error(f"❌ Error al crear usuario: {str(e)}")
+                                st.error(f"❌ Error al enviar el correo de bienvenida al usuario {new_username} al correo {new_email}: {str(e)}")
                 else:
                     st.error("❌ Por favor completa todos los campos")
 
@@ -490,7 +490,7 @@ def show_gestion_eventos():
                                         st.error(f"Error al actualizar el evento: {str(e)}")
                             
                             with col2:
-                                if st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True):
+                                if st.form_submit_button("❌ Cancelar", type="secondary", width='stretch'):
                                     # Cancelar edición
                                     del st.session_state[f'editing_evento_{evento["id"]}']
                                     st.rerun()
@@ -871,7 +871,7 @@ def _show_lista_zonas():
                                         st.error(f"Error al actualizar la zona: {str(e)}")
                         
                         with col2:
-                            if st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True):
+                            if st.form_submit_button("❌ Cancelar", type="secondary", width='stretch'):
                                 # Cancelar edición
                                 del st.session_state[f'editing_zona_{zona["zona"]}']
                                 st.rerun()
@@ -1366,7 +1366,7 @@ def _show_crear_zona():
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.form_submit_button("💾 Guardar Zona", use_container_width=True):
+            if st.form_submit_button("💾 Guardar Zona", width='stretch'):
                 if not zona_valor or not nombre:
                     st.error("Los campos marcados con * son obligatorios")
                 else:
@@ -1401,17 +1401,32 @@ def _show_crear_zona():
                         st.error(f"Error al procesar la solicitud: {str(e)}")
         
         with col2:
-            if st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True):
+            if st.form_submit_button("❌ Cancelar", type="secondary", width='stretch'):
                 if 'editing_zona' in st.session_state:
                     del st.session_state.editing_zona
                 st.rerun()
 
+@st.cache_data(ttl=3600)  # Cache por 1 hora
+def _get_estados():
+    """Obtiene la lista de estados con caché"""
+    try:
+        return db.get_estados()
+    except Exception as e:
+        st.error(f"Error al cargar los estados: {str(e)}")
+        return []
+
 def _show_crear_radioexperimentador():
     """Muestra el formulario para crear un nuevo radioexperimentador"""
-    st.header("➕ Agregar Nuevo Radioexperimentador")
+    st.header(" Agregar Nuevo Radioexperimentador")
     
+    # Obtener datos estáticos con caché
+    estados = _get_estados()
+    opciones_genero = ["", "MASCULINO", "FEMENINO", "OTRO"]
+    opciones_licencia = ["", "NOVATO", "AVANZADO", "GENERAL", "EXTRA"]
+    opciones_estatus = ["ACTIVO", "INACTIVO", "SUSPENDIDO", "EN TRÁMITE"]
+    
+    # Campos del formulario
     with st.form(key='crear_radio_form'):
-        # Campos del formulario
         col1, col2 = st.columns(2)
         
         with col1:
@@ -1419,17 +1434,12 @@ def _show_crear_radioexperimentador():
             nombre = st.text_input("Nombre completo", "")
             municipio = st.text_input("Municipio", "")
             
-            # Obtener la lista de estados desde la base de datos
-            try:
-                estados = db.get_estados()
-                estado_seleccionado = st.selectbox(
-                    "Estado",
-                    [""] + estados,
-                    index=0
-                )
-            except Exception as e:
-                st.error(f"Error al cargar los estados: {str(e)}")
-                estado_seleccionado = ""
+            # Estado con datos en caché
+            estado_seleccionado = st.selectbox(
+                "Estado",
+                [""] + estados,
+                index=0
+            )
                 
             pais = st.text_input("País", "México")
             
@@ -1440,75 +1450,81 @@ def _show_crear_radioexperimentador():
             
             genero = st.selectbox(
                 "Género", 
-                ["", "MASCULINO", "FEMENINO", "OTRO"],
+                opciones_genero,
                 index=0
             )
             
             tipo_licencia = st.selectbox(
                 "Tipo de Licencia",
-                ["", "NOVATO", "AVANZADO", "GENERAL", "EXTRA"],
+                opciones_licencia,
                 index=0
             )
             
             estatus = st.selectbox(
                 "Estatus",
-                ["ACTIVO", "INACTIVO", "SUSPENDIDO", "EN TRÁMITE"],
+                opciones_estatus,
                 index=0
             )
         
         observaciones = st.text_area("Observaciones", "")
         
-        # Botones de acción
+        # Botones del formulario
         col1, col2, _ = st.columns([1, 1, 4])
         
         with col1:
-            if st.form_submit_button("💾 Guardar", type="primary"):
-                # Validar campos obligatorios
-                if not indicativo or not nombre:
-                    st.error("Los campos de indicativo y nombre son obligatorios")
-                else:
-                    # Función para formatear texto en formato oración
-                    def formatear_oracion(texto):
-                        if not texto or not isinstance(texto, str):
-                            return texto
-                        return ' '.join(word.capitalize() for word in texto.split())
-                    
-                    # Preparar datos para guardar
-                    datos = {
-                        'indicativo': indicativo.upper(),  # Se mantiene en mayúsculas
-                        'nombre_completo': formatear_oracion(nombre),
-                        'municipio': formatear_oracion(municipio) if municipio else None,
-                        'estado': formatear_oracion(estado_seleccionado) if estado_seleccionado else None,
-                        'pais': formatear_oracion(pais) if pais else None,
-                        'fecha_nacimiento': fecha_nac.strftime('%Y-%m-%d') if fecha_nac else None,
-                        'nacionalidad': nacionalidad.upper() if nacionalidad else None,  # Se mantiene en mayúsculas
-                        'genero': genero.upper() if genero else None,  # Se mantiene en mayúsculas
-                        'tipo_licencia': tipo_licencia.upper() if tipo_licencia else None,  # Se mantiene en mayúsculas
-                        'fecha_expedicion': fecha_exp.strftime('%Y-%m-%d') if fecha_exp else None,
-                        'estatus': estatus.upper() if estatus else 'ACTIVO',  # Se mantiene en mayúsculas
-                        'observaciones': observaciones,  # No se formatea para mantener el formato original
-                        'activo': 1 if estatus == 'ACTIVO' else 0
-                    }
-                    
-                    try:
-                        # Intentar crear el radioexperimentador
-                        radio_id = db.create_radioexperimentador(datos)
-                        if radio_id:
-                            st.success("¡Radioexperimentador creado exitosamente!")
-                            # Limpiar el formulario
-                            st.rerun()
-                        else:
-                            st.error("No se pudo crear el radioexperimentador. Verifica los datos e intenta nuevamente.")
-                    except Exception as e:
-                        if "UNIQUE constraint failed: radioexperimentadores.indicativo" in str(e):
-                            st.error("Ya existe un radioexperimentador con este indicativo.")
-                        else:
-                            st.error(f"Error al crear el radioexperimentador: {str(e)}")
+            guardar = st.form_submit_button(" Guardar", type="primary", width='stretch')
         
         with col2:
-            if st.form_submit_button("❌ Cancelar"):
-                st.rerun()
-
+            cancelar = st.form_submit_button("❌ Cancelar", type="secondary", width='stretch')
+        
+        # Procesar guardado o cancelación
+        if cancelar:
+            # Limpiar el formulario sin recargar la página
+            st.session_state.form_cleared = True
+            st.rerun()
+        elif guardar:
+            # Validar campos obligatorios
+            if not indicativo or not nombre:
+                st.error("Los campos de indicativo y nombre son obligatorios")
+            else:
+                # Función para formatear texto en formato oración
+                def formatear_oracion(texto):
+                    if not texto or not isinstance(texto, str):
+                        return texto
+                    return ' '.join(word.capitalize() for word in texto.split())
+                
+                # Preparar datos para guardar
+                datos = {
+                    'indicativo': indicativo.upper(),
+                    'nombre_completo': formatear_oracion(nombre),
+                    'municipio': formatear_oracion(municipio) if municipio else None,
+                    'estado': formatear_oracion(estado_seleccionado) if estado_seleccionado else None,
+                    'pais': formatear_oracion(pais) if pais else None,
+                    'fecha_nacimiento': fecha_nac.strftime('%Y-%m-%d') if fecha_nac else None,
+                    'nacionalidad': nacionalidad.upper(),
+                    'genero': genero.upper() if genero else None,
+                    'tipo_licencia': tipo_licencia.upper() if tipo_licencia else None,
+                    'fecha_expedicion': fecha_exp.strftime('%Y-%m-%d') if fecha_exp else None,
+                    'estatus': estatus.upper() if estatus else 'ACTIVO',
+                    'observaciones': observaciones,
+                    'activo': 1 if estatus == 'ACTIVO' else 0
+                }
+                
+                try:
+                    # Intentar crear el radioexperimentador
+                    radio_id = db.create_radioexperimentador(datos)
+                    if radio_id:
+                        st.success("¡Radioexperimentador creado exitosamente!")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("No se pudo crear el radioexperimentador. Verifica los datos e intenta nuevamente.")
+                except Exception as e:
+                    if "UNIQUE constraint failed: radioexperimentadores.indicativo" in str(e):
+                        st.error("Ya existe un radioexperimentador con este indicativo.")
+                    else:
+                        st.error(f"Error al crear el radioexperimentador: {str(e)}")
+        
 
 if __name__ == "__main__":
     main()

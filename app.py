@@ -27,7 +27,7 @@ def show_sidebar():
         # Usar una versión más grande del logo con un ancho máximo
         st.image(
             "assets/LogoFMRE_medium.png",
-            width='content'  # Ancho fijo en lugar de usar el contenedor
+            width='content',  # Ancho fijo en lugar de usar el contenedor
             output_format='PNG',
             #width=200  # Ancho máximo en píxeles
         )

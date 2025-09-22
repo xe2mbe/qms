@@ -1437,42 +1437,32 @@ def _show_crear_zona():
                     del st.session_state.editing_zona
                 st.rerun()
 
-@st.cache_data(ttl=3600)  # Cache por 1 hora
-@st.cache_data(ttl=3600)  # Cache por 1 hora
-def _get_estados():
-    """Obtiene la lista de estados con caché"""
+@st.cache_data(ttl=86400)  # Cache por 24 horas
+def _get_estados_cached():
+    """Obtiene la lista de estados con caché mejorada"""
     try:
-        return db.get_estados()
+        # Usar una variable de sesión para cachear los estados
+        if 'estados_cache' not in st.session_state:
+            estados = db.get_estados()
+            estados_list = [""] + [e['nombre'] for e in estados]
+            st.session_state.estados_cache = estados_list
+        return st.session_state.estados_cache
     except Exception as e:
         st.error(f"Error al cargar los estados: {str(e)}")
-        return []
-
-@st.cache_data(ttl=3600)  # Cache por 1 hora
-def get_estados_list():
-    """Obtiene la lista de estados formateada para selectbox"""
-    estados = _get_estados()
-    return [""] + list(estados.values())
-
-@st.cache_data(ttl=3600)  # Cache por 1 hora
-def get_zonas_list():
-    """Obtiene la lista de zonas formateada para selectbox"""
-    try:
-        zonas = db.get_zonas()
-        return [""] + [zona['zona'] for zona in zonas]
-    except Exception as e:
-        st.error(f"Error al cargar las zonas: {str(e)}")
         return [""]
 
-# Función de utilidad fuera del manejador de eventos
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=86400)  # Cache por 24 horas
 def _get_opciones_estaticas():
     """Obtiene opciones estáticas con caché"""
-    return {
-        'genero': ["", "MASCULINO", "FEMENINO", "OTRO"],
-        'licencia': ["", "NOVATO", "AVANZADO", "GENERAL", "EXTRA"],
-        'estatus': ["ACTIVO", "INACTIVO", "SUSPENDIDO", "EN TRÁMITE"],
-        'paises': ["México", "Estados Unidos", "España", "Colombia", "Argentina", "Otro"]
-    }
+    # Usar una variable de sesión para cachear las opciones
+    if 'opciones_estaticas' not in st.session_state:
+        st.session_state.opciones_estaticas = {
+            'paises': ['México', 'Estados Unidos', 'España', 'Colombia', 'Argentina', 'Otro'],
+            'genero': ['', 'MASCULINO', 'FEMENINO', 'OTRO'],
+            'licencia': ['', 'NOVATO', 'AVANZADO', 'GENERAL', 'EXTRA'],
+            'estatus': ['ACTIVO', 'INACTIVO', 'SUSPENDIDO', 'EN TRÁMITE']
+        }
+    return st.session_state.opciones_estaticas
 
 def _formatear_oracion(texto):
     """Formatea el texto en formato oración"""
@@ -1526,9 +1516,15 @@ def _show_crear_radioexperimentador():
             'observaciones': ''
         }
     
+    # Obtener referencias directas a los datos del formulario
+    form_data = st.session_state.form_data
+    
+# Cargar opciones estáticas una sola vez
+    opciones = _get_opciones_estaticas()
+    estados_list = _get_estados_cached()
+    
     # Usar st.form para agrupar los campos
     with st.form(key='crear_radio_form'):
-        form_data = st.session_state.form_data
         col1, col2 = st.columns(2)
         
         with col1:
@@ -1658,20 +1654,17 @@ def _show_crear_radioexperimentador():
                         st.success("¡Radioexperimentador creado exitosamente!")
                         time.sleep(2)
                         # Limpiar el formulario después de guardar exitosamente
-                        st.session_state.form_data = {
-                            'indicativo': '',
-                            'nombre': '',
-                            'municipio': '',
-                            'estado': '',
-                            'pais': 'México',
-                            'fecha_nac': None,
-                            'fecha_exp': None,
-                            'nacionalidad': 'MEXICANA',
-                            'genero': '',
-                            'tipo_licencia': '',
-                            'estatus': 'ACTIVO',
-                            'observaciones': ''
-                        }
+                        for key in st.session_state.form_data:
+                            if key == 'pais':
+                                st.session_state.form_data[key] = 'México'
+                            elif key == 'estatus':
+                                st.session_state.form_data[key] = 'ACTIVO'
+                            elif key == 'nacionalidad':
+                                st.session_state.form_data[key] = 'MEXICANA'
+                            elif key in ['fecha_nac', 'fecha_exp']:
+                                st.session_state.form_data[key] = None
+                            else:
+                                st.session_state.form_data[key] = ''
                         st.rerun()
                     else:
                         st.error("No se pudo crear el radioexperimentador. Verifica los datos e intenta nuevamente.")

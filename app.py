@@ -988,6 +988,11 @@ def show_toma_reportes():
                     'senal': '59'  # Valor por defecto para la señal
                 }
 
+                # Si el indicativo es extranjero, pre-llenar Estado y Zona
+                if result["Zona"] == "Extranjera":
+                    registro['estado'] = "Extranjero"
+                    registro['zona'] = "EXT"
+
                 # Obtener datos del radioexperimentador si existe
                 radioexperimentador = db.get_radioexperimentador_por_indicativo(indicativo)
 
@@ -1027,6 +1032,11 @@ def show_toma_reportes():
                         'tipo_reporte': st.session_state.parametros_reporte['tipo_reporte'],
                         'senal': '59'  # Valor por defecto para la señal
                     }
+
+                    # Si el indicativo es extranjero, pre-llenar Estado y Zona
+                    if result["Zona"] == "Extranjera":
+                        registro['estado'] = "Extranjero"
+                        registro['zona'] = "EXT"
 
                     # Intentar determinar la zona basada en el prefijo
                     prefijo = indicativo[:3]  # Tomar los primeros 3 caracteres como prefijo

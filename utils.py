@@ -37,42 +37,42 @@ def get_sistemas():
     sistemas = db.get_sistemas()
     return [(codigo, nombre) for codigo, nombre in sistemas.items()]
 
-def validate_call_sign(call_sign: str):
+def validar_call_sign(callsign: str):
     """
     Valida un indicativo de radioaficionado.
     - Si es mexicano XE1, XE2 o XE3 → devuelve (True, "XE1"/"XE2"/"XE3")
     - Si es mexicano válido pero no XE1–XE3 → devuelve (True, "Especial")
     - Si es extranjero válido → devuelve (True, "Extranjera")
-    - Si no es válido → devuelve (False, "Mensaje de error")
+    - Si no es válido → devuelve (False, None)
     """
-    if not call_sign or not call_sign.strip():
-        return False, "El indicativo no puede estar vacío"
-    
-    callsign = call_sign.strip().upper()
-    
+    if not callsign or not callsign.strip():
+        return False, None
+
+    callsign = callsign.strip().upper()
+
     # Regex para XE1, XE2, XE3
     regex_xe123 = re.compile(r'^(XE[123])[A-Z]{1,3}$')
-    
+
     # Regex para otros mexicanos (XF/XB con número, o prefijos especiales 4A–4C, 6D–6J)
     regex_mex_general = re.compile(r'^(?:XE|XF|XB)\d[A-Z]{1,3}$')
     regex_mex_especial = re.compile(r'^(4[ABC]|6[D-J])[A-Z0-9]{1,3}$')
-    
+
     # Caso XE1–XE3
     match_xe = regex_xe123.match(callsign)
     if match_xe:
         return True, match_xe.group(1)
-    
+
     # Caso mexicano general (XE, XF, XB) o especial
     if regex_mex_general.match(callsign) or regex_mex_especial.match(callsign):
         return True, "Especial"
-    
+
     # Caso extranjero genérico
     regex_ext = re.compile(r'^[A-Z0-9]{3,}$')
     if regex_ext.match(callsign):
         return True, "Extranjera"
-    
+
     # No válido
-    return False, "Formato de indicativo inválido"
+    return False, None
 
 def validate_operator_name(name):
     """Valida el nombre del operador"""
@@ -173,31 +173,92 @@ def detect_inconsistent_data(report):
     
     return warnings
 
+def get_radioaficionado_info(indicativo):
+    """
+    Busca la información de un radioaficionado por su indicativo.
+    Devuelve un diccionario con los datos o None si no se encuentra.
+    """
+    if not indicativo:
+        return None
+        
+    # Buscar en la tabla de radioexperimentadores
+    return db.get_radioexperimentador(indicativo.upper())
+
+def calcular_zona_indicativo(indicativo):
+    """
+    Calcula la zona a partir de un indicativo usando la función validar_call_sign.
+    """
+    if not indicativo:
+        return "Dato no encontrado, ingresar manualmente"
+        
+    # Usar la función validar_call_sign para determinar el tipo de indicativo
+    es_valido, tipo = validar_call_sign(indicativo)
+    
+    if not es_valido:
+        return "Indicativo inválido"
+        
+    if tipo in ["XE1", "XE2", "XE3"]:
+        return tipo  # Retorna XE1, XE2 o XE3
+    elif tipo == "Especial":
+        # Para indicativos especiales, intentamos extraer la zona
+        indicativo = indicativo.upper()
+        # Buscar un número de zona (1-3) en el indicativo
+        match = re.search(r'[1-3]', indicativo)
+        if match:
+            zona_num = match.group(0)
+            return f"XE{zona_num}"
+        return "Especial"
+    else:  # Extranjera
+        return "Extranjera"
+
+def obtener_datos_para_reporte(indicativo, sistema_preferido):
+    """
+    Obtiene todos los datos necesarios para un reporte a partir de un indicativo.
+    """
+    # Buscar información del radioaficionado
+    radioaficionado = get_radioaficionado_info(indicativo)
+    
+    # Calcular la zona
+    zona = calcular_zona_indicativo(indicativo)
+    
+    # Obtener información del sistema
+    sistema_info = db.get_sistema_info(sistema_preferido) if sistema_preferido else {}
+    
+    # Construir el diccionario de datos
+    datos = {
+        'indicativo': indicativo.upper(),
+        'nombre_operador': radioaficionado.get('nombre_completo', 'Dato no encontrado, ingresar manualmente') if radioaficionado else 'Dato no encontrado, ingresar manualmente',
+        'estado': radioaficionado.get('estado', 'Dato no encontrado, ingresar manualmente') if radioaficionado else 'Dato no encontrado, ingresar manualmente',
+        'ciudad': radioaficionado.get('municipio', 'Dato no encontrado, ingresar manualmente') if radioaficionado else 'Dato no encontrado, ingresar manualmente',
+        'zona': zona,
+        'sistema': sistema_preferido,
+        'senal': '59',  # Valor por defecto para RST
+        'frecuencia': sistema_info.get('frecuencia', '') if sistema_info else '',
+        'modo': sistema_info.get('modo', '') if sistema_info else '',
+        'potencia': sistema_info.get('potencia', '') if sistema_info else ''
+    }
+    
+    return datos
+
 def map_qth_to_estado(qth):
     """Mapea un QTH a un estado de México desde la base de datos"""
     if not qth:
-        return ""
+        return None
+        
+    # Limpiar y estandarizar el QTH
+    qth_clean = qth.upper().strip()
     
-    qth_upper = qth.upper().strip()
-    estados = get_mexican_states()
+    # Buscar coincidencias exactas primero
+    estados = db.get_estados()
+    for abbr, nombre in estados.items():
+        if qth_clean == abbr or qth_clean == nombre.upper():
+            return abbr
     
-    # Buscar coincidencia exacta por abreviatura o nombre
-    for abbr, estado in estados.items():
-        if qth_upper == abbr or qth_upper == estado.upper():
-            return estado
+    # Búsqueda por similitud (puedes ajustar según sea necesario)
+    for abbr, nombre in estados.items():
+        if qth_clean in nombre.upper() or nombre.upper() in qth_clean:
+            return abbr
     
-    # Búsqueda parcial
-    for abbr, estado in estados.items():
-        if abbr in qth_upper or estado.upper() in qth_upper:
-            return estado
-    
-    # Si no se encuentra, verificar en la base de datos
-    try:
-        # Intentar obtener el estado por abreviatura
-        estado = db.get_estado_by_abreviatura(qth_upper)
-        if estado:
-            return estado
-    except:
         pass
     
     return qth  # Si no se encuentra, devolver el valor original

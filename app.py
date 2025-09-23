@@ -856,6 +856,10 @@ def show_toma_reportes():
     if st.session_state.parametros_reporte and not st.session_state.expander_abierto:
         st.markdown("### Pre-Registros")
         
+        # Inicializar la variable de sesión para los registros si no existe
+        if 'registros' not in st.session_state:
+            st.session_state.registros = []
+        
         # Crear un formulario para los pre-registros
         with st.form(f"pre_registros_form_{time.time()}"):
             # Crear un DataFrame para los pre-registros
@@ -866,28 +870,39 @@ def show_toma_reportes():
                     'Sistema': st.session_state.parametros_reporte['sistema_preferido']
                 })
             
-            # Mostrar la tabla de pre-registros
-            for i, registro in enumerate(pre_registros):
-                with st.expander(f"Indicativo {i+1}", expanded=True):
-                    col1, col2 = st.columns([3, 1])
-                    
-                    with col1:
-                        indicativo = st.text_input(
-                            "Indicativo",
-                            key=f"indicativo_{i}_{time.time()}",
-                            value=registro['Indicativo']
-                        )
-                    
-                    with col2:
-                        sistema = st.selectbox(
-                            "Sistema",
-                            ["IRLP", "Echolink", "D-STAR", "Fusion", "DMR", "P25", "NXDN", "POCSAG"],
-                            key=f"sistema_{i}_{time.time()}",
-                            index=0 if registro['Sistema'] not in ["IRLP", "Echolink", "D-STAR", "Fusion", "DMR", "P25", "NXDN", "POCSAG"] 
-                                else ["IRLP", "Echolink", "D-STAR", "Fusion", "DMR", "P25", "NXDN", "POCSAG"].index(registro['Sistema'])
-                        )
-                    
-                    # Se eliminó el botón de pre-registrar individual
+            # Mostrar la tabla de pre-registros sin expanders
+            st.markdown("### Ingrese los indicativos")
+            
+            # Crear una tabla con los campos de entrada
+            for i in range(st.session_state.parametros_reporte['pre_registro']):
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    # Usar el valor guardado o vacío si no existe
+                    valor_guardado = st.session_state.get(f'indicativo_{i}', '')
+                    indicativo = st.text_input(
+                        f"Indicativo {i+1}",
+                        key=f"indicativo_{i}",
+                        value=valor_guardado,
+                        placeholder="Ej: XE1ABC"
+                    )
+                
+                with col2:
+                    sistema_guardado = st.session_state.get(f'sistema_{i}', st.session_state.parametros_reporte['sistema_preferido'])
+                    # Asegurarse de que el sistema guardado esté en la lista de opciones
+                    opciones_sistemas = ["IRLP", "Echolink", "D-STAR", "Fusion", "DMR", "P25", "NXDN", "POCSAG"]
+                    try:
+                        indice = opciones_sistemas.index(sistema_guardado)
+                    except ValueError:
+                        indice = 0
+                        
+                    sistema = st.selectbox(
+                        "Sistema",
+                        opciones_sistemas,
+                        key=f"sistema_{i}",
+                        index=indice,
+                        label_visibility="collapsed"
+                    )
             
             # Botón para pre-registrar todos
             col1, col2, col3 = st.columns([1, 2, 1])
@@ -895,12 +910,161 @@ def show_toma_reportes():
                 pre_registrar_todos = st.form_submit_button(
                     "📋 Pre-Registrar Todos", 
                     type="primary",
-                    key=f"btn_pre_registrar_todos_{time.time()}",
                     use_container_width=True
                 )
+                
                 if pre_registrar_todos:
-                    # Aquí iría la lógica para guardar todos los pre-registros
-                    st.success("Todos los pre-registros se han guardado correctamente!")
+                    # Recopilar todos los registros
+                    registros_guardar = []
+                    indicativos_validos = True
+                    
+                    # Validar todos los indicativos primero
+                    for i in range(st.session_state.parametros_reporte['pre_registro']):
+                        indicativo = st.session_state.get(f'indicativo_{i}', '').strip()
+                        if indicativo:  # Solo validar si hay un indicativo
+                            es_valido, _ = utils.validar_call_sign(indicativo)
+                            if not es_valido:
+                                st.error(f"❌ El indicativo '{indicativo}' no es válido")
+                                indicativos_validos = False
+                    
+                    # Si todos los indicativos son válidos, proceder
+                    if indicativos_validos:
+                        registros_guardar = []  # Asegurarse de que está vacío
+                        for i in range(st.session_state.parametros_reporte['pre_registro']):
+                            indicativo = st.session_state.get(f'indicativo_{i}', '').strip()
+                            if indicativo:  # Solo agregar si hay un indicativo
+                                sistema = st.session_state.get(f'sistema_{i}', st.session_state.parametros_reporte['sistema_preferido'])
+                                registros_guardar.append({
+                                    'Indicativo': indicativo.upper(),
+                                    'Sistema': sistema,
+                                    'Fecha': st.session_state.parametros_reporte['fecha_reporte'],
+                                    'Tipo de Reporte': st.session_state.parametros_reporte['tipo_reporte']
+                                })
+                        
+                        # Actualizar la variable de sesión con los nuevos registros
+                        st.session_state.registros = registros_guardar
+                        st.session_state.expander_abierto = False  # Minimizar el formulario
+                        
+                        # Limpiar los campos del formulario
+                        for i in range(st.session_state.parametros_reporte['pre_registro']):
+                            if f'indicativo_{i}' in st.session_state:
+                                del st.session_state[f'indicativo_{i}']
+                            if f'sistema_{i}' in st.session_state:
+                                del st.session_state[f'sistema_{i}']
+                        
+                        st.rerun()
+        
+        # Mostrar la tabla de registros si hay registros guardados
+        if 'registros' in st.session_state and st.session_state.registros:
+            st.markdown("---")
+            st.subheader("📋 Indicativos Registrados")
+            
+            # Crear una tabla con los registros
+            import pandas as pd
+            df = pd.DataFrame(st.session_state.registros)
+            
+            # Mostrar la tabla con estilos
+            st.dataframe(
+                df[['Indicativo', 'Sistema', 'Fecha', 'Tipo de Reporte']],
+                column_config={
+                    'Indicativo': 'Indicativo',
+                    'Sistema': 'Sistema',
+                    'Fecha': 'Fecha',
+                    'Tipo de Reporte': 'Tipo de Reporte'
+                },
+                hide_index=True,
+                use_container_width=True,
+                height=min(400, 35 * len(df) + 40)  # Ajustar altura automáticamente
+            )
+            
+            # Mostrar resumen
+            st.caption(f"Total de registros: {len(df)}")
+            
+            # Botón para limpiar los registros
+            if st.button("🗑️ Limpiar todos los registros", type="secondary"):
+                st.session_state.registros = []
+                st.session_state.expander_abierto = True  # Mostrar el formulario de nuevo
+                st.rerun()
+            
+            st.markdown("---")
+        if st.session_state.registros:
+            st.markdown("### 📋 Registros Guardados")
+            
+            # Obtener datos completos para cada registro
+            registros_completos = []
+            for registro in st.session_state.registros:
+                # Obtener datos del registro
+                datos = obtener_datos_para_reporte(
+                    registro['Indicativo'],
+                    registro['Sistema']
+                )
+                # Agregar fecha y tipo de reporte
+                datos.update({
+                    'fecha_reporte': registro.get('fecha', ''),
+                    'tipo_reporte': registro.get('tipo', '')
+                })
+                registros_completos.append(datos)
+            
+            # Crear un DataFrame para mostrar los registros
+            import pandas as pd
+            df = pd.DataFrame(registros_completos)
+            
+            # Mostrar la tabla con estilos
+            st.dataframe(
+                df[['indicativo', 'nombre_operador', 'estado', 'ciudad', 'zona', 'sistema', 'senal']],
+                column_config={
+                    'indicativo': 'Indicativo',
+                    'nombre_operador': 'Nombre del Operador',
+                    'estado': 'Estado',
+                    'ciudad': 'Ciudad',
+                    'zona': 'Zona',
+                    'sistema': 'Sistema',
+                    'senal': 'RST'
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+            
+            # Opciones adicionales para los registros
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("📥 Exportar a CSV", use_container_width=True):
+                    # Crear un CSV en memoria
+                    csv = df.to_csv(index=False, encoding='utf-8-sig')
+                    st.download_button(
+                        label="Descargar CSV",
+                        data=csv,
+                        file_name=f"registros_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime='text/csv',
+                        use_container_width=True
+                    )
+            
+            with col2:
+                if st.button("🗑️ Limpiar Registros", type="secondary", use_container_width=True):
+                    st.session_state.registros = []
+                    st.rerun()
+                    
+                # Botón para guardar en la base de datos
+                if st.button("💾 Guardar en Base de Datos", type="primary", use_container_width=True):
+                    try:
+                        # Guardar cada registro en la base de datos
+                        for registro in registros_completos:
+                            db.guardar_reporte({
+                                'indicativo': registro['indicativo'],
+                                'nombre_operador': registro['nombre_operador'],
+                                'estado': registro['estado'],
+                                'ciudad': registro['ciudad'],
+                                'zona': registro['zona'],
+                                'sistema': registro['sistema'],
+                                'senal': registro['senal'],
+                                'fecha_reporte': registro['fecha_reporte'],
+                                'tipo_reporte': registro['tipo_reporte']
+                            })
+                        st.success("✅ Registros guardados correctamente en la base de datos")
+                        st.session_state.registros = []
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Error al guardar en la base de datos: {str(e)}")
 
 
 def main():

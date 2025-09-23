@@ -37,17 +37,42 @@ def get_sistemas():
     sistemas = db.get_sistemas()
     return [(codigo, nombre) for codigo, nombre in sistemas.items()]
 
-def validate_call_sign(call_sign):
-    """Valida que el indicativo tenga un formato válido"""
+def validate_call_sign(call_sign: str):
+    """
+    Valida un indicativo de radioaficionado.
+    - Si es mexicano XE1, XE2 o XE3 → devuelve (True, "XE1"/"XE2"/"XE3")
+    - Si es mexicano válido pero no XE1–XE3 → devuelve (True, "Especial")
+    - Si es extranjero válido → devuelve (True, "Extranjera")
+    - Si no es válido → devuelve (False, "Mensaje de error")
+    """
     if not call_sign or not call_sign.strip():
         return False, "El indicativo no puede estar vacío"
     
-    # Expresión regular para validar indicativos de llamada
-    pattern = r'^[A-Z0-9]{3,7}(/[A-Z0-9]{1,3})?$'
-    if not re.match(pattern, call_sign.upper()):
-        return False, "Formato de indicativo inválido"
+    callsign = call_sign.strip().upper()
     
-    return True, ""
+    # Regex para XE1, XE2, XE3
+    regex_xe123 = re.compile(r'^(XE[123])[A-Z]{1,3}$')
+    
+    # Regex para otros mexicanos (XF/XB con número, o prefijos especiales 4A–4C, 6D–6J)
+    regex_mex_general = re.compile(r'^(?:XE|XF|XB)\d[A-Z]{1,3}$')
+    regex_mex_especial = re.compile(r'^(4[ABC]|6[D-J])[A-Z0-9]{1,3}$')
+    
+    # Caso XE1–XE3
+    match_xe = regex_xe123.match(callsign)
+    if match_xe:
+        return True, match_xe.group(1)
+    
+    # Caso mexicano general (XE, XF, XB) o especial
+    if regex_mex_general.match(callsign) or regex_mex_especial.match(callsign):
+        return True, "Especial"
+    
+    # Caso extranjero genérico
+    regex_ext = re.compile(r'^[A-Z0-9]{3,}$')
+    if regex_ext.match(callsign):
+        return True, "Extranjera"
+    
+    # No válido
+    return False, "Formato de indicativo inválido"
 
 def validate_operator_name(name):
     """Valida el nombre del operador"""

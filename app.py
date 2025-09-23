@@ -857,7 +857,7 @@ def show_toma_reportes():
         st.markdown("### Pre-Registros")
         
         # Crear un formulario para los pre-registros
-        with st.form("pre_registros_form"):
+        with st.form(f"pre_registros_form_{time.time()}"):
             # Crear un DataFrame para los pre-registros
             pre_registros = []
             for i in range(st.session_state.parametros_reporte['pre_registro']):
@@ -868,40 +868,26 @@ def show_toma_reportes():
             
             # Mostrar la tabla de pre-registros
             for i, registro in enumerate(pre_registros):
-                cols = st.columns([3, 3, 2])
-                with cols[0]:
-                    registro['Indicativo'] = st.text_input(
-                        f"Indicativo {i+1}", 
-                        value=registro['Indicativo'],
-                        key=f"indicativo_{i}",
-                        placeholder="Ingrese el indicativo"
-                    )
-                with cols[1]:
-                    # Obtener el índice del sistema guardado o 0 si no existe
-                    sistema_idx = 0
-                    if registro['Sistema'] in opciones_sistemas:
-                        sistema_idx = opciones_sistemas.index(registro['Sistema'])
+                with st.expander(f"Indicativo {i+1}", expanded=True):
+                    col1, col2 = st.columns([3, 1])
                     
-                    registro['Sistema'] = st.selectbox(
-                        "Sistema",
-                        options=opciones_sistemas,
-                        index=sistema_idx,
-                        key=f"sistema_{i}",
-                        help="Sistema de comunicación utilizado"
-                    )
-                with cols[2]:
-                    st.write("")
-                    st.write("")
-                    pre_registrar = st.form_submit_button(
-                        f"📝 Pre-Registrar {i+1}", 
-                        type="primary",
-                        key=f"btn_pre_registrar_{i}",
-                        use_container_width=True
-                    )
+                    with col1:
+                        indicativo = st.text_input(
+                            "Indicativo",
+                            key=f"indicativo_{i}_{time.time()}",
+                            value=registro['Indicativo']
+                        )
                     
-                    if pre_registrar:
-                        # Aquí iría la lógica para guardar el pre-registro
-                        st.success(f"Pre-registro {i+1} guardado correctamente!")
+                    with col2:
+                        sistema = st.selectbox(
+                            "Sistema",
+                            ["IRLP", "Echolink", "D-STAR", "Fusion", "DMR", "P25", "NXDN", "POCSAG"],
+                            key=f"sistema_{i}_{time.time()}",
+                            index=0 if registro['Sistema'] not in ["IRLP", "Echolink", "D-STAR", "Fusion", "DMR", "P25", "NXDN", "POCSAG"] 
+                                else ["IRLP", "Echolink", "D-STAR", "Fusion", "DMR", "P25", "NXDN", "POCSAG"].index(registro['Sistema'])
+                        )
+                    
+                    # Se eliminó el botón de pre-registrar individual
             
             # Botón para pre-registrar todos
             col1, col2, col3 = st.columns([1, 2, 1])
@@ -909,6 +895,7 @@ def show_toma_reportes():
                 pre_registrar_todos = st.form_submit_button(
                     "📋 Pre-Registrar Todos", 
                     type="primary",
+                    key=f"btn_pre_registrar_todos_{time.time()}",
                     use_container_width=True
                 )
                 if pre_registrar_todos:

@@ -45,8 +45,6 @@ def validar_call_sign(callsign: str):
     - Si es extranjero válido → devuelve (True, "Extranjera")
     - Si no es válido → devuelve (False, None)
     """
-    if not callsign or not callsign.strip():
-        return False, None
 
     callsign = callsign.strip().upper()
 
@@ -73,6 +71,7 @@ def validar_call_sign(callsign: str):
 
     # No válido
     return False, None
+
 
 def validate_operator_name(name):
     """Valida el nombre del operador"""

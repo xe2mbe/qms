@@ -1291,6 +1291,84 @@ class FMREDatabase:
     def delete_evento(self, evento_id):
         """Elimina lógicamente un evento (lo marca como inactivo)"""
         return self.update_evento(evento_id, activo=0)
+        
+    def save_reporte(self, reporte_data):
+        """
+        Guarda un nuevo reporte en la base de datos
+        
+        Args:
+            reporte_data (dict): Diccionario con los datos del reporte que debe contener:
+                - indicativo (str): Indicativo del radioexperimentador
+                - sistema (str): Sistema de comunicación utilizado
+                - fecha_reporte (str): Fecha del reporte en formato 'dd/mm/yyyy'
+                - tipo_reporte (str): Tipo de reporte (ej. 'Boletín')
+                - senal (int, optional): Señal reportada (por defecto: 59)
+                - nombre (str, optional): Nombre del operador
+                - ciudad (str, optional): Ciudad del operador
+                - estado (str, optional): Estado del operador
+                - origen (str, optional): Origen del reporte
+                - observaciones (str, optional): Observaciones adicionales
+                
+        Returns:
+            int: ID del reporte guardado o None si hubo un error
+        """
+        try:
+            # Validar campos obligatorios
+            required_fields = ['indicativo', 'sistema', 'fecha_reporte', 'tipo_reporte']
+            for field in required_fields:
+                if field not in reporte_data or not reporte_data[field]:
+                    raise ValueError(f"El campo '{field}' es obligatorio")
+            
+            # Asegurar que el indicativo esté en mayúsculas
+            reporte_data['indicativo'] = reporte_data['indicativo'].upper()
+            
+            # Establecer valores por defecto
+            if 'senal' not in reporte_data or not reporte_data['senal']:
+                reporte_data['senal'] = 59
+            
+            # Convertir la fecha al formato YYYY-MM-DD para SQLite
+            try:
+                fecha_obj = datetime.strptime(reporte_data['fecha_reporte'], '%d/%m/%Y')
+                fecha_sql = fecha_obj.strftime('%Y-%m-%d')
+            except ValueError as e:
+                raise ValueError("Formato de fecha inválido. Use el formato dd/mm/yyyy") from e
+            
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Insertar el reporte en la base de datos
+                cursor.execute('''
+                    INSERT INTO reportes (
+                        indicativo, nombre, zona, sistema, ciudad, estado, 
+                        senal, observaciones, origen, tipo_reporte, fecha_reporte
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    reporte_data['indicativo'],
+                    reporte_data.get('nombre', ''),
+                    reporte_data.get('zona', ''),
+                    reporte_data['sistema'],
+                    reporte_data.get('ciudad', ''),
+                    reporte_data.get('estado', ''),
+                    reporte_data['senal'],
+                    reporte_data.get('observaciones', ''),
+                    reporte_data.get('origen', ''),
+                    reporte_data['tipo_reporte'],
+                    fecha_sql
+                ))
+                
+                reporte_id = cursor.lastrowid
+                conn.commit()
+                return reporte_id
+                
+        except sqlite3.IntegrityError as e:
+            if 'FOREIGN KEY constraint failed' in str(e):
+                raise ValueError("El indicativo no existe en la base de datos") from e
+            raise
+        except Exception as e:
+            if 'conn' in locals():
+                conn.rollback()
+            print(f"Error al guardar el reporte: {str(e)}")
+            raise
 
 if __name__ == "__main__":
     # Crear la base de datos y tablas si no existen

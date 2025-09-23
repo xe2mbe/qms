@@ -1084,13 +1084,13 @@ class FMREDatabase:
             cursor = conn.cursor()
             query = 'SELECT * FROM zonas'
             params = []
-            
+
             if not incluir_inactivas:
                 query += ' WHERE activo = 1'
-                
+
             query += ' ORDER BY zona'
             cursor.execute(query, params)
-            
+
             # Asegurarse de que el resultado tenga el formato correcto
             zonas = []
             for row in cursor.fetchall():
@@ -1100,6 +1100,21 @@ class FMREDatabase:
                     zona['zona'] = zona.pop('codigo')
                 zonas.append(zona)
             return zonas
+
+    def get_estados(self, incluir_extranjero=True):
+        """Obtiene todos los estados de la tabla qth"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            query = 'SELECT estado, abreviatura FROM qth'
+            params = []
+
+            if not incluir_extranjero:
+                query += ' WHERE estado != "Extranjero"'
+
+            query += ' ORDER BY estado'
+            cursor.execute(query, params)
+
+            return [dict(row) for row in cursor.fetchall()]
     
     def create_zona(self, zona=None, nombre=None, codigo=None):
         """Crea una nueva zona

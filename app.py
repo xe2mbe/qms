@@ -1082,6 +1082,13 @@ def show_toma_reportes():
             columnas_a_mostrar = ['indicativo', 'nombre_operador', 'estado', 'ciudad', 'zona', 'sistema', 'senal']
             columnas_disponibles = [col for col in columnas_a_mostrar if col in df.columns]
 
+            # Obtener opciones para los dropdowns
+            estados_db = _get_estados_options()
+            estados_options = [estado['estado'] for estado in estados_db]
+
+            zonas_db = _get_zonas_options()
+            zonas_options = [zona['zona'] for zona in zonas_db]
+
             # Mostrar la tabla editable con estilos
             st.markdown("### ✏️ Tabla Editable - Corrige los datos antes de guardar")
 
@@ -1096,17 +1103,21 @@ def show_toma_reportes():
                     'Operador',
                     help="Nombre completo del operador"
                 ),
-                'estado': st.column_config.TextColumn(
+                'estado': st.column_config.SelectboxColumn(
                     'Estado',
-                    help="Estado donde reside"
+                    help="Estado donde reside",
+                    options=estados_options,
+                    required=False
                 ),
                 'ciudad': st.column_config.TextColumn(
                     'Ciudad',
                     help="Ciudad o municipio"
                 ),
-                'zona': st.column_config.TextColumn(
+                'zona': st.column_config.SelectboxColumn(
                     'Zona',
-                    help="Zona geográfica (XE1, XE2, XE3, etc.)"
+                    help="Zona geográfica (XE1, XE2, XE3, etc.)",
+                    options=zonas_options,
+                    required=False
                 ),
                 'sistema': st.column_config.SelectboxColumn(
                     'Sistema',
@@ -1238,7 +1249,23 @@ def show_toma_reportes():
                     st.rerun()
 
 
-def obtener_datos_para_reporte(indicativo, sistema):
+@st.cache_data(ttl=300)  # Cache por 5 minutos
+def _get_estados_options():
+    """Obtiene las opciones de Estado con caché"""
+    try:
+        return db.get_estados(incluir_extranjero=True)
+    except Exception as e:
+        st.error(f"Error al cargar estados: {str(e)}")
+        return []
+
+@st.cache_data(ttl=300)  # Cache por 5 minutos
+def _get_zonas_options():
+    """Obtiene las opciones de Zona con caché"""
+    try:
+        return db.get_zonas(incluir_inactivas=False)
+    except Exception as e:
+        st.error(f"Error al cargar zonas: {str(e)}")
+        return []
     """
     Obtiene los datos necesarios para un reporte basado en el indicativo y sistema proporcionados.
     

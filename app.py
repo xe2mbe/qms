@@ -1353,16 +1353,82 @@ def show_toma_reportes():
 
                         if registros_guardados > 0:
                             st.success(f"✅ {registros_guardados} registro(s) guardado(s) correctamente en la base de datos")
-                            # Limpiar los registros y el estado de edición
-                            st.session_state.registros = []
+                            # Limpiar solo el estado de edición
                             st.session_state.registros_editados = False
+                            # Forzar recarga de la página para actualizar la vista
                             st.rerun()
                         else:
                             st.error("❌ No se pudo guardar ningún registro. Verifica que tengan los campos obligatorios.")
 
                     except Exception as e:
                         st.error(f"❌ Error al guardar en la base de datos: {str(e)}")
-
+            
+            # Mostrar estadísticas y reportes fuera del botón de guardar
+            st.markdown("---")
+            
+            # Obtener la fecha actual para mostrar los reportes del día
+            fecha_actual = datetime.now().strftime('%d/%m/%Y')
+            
+            # Obtener reportes del día
+            reportes, estadisticas = db.get_reportes_por_fecha(fecha_actual)
+            
+            # Mostrar estadísticas en columnas
+            st.subheader("📊 Estadísticas del Día")
+            
+            if estadisticas:
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("📋 Total de Reportes", estadisticas.get('total', 0))
+                
+                with col2:
+                    zonas = ", ".join([f"{z['zona']} ({z['cantidad']})" for z in estadisticas.get('zonas_mas_reportadas', [])])
+                    st.metric("📍 Zonas más reportadas", zonas if zonas else "Sin datos")
+                
+                with col3:
+                    sistemas = ", ".join([f"{s['sistema']} ({s['cantidad']})" for s in estadisticas.get('sistemas_mas_utilizados', [])])
+                    st.metric("📡 Sistemas más usados", sistemas if sistemas else "Sin datos")
+                
+                with col4:
+                    estados = ", ".join([f"{e['estado']} ({e['cantidad']})" for e in estadisticas.get('estados_mas_reportados', [])])
+                    st.metric("🏙️ Estados más reportados", estados if estados else "Sin datos")
+            
+            # Mostrar tabla de reportes del día
+            st.markdown("---")
+            st.subheader(f"📋 Reportes del Día ({fecha_actual})")
+            
+            if reportes:
+                # Crear un DataFrame con los datos para mostrarlos en una tabla
+                reportes_df = pd.DataFrame([{
+                    'Indicativo': r.get('indicativo', ''),
+                    'Nombre': r.get('nombre', ''),
+                    'Sistema': r.get('sistema', ''),
+                    'Zona': r.get('zona', ''),
+                    'Estado': r.get('estado', ''),
+                    'Ciudad': r.get('ciudad', ''),
+                    'Señal': r.get('senal', ''),
+                    'Hora': datetime.strptime(r.get('created_at'), '%Y-%m-%d %H:%M:%S').strftime('%H:%M:%S') if r.get('created_at') else ''
+                } for r in reportes])
+                
+                # Mostrar la tabla con estilo
+                st.dataframe(
+                    reportes_df,
+                    column_config={
+                        'Indicativo': st.column_config.TextColumn("Indicativo"),
+                        'Nombre': st.column_config.TextColumn("Nombre"),
+                        'Sistema': st.column_config.TextColumn("Sistema"),
+                        'Zona': st.column_config.TextColumn("Zona"),
+                        'Estado': st.column_config.TextColumn("Estado"),
+                        'Ciudad': st.column_config.TextColumn("Ciudad"),
+                        'Señal': st.column_config.NumberColumn("Señal"),
+                        'Hora': st.column_config.TextColumn("Hora")
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
+            else:
+                st.info("No hay reportes registrados para el día de hoy.")
+            
             with col2:
                 # Botón para deshacer cambios
                 if st.session_state.get('registros_editados', False):

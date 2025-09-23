@@ -1322,6 +1322,80 @@ class FMREDatabase:
         """Elimina lógicamente un evento (lo marca como inactivo)"""
         return self.update_evento(evento_id, activo=0)
         
+    def get_reportes_por_fecha(self, fecha_reporte):
+        """
+        Obtiene los reportes de una fecha específica con estadísticas
+        
+        Args:
+            fecha_reporte (str): Fecha en formato 'dd/mm/yyyy'
+            
+        Returns:
+            tuple: (reportes, estadisticas) donde:
+                - reportes: Lista de diccionarios con los reportes
+                - estadisticas: Diccionario con estadísticas de los reportes
+        """
+        try:
+            # Convertir la fecha al formato YYYY-MM-DD para SQLite
+            fecha_obj = datetime.strptime(fecha_reporte, '%d/%m/%Y')
+            fecha_sql = fecha_obj.strftime('%Y-%m-%d')
+            
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Obtener los reportes del día
+                cursor.execute('''
+                    SELECT * FROM reportes 
+                    WHERE date(fecha_reporte) = date(?)
+                    ORDER BY created_at DESC
+                ''', (fecha_sql,))
+                
+                reportes = [dict(row) for row in cursor.fetchall()]
+                
+                # Calcular estadísticas
+                estadisticas = {}
+                
+                # Total de reportes
+                estadisticas['total'] = len(reportes)
+                
+                # Zonas más reportadas
+                cursor.execute('''
+                    SELECT zona, COUNT(*) as cantidad 
+                    FROM reportes 
+                    WHERE date(fecha_reporte) = date(?)
+                    GROUP BY zona 
+                    ORDER BY cantidad DESC
+                    LIMIT 3
+                ''', (fecha_sql,))
+                estadisticas['zonas_mas_reportadas'] = [dict(row) for row in cursor.fetchall()]
+                
+                # Sistemas más utilizados
+                cursor.execute('''
+                    SELECT sistema, COUNT(*) as cantidad 
+                    FROM reportes 
+                    WHERE date(fecha_reporte) = date(?)
+                    GROUP BY sistema 
+                    ORDER BY cantidad DESC
+                    LIMIT 3
+                ''', (fecha_sql,))
+                estadisticas['sistemas_mas_utilizados'] = [dict(row) for row in cursor.fetchall()]
+                
+                # Estados más reportados
+                cursor.execute('''
+                    SELECT estado, COUNT(*) as cantidad 
+                    FROM reportes 
+                    WHERE date(fecha_reporte) = date(?) AND estado != ''
+                    GROUP BY estado 
+                    ORDER BY cantidad DESC
+                    LIMIT 3
+                ''', (fecha_sql,))
+                estadisticas['estados_mas_reportados'] = [dict(row) for row in cursor.fetchall()]
+                
+                return reportes, estadisticas
+                
+        except Exception as e:
+            print(f"Error al obtener reportes por fecha: {str(e)}")
+            return [], {}
+            
     def save_reporte(self, reporte_data):
         """
         Guarda un nuevo reporte en la base de datos

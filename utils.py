@@ -83,8 +83,8 @@ def validar_call_sign(callsign: str) -> dict:
             "Zona": "Error"
         }
 
-    # Caso extranjero genérico (mínimo 3 caracteres alfanuméricos)
-    regex_ext = re.compile(r'^[A-Z0-9]{3,}$')
+    # Caso extranjero genérico: debe empezar con letra y tener al menos 3 caracteres
+    regex_ext = re.compile(r'^[A-Z][A-Z0-9]{2,}$')
     if regex_ext.match(callsign):
         return {
             "indicativo": True,

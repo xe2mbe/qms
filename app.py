@@ -908,7 +908,7 @@ def show_toma_reportes():
                     valor_guardado = st.session_state.get(f'indicativo_{i}', '')
                     st.markdown(f"**Indicativo {i+1}**")
                     indicativo = st.text_input(
-                        "",
+                        f"Indicativo {i+1}",
                         key=f"indicativo_{i}",
                         value=valor_guardado,
                         placeholder="Ej: XE1ABC",
@@ -936,7 +936,7 @@ def show_toma_reportes():
 
                     st.markdown("**Sistema**")
                     sistema = st.selectbox(
-                        "",
+                        f"Sistema {i+1}",
                         opciones_sistemas,
                         key=f"sistema_{i}",
                         index=indice,

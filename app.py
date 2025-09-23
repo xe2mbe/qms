@@ -1325,20 +1325,30 @@ def show_toma_reportes():
                                 st.error(f"❌ El registro de {registro.get('indicativo', 'desconocido')} no tiene los campos obligatorios")
                                 continue
 
-                            db.save_reporte({
-                                'indicativo': registro['indicativo'],
-                                'nombre_operador': registro.get('nombre_operador', ''),
+                            # Preparar los datos del reporte según el esquema de la base de datos
+                            reporte_data = {
+                                'indicativo': registro['indicativo'].upper(),
+                                'nombre': registro.get('nombre_operador', ''),  # Mapear a 'nombre' en la BD
                                 'estado': registro.get('estado', ''),
                                 'ciudad': registro.get('ciudad', ''),
                                 'zona': registro.get('zona', ''),
                                 'sistema': registro.get('sistema', ''),
-                                'senal': registro.get('senal', '59'),
-                                'fecha_reporte': registro.get('fecha', ''),
-                                'tipo_reporte': registro.get('tipo_reporte', ''),
-                                'frecuencia': registro.get('frecuencia', '') if registro.get('sistema') == 'HF' else '',
-                                'modo': registro.get('modo', '') if registro.get('sistema') == 'HF' else '',
-                                'potencia': registro.get('potencia', '') if registro.get('sistema') == 'HF' else ''
-                            })
+                                'senal': int(registro.get('senal', 59)),  # Asegurar que sea entero
+                                'fecha_reporte': registro.get('fecha', datetime.now().strftime('%d/%m/%Y')),  # Usar fecha actual si no hay
+                                'tipo_reporte': registro.get('tipo_reporte', 'Boletín'),  # Valor por defecto 'Boletín'
+                                'origen': 'Sistema'  # Origen del reporte
+                            }
+                            
+                            # Agregar campos específicos de HF si corresponde
+                            if registro.get('sistema') == 'HF':
+                                reporte_data.update({
+                                    'observaciones': f"Frecuencia: {registro.get('frecuencia', '')}, "
+                                                  f"Modo: {registro.get('modo', '')}, "
+                                                  f"Potencia: {registro.get('potencia', '')}"
+                                })
+                            
+                            # Guardar el reporte en la base de datos
+                            db.save_reporte(reporte_data)
                             registros_guardados += 1
 
                         if registros_guardados > 0:

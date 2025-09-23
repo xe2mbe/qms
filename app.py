@@ -881,14 +881,24 @@ def show_toma_reportes():
                     )
                 
                 with col2:
+                    # Obtener la lista de sistemas desde la base de datos
+                    try:
+                        sistemas_dict = db.get_sistemas()
+                        opciones_sistemas = sorted(list(sistemas_dict.keys()))  # Usar campo 'codigo'
+                        if not opciones_sistemas:
+                            st.error("No se encontraron sistemas configurados en la base de datos")
+                            opciones_sistemas = ["ASL"]
+                    except Exception as e:
+                        st.error(f"Error al cargar los sistemas: {str(e)}")
+                        opciones_sistemas = ["ASL"]
+
                     sistema_guardado = st.session_state.get(f'sistema_{i}', st.session_state.parametros_reporte['sistema_preferido'])
                     # Asegurarse de que el sistema guardado esté en la lista de opciones
-                    opciones_sistemas = ["IRLP", "Echolink", "D-STAR", "Fusion", "DMR", "P25", "NXDN", "POCSAG"]
                     try:
                         indice = opciones_sistemas.index(sistema_guardado)
                     except ValueError:
                         indice = 0
-                        
+
                     sistema = st.selectbox(
                         "Sistema",
                         opciones_sistemas,

@@ -37,41 +37,67 @@ def get_sistemas():
     sistemas = db.get_sistemas()
     return [(codigo, nombre) for codigo, nombre in sistemas.items()]
 
-def validar_call_sign(callsign: str):
+def validar_call_sign(callsign: str) -> dict:
     """
-    Valida un indicativo de radioaficionado.
-    - Si es mexicano XE1, XE2 o XE3 → devuelve (True, "XE1"/"XE2"/"XE3")
-    - Si es mexicano válido pero no XE1–XE3 → devuelve (True, "Especial")
-    - Si es extranjero válido → devuelve (True, "Extranjera")
-    - Si no es válido → devuelve (False, None)
+    Valida un indicativo de radioaficionado y regresa un diccionario con:
+    - indicativo: True/False (si es válido)
+    - completo: True/False (si incluye sufijo)
+    - Zona: XE1, XE2, XE3, Especial, Extranjera o Error
     """
 
     callsign = callsign.strip().upper()
 
-    # Regex para XE1, XE2, XE3
-    regex_xe123 = re.compile(r'^(XE[123])[A-Z]{1,3}$')
+    # XE1, XE2, XE3 (con o sin sufijo de 1 a 3 letras)
+    regex_xe123 = re.compile(r'^(XE[123])([A-Z]{1,3})?$')
 
-    # Regex para otros mexicanos (XF/XB con número, o prefijos especiales 4A–4C, 6D–6J)
-    regex_mex_general = re.compile(r'^(?:XE|XF|XB)\d[A-Z]{1,3}$')
-    regex_mex_especial = re.compile(r'^(4[ABC]|6[D-J])[A-Z0-9]{1,3}$')
+    # XE/XF/XB + dígito 4–9 + sufijo de 1–3 letras
+    regex_mex_general = re.compile(r'^(?:XE|XF|XB)[4-9][A-Z]{1,3}$')
+
+    # Prefijos especiales México: 4A–4C y 6D–6J con un dígito + sufijo
+    regex_mex_especial = re.compile(r'^(?:4[ABC]|6[D-J])\d[A-Z0-9]{1,3}$')
 
     # Caso XE1–XE3
     match_xe = regex_xe123.match(callsign)
     if match_xe:
-        return True, match_xe.group(1)
+        zona = match_xe.group(1)
+        sufijo = match_xe.group(2)
+        return {
+            "indicativo": True,
+            "completo": bool(sufijo),
+            "Zona": zona
+        }
 
-    # Caso mexicano general (XE, XF, XB) o especial
+    # Caso mexicano general o especial
     if regex_mex_general.match(callsign) or regex_mex_especial.match(callsign):
-        return True, "Especial"
+        return {
+            "indicativo": True,
+            "completo": True,
+            "Zona": "Especial"
+        }
 
-    # Caso extranjero genérico
+    # 🚨 Si empieza con XE/XF/XB/4/6 pero no cumplió → es error, no extranjera
+    if callsign.startswith(("XE", "XF", "XB", "4", "6")):
+        return {
+            "indicativo": False,
+            "completo": False,
+            "Zona": "Error"
+        }
+
+    # Caso extranjero genérico (mínimo 3 caracteres alfanuméricos)
     regex_ext = re.compile(r'^[A-Z0-9]{3,}$')
     if regex_ext.match(callsign):
-        return True, "Extranjera"
+        return {
+            "indicativo": True,
+            "completo": True,
+            "Zona": "Extranjera"
+        }
 
     # No válido
-    return False, None
-
+    return {
+        "indicativo": False,
+        "completo": False,
+        "Zona": "Error"
+    }
 
 def validate_operator_name(name):
     """Valida el nombre del operador"""

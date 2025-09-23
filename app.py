@@ -995,17 +995,23 @@ def show_toma_reportes():
 
                     # Si existe en la base de datos, actualizar el registro con los datos
                     registro.update({
-                        'nombre_operador': radioexperimentador.get('nombre', ''),
+                        'nombre_operador': radioexperimentador.get('nombre_completo', ''),  # ← CORREGIDO: usar 'nombre_completo'
                         'apellido_paterno': radioexperimentador.get('apellido_paterno', ''),
                         'apellido_materno': radioexperimentador.get('apellido_materno', ''),
-                        'estado': radioexperimentador.get('estado', ''),
-                        'ciudad': radioexperimentador.get('ciudad', ''),
+                        'estado': radioexperimentador.get('estado', ''),           # ← Correcto
+                        'ciudad': radioexperimentador.get('municipio', ''),        # ← CORREGIDO: usar 'municipio' en lugar de 'ciudad'
                         'colonia': radioexperimentador.get('colonia', ''),
                         'codigo_postal': radioexperimentador.get('codigo_postal', ''),
                         'telefono': radioexperimentador.get('telefono', ''),
                         'email': radioexperimentador.get('email', ''),
-                        'zona': radioexperimentador.get('zona', '')
+                        'zona': radioexperimentador.get('zona', '')               # ← CORREGIDO: usar zona de BD o calcular
                     })
+
+                    # Si no hay zona en BD, calcularla automáticamente
+                    if not registro['zona']:
+                        prefijo = indicativo[:3]
+                        if prefijo.startswith('XE') and len(indicativo) >= 3 and indicativo[2] in ['1', '2', '3']:
+                            registro['zona'] = f"XE{indicativo[2]}"
                 else:
                     # Si no existe, crear un registro básico
                     registro = {
@@ -1179,20 +1185,27 @@ def obtener_datos_para_reporte(indicativo, sistema):
         # Si existe en la base de datos, copiar todos los campos relevantes
         datos = {
             'indicativo': radioexperimentador.get('indicativo', indicativo),
-            'nombre_operador': radioexperimentador.get('nombre', ''),
+            'nombre_operador': radioexperimentador.get('nombre_completo', ''),  # ← CORREGIDO: usar 'nombre_completo'
             'apellido_paterno': radioexperimentador.get('apellido_paterno', ''),
             'apellido_materno': radioexperimentador.get('apellido_materno', ''),
-            'estado': radioexperimentador.get('estado', ''),
-            'ciudad': radioexperimentador.get('ciudad', ''),
+            'estado': radioexperimentador.get('estado', ''),           # ← Correcto
+            'ciudad': radioexperimentador.get('municipio', ''),        # ← CORREGIDO: usar 'municipio'
             'colonia': radioexperimentador.get('colonia', ''),
             'codigo_postal': radioexperimentador.get('codigo_postal', ''),
             'telefono': radioexperimentador.get('telefono', ''),
             'email': radioexperimentador.get('email', ''),
-            'zona': radioexperimentador.get('zona', ''),
+            'zona': radioexperimentador.get('zona', ''),               # ← Usar zona de BD o calcular
             'sistema': sistema,  # Usar el sistema proporcionado
             'senal': '59',  # Valor por defecto para la señal
             'activo': radioexperimentador.get('activo', 1)  # Mantener el estado activo/inactivo
         }
+
+        # Si no hay zona en BD, calcularla automáticamente
+        if not datos['zona']:
+            if len(indicativo) >= 3:
+                prefijo = indicativo[:3]
+                if prefijo.startswith('XE') and indicativo[2] in ['1', '2', '3']:
+                    datos['zona'] = f"XE{indicativo[2]}"
     else:
         # Si no existe, crear un registro básico
         datos = {

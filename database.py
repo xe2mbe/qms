@@ -415,7 +415,7 @@ class FMREDatabase:
         
         return pwd_hash == new_hash
         
-    def create_user(self, username, password, full_name, email, phone=None, role='operator'):
+    def create_user(self, username, password, full_name, email, phone=None, role='operator', sistema_preferido=None, frecuencia=None, modo=None, potencia=None):
         """Crea un nuevo usuario en la base de datos"""
         password_hash = self._hash_password(password)
         
@@ -425,9 +425,9 @@ class FMREDatabase:
                 cursor.execute('BEGIN TRANSACTION')
                 cursor.execute('''
                     INSERT INTO users 
-                    (username, password_hash, full_name, email, phone, role)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (username, password_hash, full_name, email, phone, role))
+                    (username, password_hash, full_name, email, phone, role, sistema_preferido, frecuencia, modo, potencia)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (username, password_hash, full_name, email, phone, role, sistema_preferido, frecuencia, modo, potencia))
                 user_id = cursor.lastrowid
                 conn.commit()
                 return user_id
@@ -465,7 +465,7 @@ class FMREDatabase:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT id, username, full_name, email, phone, role, 
-                       last_login, created_at, updated_at, is_active
+                       last_login, created_at, updated_at, is_active, sistema_preferido, frecuencia, modo, potencia, pre_registro
                 FROM users
                 ORDER BY full_name
             ''')
@@ -534,7 +534,7 @@ class FMREDatabase:
                 conn.rollback()
                 raise
     
-    def update_user(self, user_id, username=None, full_name=None, email=None, phone=None, role=None, password=None, is_active=None, sistema_preferido=None, pre_registro=None):
+    def update_user(self, user_id, username=None, full_name=None, email=None, phone=None, role=None, password=None, is_active=None, sistema_preferido=None, frecuencia=None, modo=None, potencia=None, pre_registro=None):
         """
         Actualiza los datos de un usuario existente
         
@@ -548,6 +548,9 @@ class FMREDatabase:
             password: Nueva contraseña en texto plano (opcional)
             is_active: Estado de la cuenta (True/False) (opcional)
             sistema_preferido: Código del sistema preferido (opcional)
+            frecuencia: Frecuencia preferida (opcional)
+            modo: Modo preferido (opcional)
+            potencia: Potencia preferida (opcional)
             pre_registro: Valor de pre-registro (opcional)
             
         Returns:
@@ -594,6 +597,18 @@ class FMREDatabase:
                     update_fields.append("sistema_preferido = ?")
                     params.append(sistema_preferido)
                     
+                if frecuencia is not None:
+                    update_fields.append("frecuencia = ?")
+                    params.append(frecuencia)
+                    
+                if modo is not None:
+                    update_fields.append("modo = ?")
+                    params.append(modo)
+                    
+                if potencia is not None:
+                    update_fields.append("potencia = ?")
+                    params.append(potencia)
+                    
                 if pre_registro is not None:
                     update_fields.append("pre_registro = ?")
                     params.append(pre_registro)
@@ -629,7 +644,7 @@ class FMREDatabase:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT id, username, full_name, email, phone, role, 
-                       last_login, created_at, updated_at, sistema_preferido, pre_registro
+                       last_login, created_at, updated_at, sistema_preferido, frecuencia, modo, potencia, pre_registro
                 FROM users 
                 WHERE id = ?
             ''', (user_id,))
@@ -642,7 +657,7 @@ class FMREDatabase:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT id, username, password_hash, full_name, email, phone, role, 
-                       last_login, created_at, updated_at, sistema_preferido, pre_registro
+                       last_login, created_at, updated_at, sistema_preferido, frecuencia, modo, potencia, pre_registro
                 FROM users 
                 WHERE username = ?
             ''', (username,))

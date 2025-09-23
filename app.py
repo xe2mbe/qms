@@ -725,10 +725,17 @@ def show_toma_reportes():
     
     # Mostrar parámetros guardados si existen
     if st.session_state.parametros_reporte:
+        # Obtener información adicional de HF si existe
+        hf_info = ""
+        if 'user' in st.session_state and st.session_state.user:
+            usuario = db.get_user_by_id(st.session_state.user['id'])
+            if usuario and usuario.get('sistema_preferido') == 'HF':
+                hf_info = f" | 📻 HF: {usuario.get('frecuencia', '')} {usuario.get('modo', '')} {usuario.get('potencia', '')}"
+
         st.info(f"📅 **Fecha de Reporte:** {st.session_state.parametros_reporte['fecha_reporte']} | "
                 f"📋 **Tipo de Reporte:** {st.session_state.parametros_reporte['tipo_reporte']} | "
                 f"🖥️ **Sistema Preferido:** {st.session_state.parametros_reporte['sistema_preferido'] or 'Ninguno'} | "
-                f"📝 **Pre-Registros:** {st.session_state.parametros_reporte['pre_registro']}")
+                f"📝 **Pre-Registros:** {st.session_state.parametros_reporte['pre_registro']}{hf_info}")
     
     # Formulario de parámetros de captura - Siempre expandido al inicio
     with st.expander("📋 Parámetros de Captura", expanded=st.session_state.expander_abierto):
@@ -791,7 +798,7 @@ def show_toma_reportes():
                 usuario = db.get_user_by_id(st.session_state.user['id'])
                 if usuario and 'pre_registro' in usuario and usuario['pre_registro'] is not None:
                     pre_registro_guardado = usuario['pre_registro']
-            
+
             pre_registro = st.slider(
                 "Pre-Registros",
                 min_value=1,
@@ -799,6 +806,51 @@ def show_toma_reportes():
                 value=pre_registro_guardado,
                 help=f"Valor actual: {pre_registro_guardado}. Selecciona un valor entre 1 y 10 para el pre-registro"
             )
+
+            # Campos adicionales para HF
+            frecuencia = ""
+            modo = ""
+            potencia = ""
+
+            # Obtener valores guardados del usuario si existen
+            if 'user' in st.session_state and st.session_state.user and 'id' in st.session_state.user:
+                usuario = db.get_user_by_id(st.session_state.user['id'])
+                if usuario:
+                    frecuencia = usuario.get('frecuencia', '')
+                    modo = usuario.get('modo', '')
+                    potencia = usuario.get('potencia', '')
+
+            # Mostrar campos HF solo si se selecciona HF
+            if sistema_preferido == 'HF':
+                st.markdown("**📻 Configuración HF**")
+
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    frecuencia = st.text_input(
+                        "Frecuencia (MHz)",
+                        value=frecuencia,
+                        placeholder="Ej: 7.100",
+                        help="Frecuencia en MHz (ej: 7.100 para 40m)"
+                    )
+
+                with col2:
+                    modo = st.selectbox(
+                        "Modo",
+                        ["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"],
+                        index=["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"].index(modo) if modo in ["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"] else 0,
+                        help="Modo de operación HF"
+                    )
+
+                with col3:
+                    potencia = st.selectbox(
+                        "Potencia",
+                        ["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"],
+                        index=["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"].index(potencia) if potencia in ["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"] else 0,
+                        help="Nivel de potencia de transmisión"
+                    )
+
+                st.markdown("---")
             
             # Botones del formulario centrados
             col1, col2, col3 = st.columns([1, 2, 1])
@@ -827,6 +879,9 @@ def show_toma_reportes():
                     db.update_user(
                         user_id=user_id,
                         sistema_preferido=sistema_preferido,
+                        frecuencia=frecuencia if sistema_preferido == 'HF' else None,
+                        modo=modo if sistema_preferido == 'HF' else None,
+                        potencia=potencia if sistema_preferido == 'HF' else None,
                         pre_registro=pre_registro
                     )
                     
@@ -837,6 +892,14 @@ def show_toma_reportes():
                         'sistema_preferido': sistema_preferido,
                         'pre_registro': pre_registro
                     }
+
+                    # Guardar parámetros HF si se seleccionó HF
+                    if sistema_preferido == 'HF':
+                        st.session_state.parametros_reporte.update({
+                            'frecuencia': frecuencia,
+                            'modo': modo,
+                            'potencia': potencia
+                        })
                     
                     st.success("✅ Parámetros guardados correctamente")
                     # Cerrar el expander después de guardar
@@ -988,6 +1051,14 @@ def show_toma_reportes():
                     'senal': '59'  # Valor por defecto para la señal
                 }
 
+                # Agregar campos HF si el sistema es HF
+                if st.session_state.parametros_reporte.get('sistema_preferido') == 'HF':
+                    registro.update({
+                        'frecuencia': st.session_state.parametros_reporte.get('frecuencia', ''),
+                        'modo': st.session_state.parametros_reporte.get('modo', ''),
+                        'potencia': st.session_state.parametros_reporte.get('potencia', '')
+                    })
+
                 # Si el indicativo es extranjero, pre-llenar Estado y Zona
                 if result["Zona"] == "Extranjera":
                     registro['estado'] = "Extranjero"
@@ -1032,6 +1103,14 @@ def show_toma_reportes():
                         'tipo_reporte': st.session_state.parametros_reporte['tipo_reporte'],
                         'senal': '59'  # Valor por defecto para la señal
                     }
+
+                    # Agregar campos HF si el sistema es HF
+                    if st.session_state.parametros_reporte.get('sistema_preferido') == 'HF':
+                        registro.update({
+                            'frecuencia': st.session_state.parametros_reporte.get('frecuencia', ''),
+                            'modo': st.session_state.parametros_reporte.get('modo', ''),
+                            'potencia': st.session_state.parametros_reporte.get('potencia', '')
+                        })
 
                     # Si el indicativo es extranjero, pre-llenar Estado y Zona
                     if result["Zona"] == "Extranjera":
@@ -1090,6 +1169,11 @@ def show_toma_reportes():
 
             # Seleccionar y ordenar columnas para mostrar
             columnas_a_mostrar = ['indicativo', 'nombre_operador', 'estado', 'ciudad', 'zona', 'sistema', 'senal']
+
+            # Agregar columnas HF si el sistema es HF
+            if st.session_state.parametros_reporte.get('sistema_preferido') == 'HF':
+                columnas_a_mostrar.extend(['frecuencia', 'modo', 'potencia'])
+
             columnas_disponibles = [col for col in columnas_a_mostrar if col in df.columns]
 
             # Obtener opciones para los dropdowns
@@ -1145,6 +1229,27 @@ def show_toma_reportes():
                 )
             }
 
+            # Agregar configuración de columnas HF si el sistema es HF
+            if st.session_state.parametros_reporte.get('sistema_preferido') == 'HF':
+                column_config.update({
+                    'frecuencia': st.column_config.TextColumn(
+                        'Frecuencia (MHz)',
+                        help="Frecuencia en MHz"
+                    ),
+                    'modo': st.column_config.SelectboxColumn(
+                        'Modo',
+                        help="Modo de operación HF",
+                        options=["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"],
+                        required=False
+                    ),
+                    'potencia': st.column_config.SelectboxColumn(
+                        'Potencia',
+                        help="Nivel de potencia de transmisión",
+                        options=["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"],
+                        required=False
+                    )
+                })
+
             # Mostrar tabla editable
             edited_df = st.data_editor(
                 df[columnas_disponibles],
@@ -1187,7 +1292,10 @@ def show_toma_reportes():
                         'sistema': registro.get('sistema', ''),
                         'fecha': registro.get('fecha', ''),
                         'tipo_reporte': registro.get('tipo_reporte', ''),
-                        'senal': registro.get('senal', '')
+                        'senal': registro.get('senal', ''),
+                        'frecuencia': registro.get('frecuencia', ''),
+                        'modo': registro.get('modo', ''),
+                        'potencia': registro.get('potencia', '')
                     })
 
                     # Mostrar datos del radioexperimentador si se consultaron
@@ -1226,7 +1334,10 @@ def show_toma_reportes():
                                 'sistema': registro.get('sistema', ''),
                                 'senal': registro.get('senal', '59'),
                                 'fecha_reporte': registro.get('fecha', ''),
-                                'tipo_reporte': registro.get('tipo_reporte', '')
+                                'tipo_reporte': registro.get('tipo_reporte', ''),
+                                'frecuencia': registro.get('frecuencia', '') if registro.get('sistema') == 'HF' else '',
+                                'modo': registro.get('modo', '') if registro.get('sistema') == 'HF' else '',
+                                'potencia': registro.get('potencia', '') if registro.get('sistema') == 'HF' else ''
                             })
                             registros_guardados += 1
 

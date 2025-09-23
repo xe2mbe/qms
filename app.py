@@ -1075,7 +1075,7 @@ def show_toma_reportes():
         # Mostrar la tabla de registros si hay registros guardados
         if 'registros' in st.session_state and st.session_state.registros:
             st.markdown("---")
-            st.subheader("📋 Indicativos Registrados")
+            st.subheader("📋 Estaciones a Reportar")
             
             # Crear una tabla con los registros
             import pandas as pd
@@ -1100,7 +1100,7 @@ def show_toma_reportes():
             zonas_options = [zona['zona'] for zona in zonas_db]
 
             # Mostrar la tabla editable con estilos
-            st.markdown("### ✏️ Tabla Editable - Corrige los datos antes de guardar")
+            st.markdown("###### ✏️ Tabla Editable - Corrige los datos antes de guardar")
 
             # Crear configuración para la tabla editable
             column_config = {

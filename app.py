@@ -1125,19 +1125,8 @@ def show_toma_reportes():
             
             # Botones de acción
             col1, col2 = st.columns(2)
-            
+
             with col1:
-                # Botón para exportar a CSV
-                csv = df.to_csv(index=False, encoding='utf-8-sig')
-                st.download_button(
-                    label="📥 Exportar a CSV",
-                    data=csv,
-                    file_name=f"registros_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime='text/csv',
-                    use_container_width=True
-                )    
-            
-            with col2:
                 # Botón para guardar en la base de datos
                 if st.button("💾 Guardar en Base de Datos", type="primary", use_container_width=True):
                     try:
@@ -1159,7 +1148,8 @@ def show_toma_reportes():
                         st.rerun()
                     except Exception as e:
                         st.error(f"❌ Error al guardar en la base de datos: {str(e)}")
-                
+
+            with col2:
                 # Botón para limpiar los registros
                 if st.button("🗑️ Limpiar todos los registros", type="secondary", use_container_width=True):
                     st.session_state.registros = []

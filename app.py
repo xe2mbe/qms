@@ -859,6 +859,8 @@ def show_toma_reportes():
         # Inicializar la variable de sesión para los registros si no existe
         if 'registros' not in st.session_state:
             st.session_state.registros = []
+        if 'registros_editados' not in st.session_state:
+            st.session_state.registros_editados = False
         
         # Crear un formulario para los pre-registros
         form_submitted = False
@@ -1075,37 +1077,88 @@ def show_toma_reportes():
                 
             # Crear DataFrame con los datos de los registros
             df = pd.DataFrame(st.session_state.registros)
-            
+
             # Seleccionar y ordenar columnas para mostrar
             columnas_a_mostrar = ['indicativo', 'nombre_operador', 'estado', 'ciudad', 'zona', 'sistema', 'senal']
             columnas_disponibles = [col for col in columnas_a_mostrar if col in df.columns]
-            
-            # Mostrar la tabla con estilos
-            st.dataframe(
+
+            # Mostrar la tabla editable con estilos
+            st.markdown("### ✏️ Tabla Editable - Corrige los datos antes de guardar")
+
+            # Crear configuración para la tabla editable
+            column_config = {
+                'indicativo': st.column_config.TextColumn(
+                    'Indicativo',
+                    help="Indicativo del radioexperimentador (solo lectura)",
+                    disabled=True  # No editable
+                ),
+                'nombre_operador': st.column_config.TextColumn(
+                    'Operador',
+                    help="Nombre completo del operador"
+                ),
+                'estado': st.column_config.TextColumn(
+                    'Estado',
+                    help="Estado donde reside"
+                ),
+                'ciudad': st.column_config.TextColumn(
+                    'Ciudad',
+                    help="Ciudad o municipio"
+                ),
+                'zona': st.column_config.TextColumn(
+                    'Zona',
+                    help="Zona geográfica (XE1, XE2, XE3, etc.)"
+                ),
+                'sistema': st.column_config.SelectboxColumn(
+                    'Sistema',
+                    help="Sistema de comunicación utilizado",
+                    options=['HF', 'ASL', 'IRLP', 'DMR', 'Fusion', 'D-Star', 'P25', 'M17'],
+                    required=True
+                ),
+                'senal': st.column_config.NumberColumn(
+                    'Señal',
+                    help="Calidad de señal reportada",
+                    min_value=1,
+                    max_value=99,
+                    step=1,
+                    format="%d"
+                )
+            }
+
+            # Mostrar tabla editable
+            edited_df = st.data_editor(
                 df[columnas_disponibles],
-                column_config={
-                    'indicativo': 'Indicativo',
-                    'nombre_operador': 'Operador',
-                    'estado': 'Estado',
-                    'ciudad': 'Ciudad',
-                    'zona': 'Zona',
-                    'sistema': 'Sistema',
-                    'senal': 'Señal'
-                },
+                column_config=column_config,
                 hide_index=True,
                 use_container_width=True,
-                height=min(400, 35 * len(df) + 40)  # Ajustar altura automáticamente
+                height=min(400, 35 * len(df) + 40),  # Ajustar altura automáticamente
+                key="editable_table"
             )
-            
+
+            # Detectar cambios en la tabla
+            if not edited_df.equals(df):
+                # Actualizar los registros en la sesión con los cambios
+                st.session_state.registros_editados = True
+                st.success("✅ Tabla editada. Haz clic en '💾 Guardar en Base de Datos' para aplicar los cambios.")
+
+                # Actualizar los registros con los datos editados
+                for i, registro_editado in enumerate(edited_df.to_dict('records')):
+                    if i < len(st.session_state.registros):
+                        # Actualizar el registro existente
+                        st.session_state.registros[i].update(registro_editado)
+
             # Mostrar resumen y botones de acción
             st.caption(f"Total de registros: {len(df)}")
-            
+
+            # Mostrar información sobre edición
+            if st.session_state.get('registros_editados', False):
+                st.info("💡 **Nota:** Los cambios se aplicarán cuando guardes en la base de datos.")
+
             # Sección de depuración
             with st.expander("🔍 Datos de depuración (solo desarrollo)", expanded=False):
                 st.write("### Datos completos de los indicativos consultados en la base de datos")
                 for idx, registro in enumerate(st.session_state.registros, 1):
                     st.write(f"#### Indicativo {idx}: {registro.get('indicativo', 'N/A')}")
-                    
+
                     # Mostrar datos básicos del registro
                     st.write("**Datos del registro:**")
                     st.json({
@@ -1115,12 +1168,12 @@ def show_toma_reportes():
                         'tipo_reporte': registro.get('tipo_reporte', ''),
                         'senal': registro.get('senal', '')
                     })
-                    
+
                     # Mostrar datos del radioexperimentador si se consultaron
                     if 'radioexperimentador_data' in registro:
                         st.write("**Datos completos del radioexperimentador desde la base de datos:**")
                         st.json(registro['radioexperimentador_data'])
-                    
+
                     st.markdown("---")
             
             # Botones de acción
@@ -1130,8 +1183,19 @@ def show_toma_reportes():
                 # Botón para guardar en la base de datos
                 if st.button("💾 Guardar en Base de Datos", type="primary", use_container_width=True):
                     try:
+                        # Verificar que haya registros para guardar
+                        if not st.session_state.registros:
+                            st.error("❌ No hay registros para guardar")
+                            return
+
                         # Guardar cada registro en la base de datos
+                        registros_guardados = 0
                         for registro in st.session_state.registros:
+                            # Validar que el registro tenga los campos obligatorios
+                            if not registro.get('indicativo') or not registro.get('tipo_reporte'):
+                                st.error(f"❌ El registro de {registro.get('indicativo', 'desconocido')} no tiene los campos obligatorios")
+                                continue
+
                             db.save_reporte({
                                 'indicativo': registro['indicativo'],
                                 'nombre_operador': registro.get('nombre_operador', ''),
@@ -1141,18 +1205,35 @@ def show_toma_reportes():
                                 'sistema': registro.get('sistema', ''),
                                 'senal': registro.get('senal', '59'),
                                 'fecha_reporte': registro.get('fecha', ''),
-                                'tipo_reporte': registro.get('tipo', '')
+                                'tipo_reporte': registro.get('tipo_reporte', '')
                             })
-                        st.success("✅ Registros guardados correctamente en la base de datos")
-                        st.session_state.registros = []
-                        st.rerun()
+                            registros_guardados += 1
+
+                        if registros_guardados > 0:
+                            st.success(f"✅ {registros_guardados} registro(s) guardado(s) correctamente en la base de datos")
+                            # Limpiar los registros y el estado de edición
+                            st.session_state.registros = []
+                            st.session_state.registros_editados = False
+                            st.rerun()
+                        else:
+                            st.error("❌ No se pudo guardar ningún registro. Verifica que tengan los campos obligatorios.")
+
                     except Exception as e:
                         st.error(f"❌ Error al guardar en la base de datos: {str(e)}")
 
             with col2:
+                # Botón para deshacer cambios
+                if st.session_state.get('registros_editados', False):
+                    if st.button("↩️ Deshacer Cambios", type="secondary", use_container_width=True):
+                        # Recargar los registros originales desde la sesión
+                        st.session_state.registros_editados = False
+                        st.success("✅ Cambios deshechos. Los datos originales han sido restaurados.")
+                        st.rerun()
+
                 # Botón para limpiar los registros
                 if st.button("🗑️ Limpiar todos los registros", type="secondary", use_container_width=True):
                     st.session_state.registros = []
+                    st.session_state.registros_editados = False
                     st.session_state.expander_abierto = True  # Mostrar el formulario de nuevo
                     st.rerun()
 

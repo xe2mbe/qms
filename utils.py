@@ -217,14 +217,14 @@ def calcular_zona_indicativo(indicativo):
         return "Dato no encontrado, ingresar manualmente"
         
     # Usar la función validar_call_sign para determinar el tipo de indicativo
-    es_valido, tipo = validar_call_sign(indicativo)
+    result = validar_call_sign(indicativo)
     
-    if not es_valido:
+    if not result["indicativo"]:
         return "Indicativo inválido"
         
-    if tipo in ["XE1", "XE2", "XE3"]:
-        return tipo  # Retorna XE1, XE2 o XE3
-    elif tipo == "Especial":
+    if result["Zona"] in ["XE1", "XE2", "XE3"]:
+        return result["Zona"]  # Retorna XE1, XE2 o XE3
+    elif result["Zona"] == "Especial":
         # Para indicativos especiales, intentamos extraer la zona
         indicativo = indicativo.upper()
         # Buscar un número de zona (1-3) en el indicativo

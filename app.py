@@ -860,26 +860,61 @@ def show_toma_reportes():
         if 'registros' not in st.session_state:
             st.session_state.registros = []
         
-        # Mostrar la tabla de pre-registros sin expanders
-        st.markdown("### Ingrese los indicativos")
-        
         # Crear un formulario para los pre-registros
         form_submitted = False
         with st.form("pre_registros_form"):
             # Crear una tabla con los campos de entrada
             for i in range(st.session_state.parametros_reporte['pre_registro']):
+                # Usar CSS personalizado para alinear perfectamente los campos
+                st.markdown(f"""
+                <style>
+                .row-{i} {{
+                    display: flex;
+                    gap: 20px;
+                    margin-bottom: 20px;
+                    align-items: flex-start;
+                }}
+                .field-indicativo-{i} {{
+                    flex: 3;
+                    display: flex;
+                    flex-direction: column;
+                }}
+                .field-sistema-{i} {{
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                }}
+                .field-indicativo-{i} label {{
+                    font-weight: bold;
+                    margin-bottom: 5px;
+                    color: #1f77b4;
+                }}
+                .field-sistema-{i} label {{
+                    font-weight: bold;
+                    margin-bottom: 5px;
+                    color: #1f77b4;
+                }}
+                </style>
+                <div class="row-{i}">
+                    <div class="field-indicativo-{i}"></div>
+                    <div class="field-sistema-{i}"></div>
+                </div>
+                """, unsafe_allow_html=True)
+
                 col1, col2 = st.columns([3, 1])
-                
+
                 with col1:
                     # Usar el valor guardado o vacío si no existe
                     valor_guardado = st.session_state.get(f'indicativo_{i}', '')
+                    st.markdown(f"**Indicativo {i+1}**")
                     indicativo = st.text_input(
-                        f"Indicativo {i+1}",
+                        "",
                         key=f"indicativo_{i}",
                         value=valor_guardado,
-                        placeholder="Ej: XE1ABC"
+                        placeholder="Ej: XE1ABC",
+                        label_visibility="collapsed"
                     )
-                
+
                 with col2:
                     # Obtener la lista de sistemas desde la base de datos
                     try:
@@ -899,108 +934,125 @@ def show_toma_reportes():
                     except ValueError:
                         indice = 0
 
+                    st.markdown("**Sistema**")
                     sistema = st.selectbox(
-                        "Sistema",
+                        "",
                         opciones_sistemas,
                         key=f"sistema_{i}",
                         index=indice,
                         label_visibility="collapsed"
                     )
-            
+
             # Botón para pre-registrar todos
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
                 form_submitted = st.form_submit_button(
-                    "📋 Pre-Registrar Todos", 
+                    "📋 Pre-Registrar Todos",
                     type="primary",
                     use_container_width=True
                 )
         
         # Procesar el formulario cuando se envía
         if form_submitted:
-                    # Recopilar todos los registros
-                    registros_guardar = []
-                    indicativos_invalidos = []
-                    
-                    # Procesar cada indicativo
-                    for i in range(st.session_state.parametros_reporte['pre_registro']):
-                        indicativo = st.session_state.get(f'indicativo_{i}', '').strip().upper()
-                        if not indicativo:  # Saltar si está vacío
-                            continue
-                            
-                        # Validar el indicativo
-                        es_valido, tipo = utils.validar_call_sign(indicativo)
-                        if not es_valido:
-                            indicativos_invalidos.append(indicativo)
-                            continue
-                        
-                        # Crear registro base con datos mínimos
-                        registro = {
-                            'indicativo': indicativo,
-                            'sistema': st.session_state.get(f'sistema_{i}', st.session_state.parametros_reporte['sistema_preferido']),
-                            'fecha': st.session_state.parametros_reporte['fecha_reporte'],
-                            'tipo_reporte': st.session_state.parametros_reporte['tipo_reporte'],
-                            'senal': '59'  # Valor por defecto para la señal
-                        }
-                            
-                        # Obtener datos del radioexperimentador si existe
-                        radioexperimentador = db.get_radioexperimentador_por_indicativo(indicativo)
-                        
-                        if radioexperimentador:
-                            # Guardar los datos completos del radioexperimentador para depuración
-                            registro['radioexperimentador_data'] = dict(radioexperimentador)
-                            
-                            # Si existe en la base de datos, actualizar el registro con los datos
-                            registro.update({
-                                'nombre_operador': radioexperimentador.get('nombre', ''),
-                                'apellido_paterno': radioexperimentador.get('apellido_paterno', ''),
-                                'apellido_materno': radioexperimentador.get('apellido_materno', ''),
-                                'estado': radioexperimentador.get('estado', ''),
-                                'ciudad': radioexperimentador.get('ciudad', ''),
-                                'colonia': radioexperimentador.get('colonia', ''),
-                                'codigo_postal': radioexperimentador.get('codigo_postal', ''),
-                                'telefono': radioexperimentador.get('telefono', ''),
-                                'email': radioexperimentador.get('email', ''),
-                                'zona': radioexperimentador.get('zona', '')
-                            })
-                        else:
-                            # Si no existe, crear un registro básico
-                            registro = {
-                                'indicativo': indicativo,
-                                'nombre_operador': '',
-                                'estado': '',
-                                'ciudad': '',
-                                'zona': '',
-                                'sistema': st.session_state.get(f'sistema_{i}', st.session_state.parametros_reporte['sistema_preferido']),
-                                'fecha': st.session_state.parametros_reporte['fecha_reporte'],
-                                'tipo_reporte': st.session_state.parametros_reporte['tipo_reporte'],
-                                'senal': '59'  # Valor por defecto para la señal
-                            }
-                            
-                            # Intentar determinar la zona basada en el prefijo
-                            prefijo = indicativo[:3]  # Tomar los primeros 3 caracteres como prefijo
-                            if prefijo.startswith('XE') and len(indicativo) >= 3 and indicativo[2] in ['1', '2', '3']:
-                                registro['zona'] = f"XE{indicativo[2]}"
-                        
-                        registros_guardar.append(registro)
-                    
-                    # Mostrar errores de validación si los hay
-                    if indicativos_invalidos:
-                        st.error(f"❌ Los siguientes indicativos no son válidos: {', '.join(indicativos_invalidos)}")
-                        return
-                    
-                    # Actualizar la variable de sesión con los nuevos registros
-                    st.session_state.registros = registros_guardar
-                    st.session_state.expander_abierto = False  # Minimizar el formulario
-                    
-                    # Limpiar los campos del formulario
-                    for i in range(st.session_state.parametros_reporte['pre_registro']):
-                        if f'indicativo_{i}' in st.session_state:
-                            del st.session_state[f'indicativo_{i}']
-                        if f'sistema_{i}' in st.session_state:
-                            del st.session_state[f'sistema_{i}']
-                    
-                    st.rerun()
+            # Recopilar todos los registros
+            registros_guardar = []
+            indicativos_invalidos = []
+            indicativos_incompletos = []
+
+            # Procesar cada indicativo
+            for i in range(st.session_state.parametros_reporte['pre_registro']):
+                indicativo = st.session_state.get(f'indicativo_{i}', '').strip().upper()
+                if not indicativo:  # Saltar si está vacío
+                    continue
+
+                # Validar el indicativo
+                result = utils.validar_call_sign(indicativo)
+
+                # Verificar que sea válido Y completo
+                if not result["indicativo"]:
+                    indicativos_invalidos.append(indicativo)
+                    continue
+
+                if not result["completo"]:
+                    indicativos_incompletos.append(indicativo)
+                    continue
+
+                # Crear registro base con datos mínimos
+                registro = {
+                    'indicativo': indicativo,
+                    'sistema': st.session_state.get(f'sistema_{i}', st.session_state.parametros_reporte['sistema_preferido']),
+                    'fecha': st.session_state.parametros_reporte['fecha_reporte'],
+                    'tipo_reporte': st.session_state.parametros_reporte['tipo_reporte'],
+                    'senal': '59'  # Valor por defecto para la señal
+                }
+
+                # Obtener datos del radioexperimentador si existe
+                radioexperimentador = db.get_radioexperimentador_por_indicativo(indicativo)
+
+                if radioexperimentador:
+                    # Guardar los datos completos del radioexperimentador para depuración
+                    registro['radioexperimentador_data'] = dict(radioexperimentador)
+
+                    # Si existe en la base de datos, actualizar el registro con los datos
+                    registro.update({
+                        'nombre_operador': radioexperimentador.get('nombre', ''),
+                        'apellido_paterno': radioexperimentador.get('apellido_paterno', ''),
+                        'apellido_materno': radioexperimentador.get('apellido_materno', ''),
+                        'estado': radioexperimentador.get('estado', ''),
+                        'ciudad': radioexperimentador.get('ciudad', ''),
+                        'colonia': radioexperimentador.get('colonia', ''),
+                        'codigo_postal': radioexperimentador.get('codigo_postal', ''),
+                        'telefono': radioexperimentador.get('telefono', ''),
+                        'email': radioexperimentador.get('email', ''),
+                        'zona': radioexperimentador.get('zona', '')
+                    })
+                else:
+                    # Si no existe, crear un registro básico
+                    registro = {
+                        'indicativo': indicativo,
+                        'nombre_operador': '',
+                        'estado': '',
+                        'ciudad': '',
+                        'zona': '',
+                        'sistema': st.session_state.get(f'sistema_{i}', st.session_state.parametros_reporte['sistema_preferido']),
+                        'fecha': st.session_state.parametros_reporte['fecha_reporte'],
+                        'tipo_reporte': st.session_state.parametros_reporte['tipo_reporte'],
+                        'senal': '59'  # Valor por defecto para la señal
+                    }
+
+                    # Intentar determinar la zona basada en el prefijo
+                    prefijo = indicativo[:3]  # Tomar los primeros 3 caracteres como prefijo
+                    if prefijo.startswith('XE') and len(indicativo) >= 3 and indicativo[2] in ['1', '2', '3']:
+                        registro['zona'] = f"XE{indicativo[2]}"
+
+                registros_guardar.append(registro)
+
+            # Mostrar errores de validación si los hay
+            if indicativos_invalidos:
+                st.error(f"❌ Los siguientes indicativos no son válidos: {', '.join(indicativos_invalidos)}")
+                return
+
+            if indicativos_incompletos:
+                st.error(f"⚠️ Los siguientes indicativos están incompletos (necesitan sufijo): {', '.join(indicativos_incompletos)}")
+                return
+
+            # Solo proceder si hay registros válidos
+            if not registros_guardar:
+                st.warning("⚠️ No hay registros válidos para procesar. Complete todos los indicativos correctamente.")
+                return
+
+            # Actualizar la variable de sesión con los nuevos registros
+            st.session_state.registros = registros_guardar
+            st.session_state.expander_abierto = False  # Minimizar el formulario
+
+            # Limpiar los campos del formulario
+            for i in range(st.session_state.parametros_reporte['pre_registro']):
+                if f'indicativo_{i}' in st.session_state:
+                    del st.session_state[f'indicativo_{i}']
+                if f'sistema_{i}' in st.session_state:
+                    del st.session_state[f'sistema_{i}']
+
+            st.rerun()
         
         # Mostrar la tabla de registros si hay registros guardados
         if 'registros' in st.session_state and st.session_state.registros:
@@ -1077,7 +1129,7 @@ def show_toma_reportes():
                     file_name=f"registros_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime='text/csv',
                     use_container_width=True
-                )
+                )    
             
             with col2:
                 # Botón para guardar en la base de datos

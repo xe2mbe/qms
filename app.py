@@ -45,7 +45,7 @@ def show_sidebar():
         
         # Menú de navegación
         st.markdown("### Menú")
-        menu_options = ["🏠 Inicio", "📝 Toma de Reportes", "📊 Reportes"]
+        menu_options = ["🏠 Inicio", "📝 Toma de Reportes", "📋 Registros", "📊 Reportes"]
         
         # Mostrar opciones de administración solo para administradores
         if user['role'] == 'admin':
@@ -58,6 +58,8 @@ def show_sidebar():
             st.session_state.current_page = "gestion"
         elif selected == "📝 Toma de Reportes":
             st.session_state.current_page = "toma_reportes"
+        elif selected == "📋 Registros":
+            st.session_state.current_page = "registros"
         elif selected == "📊 Reportes":
             st.session_state.current_page = "reports"
         elif selected == "⚙️ Configuración":
@@ -1744,6 +1746,502 @@ def show_toma_reportes():
             
 
 
+def show_registros():
+    """Muestra la sección de registros con pestañas para listar y editar"""
+    st.title("📋 Registros")
+
+    # Crear pestañas
+    tab1, tab2 = st.tabs(["📋 Lista Registros", "✏️ Editar Registros"])
+
+    with tab1:
+        show_lista_registros()
+
+    with tab2:
+        show_editar_registros()
+
+
+def show_lista_registros():
+    """Muestra la lista de registros con filtros y búsqueda"""
+    st.subheader("📋 Lista de Registros")
+
+    # Inicializar variables de sesión si no existen
+    if 'registros_filtros' not in st.session_state:
+        st.session_state.registros_filtros = {
+            'fecha_inicio': None,
+            'fecha_fin': None,
+            'busqueda': '',
+            'filtro_estado': '',
+            'filtro_zona': '',
+            'filtro_sistema': ''
+        }
+
+    # Filtros de fecha
+    col1, col2 = st.columns(2)
+
+    with col1:
+        fecha_inicio = st.date_input(
+            "Fecha inicio",
+            value=st.session_state.registros_filtros['fecha_inicio'],
+            help="Fecha de inicio para filtrar registros",
+            key="fecha_inicio_lista"
+        )
+
+    with col2:
+        fecha_fin = st.date_input(
+            "Fecha fin",
+            value=st.session_state.registros_filtros['fecha_fin'],
+            help="Fecha de fin para filtrar registros",
+            key="fecha_fin_lista"
+        )
+
+    # Campo de búsqueda unificado
+    busqueda = st.text_input(
+        "🔍 Buscar en todos los campos",
+        value=st.session_state.registros_filtros['busqueda'],
+        placeholder="Indicativo, nombre, ciudad, estado, zona, sistema...",
+        help="Busca simultáneamente en: indicativo, nombre, ciudad, estado, zona y sistema",
+        key="busqueda_lista"
+    )
+
+    # Botón de aplicar filtros
+    if st.button("🔍 Buscar Registros", type="primary", key="buscar_lista"):
+        st.session_state.registros_filtros.update({
+            'fecha_inicio': fecha_inicio,
+            'fecha_fin': fecha_fin,
+            'busqueda': busqueda
+        })
+        st.rerun()
+
+    # Botón de limpiar filtros
+    if st.button("🧹 Limpiar Filtros", key="limpiar_lista"):
+        st.session_state.registros_filtros = {
+            'fecha_inicio': None,
+            'fecha_fin': None,
+            'busqueda': ''
+        }
+        st.rerun()
+
+    # Obtener registros con filtros aplicados
+    try:
+        registros, total_registros = db.get_reportes_filtrados(
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            busqueda=busqueda
+            # Los filtros específicos (estado, zona, sistema) se eliminan
+            # La búsqueda ya se hace en todos los campos
+        )
+
+        # Mostrar estadísticas
+        st.caption(f"Mostrando {len(registros)} de {total_registros} registros")
+
+        if registros:
+            # Convertir a DataFrame para mostrar en tabla
+            import pandas as pd
+
+            df_registros = pd.DataFrame([{
+                'ID': r.get('id', ''),
+                'Indicativo': r.get('indicativo', ''),
+                'Nombre': r.get('nombre', ''),
+                'Sistema': r.get('sistema', ''),
+                'Zona': r.get('zona', ''),
+                'Estado': r.get('estado', ''),
+                'Ciudad': r.get('ciudad', ''),
+                'Señal': r.get('senal', ''),
+                'Tipo': r.get('tipo_reporte', ''),
+                'Fecha': r.get('fecha_reporte', ''),
+                'Observaciones': r.get('observaciones', '')[:50] + '...' if len(r.get('observaciones', '')) > 50 else r.get('observaciones', '')
+            } for r in registros])
+
+            # Mostrar la tabla
+            st.data_editor(
+                df_registros,
+                column_config={
+                    'ID': st.column_config.NumberColumn("ID", width="small"),
+                    'Indicativo': st.column_config.TextColumn("Indicativo", width="medium"),
+                    'Nombre': st.column_config.TextColumn("Nombre", width="large"),
+                    'Sistema': st.column_config.TextColumn("Sistema", width="small"),
+                    'Zona': st.column_config.TextColumn("Zona", width="small"),
+                    'Estado': st.column_config.TextColumn("Estado", width="medium"),
+                    'Ciudad': st.column_config.TextColumn("Ciudad", width="medium"),
+                    'Señal': st.column_config.NumberColumn("Señal", width="small"),
+                    'Tipo': st.column_config.TextColumn("Tipo", width="small"),
+                    'Fecha': st.column_config.TextColumn("Fecha", width="medium"),
+                    'Observaciones': st.column_config.TextColumn("Observaciones", width="large")
+                },
+                hide_index=True,
+                use_container_width=True,
+                disabled=True  # Solo lectura en la pestaña de lista
+            )
+
+            # Botón para exportar a Excel
+            if st.button("📥 Exportar a Excel", key="exportar_excel"):
+                # Crear buffer para el archivo Excel
+                from io import BytesIO
+                output = BytesIO()
+
+                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                    df_registros.to_excel(writer, index=False, sheet_name='Registros')
+
+                    # Formato de la hoja
+                    workbook = writer.book
+                    worksheet = writer.sheets['Registros']
+
+                    # Ajustar el ancho de las columnas
+                    for i, col in enumerate(df_registros.columns):
+                        max_length = max(df_registros[col].astype(str).apply(len).max(), len(col)) + 2
+                        worksheet.set_column(i, i, max_length)
+
+                st.download_button(
+                    label="📥 Descargar Excel",
+                    data=output.getvalue(),
+                    file_name=f"registros_{fecha_inicio.strftime('%Y%m%d')}_{fecha_fin.strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
+        else:
+            st.info("No se encontraron registros con los filtros aplicados")
+
+    except Exception as e:
+        st.error(f"Error al cargar los registros: {str(e)}")
+
+
+def show_editar_registros():
+    """Muestra la sección para editar registros con funcionalidades CRUD"""
+    st.subheader("✏️ Editar Registros")
+
+    # Inicializar variables de sesión si no existen
+    if 'editando_registro_id' not in st.session_state:
+        st.session_state.editando_registro_id = None
+    if 'eliminando_registro_id' not in st.session_state:
+        st.session_state.eliminando_registro_id = None
+
+    # Si estamos editando un registro, mostrar formulario de edición
+    if st.session_state.editando_registro_id:
+        _mostrar_formulario_edicion_registro(st.session_state.editando_registro_id)
+        return
+
+    # Filtros de búsqueda (similares a la pestaña de lista)
+    col1, col2 = st.columns(2)
+
+    with col1:
+        fecha_inicio = st.date_input(
+            "Fecha inicio",
+            help="Fecha de inicio para filtrar registros",
+            key="fecha_inicio_editar"
+        )
+
+    with col2:
+        fecha_fin = st.date_input(
+            "Fecha fin",
+            help="Fecha de fin para filtrar registros",
+            key="fecha_fin_editar"
+        )
+
+    # Campo de búsqueda unificado
+    busqueda = st.text_input(
+        "🔍 Buscar en todos los campos",
+        placeholder="Indicativo, nombre, ciudad, estado, zona, sistema...",
+        help="Busca simultáneamente en: indicativo, nombre, ciudad, estado, zona y sistema",
+        key="busqueda_editar"
+    )
+
+    # Botón de buscar
+    if st.button("🔍 Buscar Registros", type="primary", key="buscar_editar"):
+        st.session_state.registros_filtros_editar = {
+            'fecha_inicio': fecha_inicio,
+            'fecha_fin': fecha_fin,
+            'busqueda': busqueda
+        }
+        st.rerun()
+
+    # Obtener registros con filtros
+    try:
+        filtros = getattr(st.session_state, 'registros_filtros_editar', {
+            'fecha_inicio': None,
+            'fecha_fin': None,
+            'busqueda': ''
+        })
+
+        registros, total_registros = db.get_reportes_filtrados(
+            fecha_inicio=filtros['fecha_inicio'],
+            fecha_fin=filtros['fecha_fin'],
+            busqueda=filtros['busqueda']
+            # Los filtros específicos se eliminan - la búsqueda ya es multicampo
+        )
+
+        st.caption(f"Mostrando {len(registros)} de {total_registros} registros")
+
+        if registros:
+            # Mostrar registros en formato expandible
+            for registro in registros:
+                # Determinar si estamos editando este registro
+                is_editing = st.session_state.get(f'editing_registro_{registro["id"]}', False)
+
+                with st.expander(
+                    f"{'✅' if registro.get('activo', 1) == 1 else '⏸️'} {registro['indicativo']} - {registro['nombre'] or 'Sin nombre'}",
+                    expanded=is_editing
+                ):
+                    if not is_editing:
+                        # Vista normal del registro
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+                            st.write(f"**Indicativo:** {registro['indicativo']}")
+                            st.write(f"**Nombre:** {registro['nombre'] or 'Sin nombre'}")
+                            st.write(f"**Sistema:** {registro['sistema']}")
+                            st.write(f"**Zona:** {registro['zona']}")
+                            st.write(f"**Estado:** {registro['estado']}")
+
+                        with col2:
+                            st.write(f"**Ciudad:** {registro['ciudad']}")
+                            st.write(f"**Señal:** {registro['senal']}")
+                            st.write(f"**Tipo:** {registro['tipo_reporte']}")
+                            st.write(f"**Fecha:** {registro['fecha_reporte']}")
+
+                            # Mostrar observaciones si existen
+                            if registro.get('observaciones'):
+                                st.write("**Observaciones:**")
+                                st.text(registro['observaciones'])
+
+                        # Botones de acción
+                        col_btn1, col_btn2, col_btn3 = st.columns(3)
+
+                        with col_btn1:
+                            if st.button(f"✏️ Editar", key=f"edit_registro_{registro['id']}"):
+                                st.session_state.editando_registro_id = registro['id']
+                                st.rerun()
+
+                        with col_btn2:
+                            if st.button(f"🗑️ Eliminar", key=f"delete_registro_{registro['id']}"):
+                                st.session_state.eliminando_registro_id = registro['id']
+                                st.rerun()
+
+                        # Mostrar confirmación de eliminación si corresponde
+                        if st.session_state.get('eliminando_registro_id') == registro['id']:
+                            st.warning("¿Estás seguro de que quieres eliminar este registro? Esta acción no se puede deshacer.")
+
+                            col_conf1, col_conf2 = st.columns(2)
+
+                            with col_conf1:
+                                if st.button("✅ Confirmar eliminación", type="primary", key=f"confirm_delete_{registro['id']}"):
+                                    try:
+                                        if db.delete_reporte(registro['id']):
+                                            st.success("Registro eliminado correctamente")
+                                            time.sleep(2)
+                                            del st.session_state.eliminando_registro_id
+                                            st.rerun()
+                                        else:
+                                            st.error("No se pudo eliminar el registro")
+                                    except Exception as e:
+                                        st.error(f"Error al eliminar: {str(e)}")
+
+                            with col_conf2:
+                                if st.button("❌ Cancelar", key=f"cancel_delete_{registro['id']}"):
+                                    del st.session_state.eliminando_registro_id
+                                    st.rerun()
+
+                    else:
+                        # Vista de edición - mostrar formulario
+                        _mostrar_formulario_edicion_registro(registro['id'])
+
+        else:
+            st.info("No se encontraron registros con los filtros aplicados")
+
+    except Exception as e:
+        st.error(f"Error al cargar los registros: {str(e)}")
+
+
+def _mostrar_formulario_edicion_registro(registro_id):
+    """Muestra el formulario para editar un registro existente"""
+    st.header("✏️ Editar Registro")
+
+    try:
+        # Obtener los datos actuales del registro
+        registro = db.get_reporte_por_id(registro_id)
+
+        if not registro:
+            st.error("No se encontró el registro especificado")
+            if st.button("Volver a la lista", key="volver_lista_error"):
+                del st.session_state.editando_registro_id
+                st.rerun()
+            return
+
+        # Mostrar información del registro
+        st.info(f"Editando registro: {registro['indicativo']} - {registro['nombre'] or 'Sin nombre'}")
+
+        # Formulario de edición
+        with st.form(key=f'editar_registro_form_{registro_id}'):
+            # Campos editables
+            col1, col2 = st.columns(2)
+
+            with col1:
+                indicativo = st.text_input(
+                    "Indicativo",
+                    value=registro['indicativo'],
+                    help="Indicativo del radioexperimentador"
+                )
+
+                nombre = st.text_input(
+                    "Nombre",
+                    value=registro['nombre'] or '',
+                    help="Nombre del radioexperimentador"
+                )
+
+                sistema = st.selectbox(
+                    "Sistema",
+                    options=sistemas_options,
+                    index=0 if not registro['sistema'] else sistemas_options.index(registro['sistema']) if registro['sistema'] in sistemas_options else 0,
+                    help="Sistema de comunicación utilizado"
+                )
+
+            with col1:
+                estado = st.selectbox(
+                    "Estado",
+                    options=[""] + [e['estado'] for e in _get_estados_options() if e and 'estado' in e],
+                    index=0 if not registro['estado'] else [e['estado'] for e in _get_estados_options() if e and 'estado' in e].index(registro['estado']) + 1,
+                    help="Estado donde reside el radioexperimentador"
+                )
+
+            with col2:
+                # Obtener opciones para zonas desde la base de datos
+                try:
+                    zonas_db = db.get_zonas(incluir_inactivas=False)
+                    zonas_options = [""] + [z['zona'] for z in zonas_db if z and 'zona' in z]
+                except Exception as e:
+                    st.error(f"Error al cargar zonas: {str(e)}")
+                    zonas_options = [""]
+
+                zona = st.selectbox(
+                    "Zona",
+                    options=zonas_options,
+                    index=0 if not registro['zona'] else zonas_options.index(registro['zona']) if registro['zona'] in zonas_options else 0,
+                    help="Zona del radioexperimentador"
+                )
+
+                ciudad = st.text_input(
+                    "Ciudad",
+                    value=registro['ciudad'] or '',
+                    help="Ciudad donde reside el radioexperimentador"
+                )
+
+                senal = st.number_input(
+                    "Señal",
+                    min_value=1,
+                    max_value=99,
+                    value=registro['senal'],
+                    help="Nivel de señal reportado"
+                )
+
+                tipo_reporte = st.selectbox(
+                    "Tipo de Reporte",
+                    options=["Boletín", "Retransmisión", "Otro"],
+                    index=["Boletín", "Retransmisión", "Otro"].index(registro['tipo_reporte']) if registro['tipo_reporte'] in ["Boletín", "Retransmisión", "Otro"] else 0,
+                    help="Tipo de reporte"
+                )
+
+            # Observaciones
+            observaciones = st.text_area(
+                "Observaciones",
+                value=registro.get('observaciones', ''),
+                help="Observaciones adicionales del reporte"
+            )
+
+            # Campos específicos de HF si el sistema es HF
+            frecuencia = ""
+            modo = ""
+            potencia = ""
+
+            if sistema == 'HF':
+                st.subheader("📻 Parámetros HF")
+
+                col_hf1, col_hf2, col_hf3 = st.columns(3)
+
+                with col_hf1:
+                    frecuencia = st.text_input(
+                        "Frecuencia (MHz)",
+                        value=registro.get('frecuencia', ''),
+                        placeholder="Ej: 7.100",
+                        help="Frecuencia en MHz"
+                    )
+
+                with col_hf2:
+                    modo = st.selectbox(
+                        "Modo",
+                        options=["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"],
+                        index=0 if not registro.get('modo') else ["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"].index(registro.get('modo')),
+                        help="Modo de operación"
+                    )
+
+                with col_hf3:
+                    potencia = st.selectbox(
+                        "Potencia",
+                        options=["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"],
+                        index=0 if not registro.get('potencia') else ["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"].index(registro.get('potencia')),
+                        help="Nivel de potencia utilizado"
+                    )
+
+            # Botones de acción
+            col1, col2, col3 = st.columns([1, 1, 2])
+
+            with col1:
+                if st.form_submit_button("💾 Guardar Cambios", type="primary"):
+                    # Validar campos obligatorios
+                    if not indicativo or not tipo_reporte:
+                        st.error("Los campos de indicativo y tipo de reporte son obligatorios")
+                    else:
+                        try:
+                            # Preparar datos para actualizar
+                            datos_actualizados = {
+                                'indicativo': indicativo.upper(),
+                                'nombre': nombre,
+                                'sistema': sistema,
+                                'estado': estado,
+                                'ciudad': ciudad,
+                                'zona': zona,
+                                'senal': senal,
+                                'tipo_reporte': tipo_reporte,
+                                'observaciones': observaciones
+                            }
+
+                            # Agregar campos HF si corresponde
+                            if sistema == 'HF':
+                                datos_actualizados.update({
+                                    'frecuencia': frecuencia,
+                                    'modo': modo,
+                                    'potencia': potencia
+                                })
+
+                            # Actualizar registro
+                            if db.update_reporte(registro_id, datos_actualizados):
+                                st.success("¡Los cambios se guardaron correctamente!")
+                                time.sleep(2)
+                                del st.session_state.editando_registro_id
+                                st.rerun()
+                            else:
+                                st.error("No se pudieron guardar los cambios. Intente nuevamente.")
+
+                        except Exception as e:
+                            st.error(f"Error al guardar los cambios: {str(e)}")
+
+            with col2:
+                if st.form_submit_button("❌ Cancelar"):
+                    del st.session_state.editando_registro_id
+                    st.rerun()
+
+            with col3:
+                if st.form_submit_button("🗑️ Eliminar Registro", type="secondary"):
+                    st.session_state.eliminando_registro_id = registro_id
+                    st.session_state.volver_a_editar = True
+                    st.rerun()
+
+    except Exception as e:
+        st.error(f"Error al cargar el formulario de edición: {str(e)}")
+        if st.button("Volver a la lista", key="volver_lista_error2"):
+            if 'editando_registro_id' in st.session_state:
+                del st.session_state.editando_registro_id
+            st.rerun()
+
+
 @st.cache_data(ttl=300)  # Cache por 5 minutos
 def _get_estados_options():
     """Obtiene las opciones de Estado con caché"""
@@ -1853,6 +2351,8 @@ def main():
             show_gestion()
         elif current_page == 'toma_reportes':
             show_toma_reportes()
+        elif current_page == 'registros':
+            show_registros()
         elif current_page == 'reports':
             show_reports()
         elif current_page == 'settings':

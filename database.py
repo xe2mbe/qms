@@ -1435,10 +1435,180 @@ class FMREDatabase:
             print(f"Error al obtener reportes por fecha: {str(e)}")
             return [], {}
             
+    def get_reportes_filtrados(self, fecha_inicio=None, fecha_fin=None, busqueda='', estado='', zona='', sistema=''):
+        """
+        Obtiene reportes filtrados por fecha, búsqueda y otros criterios
+
+        Args:
+            fecha_inicio (date): Fecha de inicio para filtrar
+            fecha_fin (date): Fecha de fin para filtrar
+            busqueda (str): Texto de búsqueda en múltiples campos
+            estado (str): Filtro por estado
+            zona (str): Filtro por zona
+            sistema (str): Filtro por sistema
+
+        Returns:
+            tuple: (reportes_filtrados, total_registros)
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Construir consulta base
+                query = '''
+                    SELECT * FROM reportes WHERE 1=1
+                '''
+                params = []
+
+                # Filtros de fecha
+                if fecha_inicio:
+                    query += ' AND date(fecha_reporte) >= date(?)'
+                    params.append(fecha_inicio.strftime('%Y-%m-%d'))
+
+                if fecha_fin:
+                    query += ' AND date(fecha_reporte) <= date(?)'
+                    params.append(fecha_fin.strftime('%Y-%m-%d'))
+
+                # Filtro por estado
+                if estado:
+                    query += ' AND estado = ?'
+                    params.append(estado)
+
+                # Filtro por zona
+                if zona:
+                    query += ' AND zona = ?'
+                    params.append(zona)
+
+                # Filtro por sistema
+                if sistema:
+                    query += ' AND sistema = ?'
+                    params.append(sistema)
+
+                # Obtener total antes de aplicar búsqueda
+                count_query = query.replace('SELECT *', 'SELECT COUNT(*) as total')
+                cursor.execute(count_query, params)
+                total_result = cursor.fetchone()
+                total_registros = total_result['total'] if total_result else 0
+
+                # Agregar búsqueda si existe
+                if busqueda:
+                    search_term = f'%{busqueda}%'
+                    query += ''' AND (
+                        indicativo LIKE ? OR
+                        nombre LIKE ? OR
+                        ciudad LIKE ? OR
+                        estado LIKE ? OR
+                        zona LIKE ? OR
+                        sistema LIKE ?
+                    )'''
+                    params.extend([search_term] * 6)
+
+                # Ordenar por fecha descendente
+                query += ' ORDER BY fecha_reporte DESC'
+
+                # Ejecutar consulta
+                cursor.execute(query, params)
+                reportes = [dict(row) for row in cursor.fetchall()]
+
+                return reportes, total_registros
+
+        except Exception as e:
+            print(f"Error al obtener reportes filtrados: {str(e)}")
+            return [], 0
+
+    def get_reporte_por_id(self, reporte_id):
+        """
+        Obtiene un reporte específico por su ID
+
+        Args:
+            reporte_id (int): ID del reporte
+
+        Returns:
+            dict: Datos del reporte o None si no existe
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT * FROM reportes WHERE id = ?', (reporte_id,))
+                row = cursor.fetchone()
+                return dict(row) if row else None
+
+        except Exception as e:
+            print(f"Error al obtener reporte por ID: {str(e)}")
+            return None
+
+    def update_reporte(self, reporte_id, datos_actualizados):
+        """
+        Actualiza un reporte existente
+
+        Args:
+            reporte_id (int): ID del reporte a actualizar
+            datos_actualizados (dict): Diccionario con los campos a actualizar
+
+        Returns:
+            bool: True si se actualizó correctamente
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Construir consulta de actualización
+                campos_permitidos = [
+                    'indicativo', 'nombre', 'estado', 'ciudad', 'zona',
+                    'sistema', 'senal', 'tipo_reporte', 'observaciones',
+                    'frecuencia', 'modo', 'potencia'
+                ]
+
+                update_fields = []
+                params = []
+
+                for campo in campos_permitidos:
+                    if campo in datos_actualizados:
+                        update_fields.append(f"{campo} = ?")
+                        params.append(datos_actualizados[campo])
+
+                if not update_fields:
+                    return False
+
+                # Agregar ID para la condición WHERE
+                params.append(reporte_id)
+
+                query = f"UPDATE reportes SET {', '.join(update_fields)} WHERE id = ?"
+
+                cursor.execute(query, params)
+                conn.commit()
+
+                return cursor.rowcount > 0
+
+        except Exception as e:
+            print(f"Error al actualizar reporte: {str(e)}")
+            return False
+
+    def delete_reporte(self, reporte_id):
+        """
+        Elimina un reporte de la base de datos
+
+        Args:
+            reporte_id (int): ID del reporte a eliminar
+
+        Returns:
+            bool: True si se eliminó correctamente
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM reportes WHERE id = ?', (reporte_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+
+        except Exception as e:
+            print(f"Error al eliminar reporte: {str(e)}")
+            return False
+        
     def save_reporte(self, reporte_data):
         """
         Guarda un nuevo reporte en la base de datos
-        
+
         Args:
             reporte_data (dict): Diccionario con los datos del reporte que debe contener:
                 - indicativo (str): Indicativo del radioexperimentador
@@ -1451,7 +1621,7 @@ class FMREDatabase:
                 - estado (str, optional): Estado del operador
                 - origen (str, optional): Origen del reporte
                 - observaciones (str, optional): Observaciones adicionales
-                
+
         Returns:
             int: ID del reporte guardado o None si hubo un error
         """
@@ -1461,28 +1631,28 @@ class FMREDatabase:
             for field in required_fields:
                 if field not in reporte_data or not reporte_data[field]:
                     raise ValueError(f"El campo '{field}' es obligatorio")
-            
+
             # Asegurar que el indicativo esté en mayúsculas
             reporte_data['indicativo'] = reporte_data['indicativo'].upper()
-            
+
             # Establecer valores por defecto
             if 'senal' not in reporte_data or not reporte_data['senal']:
                 reporte_data['senal'] = 59
-            
+
             # Manejo de la fecha del reporte
             try:
                 from time_utils import get_current_cdmx_time
                 import pytz
-                
+
                 # Definir la zona horaria de la Ciudad de México
                 def get_cdmx_timezone():
                     return pytz.timezone('America/Mexico_City')
-                
+
                 print(f"[DEBUG] Fecha recibida en save_reporte: {reporte_data['fecha_reporte']}")
-                
+
                 # Obtener la fecha actual en CDMX para la hora
                 ahora_cdmx = get_current_cdmx_time()
-                
+
                 # Si la fecha viene como string en formato dd/mm/yyyy
                 if isinstance(reporte_data['fecha_reporte'], str) and '/' in reporte_data['fecha_reporte']:
                     # Convertir solo la fecha (sin hora) del string a datetime
@@ -1490,7 +1660,7 @@ class FMREDatabase:
                     dia = int(fecha_parts[0])
                     mes = int(fecha_parts[1])
                     anio = int(fecha_parts[2])
-                    
+
                     # Crear un objeto datetime con la fecha seleccionada pero con la hora actual
                     fecha_obj = get_cdmx_timezone().localize(
                         datetime(anio, mes, dia, ahora_cdmx.hour, ahora_cdmx.minute, ahora_cdmx.second)
@@ -1500,28 +1670,28 @@ class FMREDatabase:
                     # Si no es un formato reconocido, usar la fecha y hora actual
                     print("[WARN] Formato de fecha no reconocido, usando fecha y hora actual")
                     fecha_obj = ahora_cdmx
-                
+
                 # Usar directamente la hora de CDMX sin convertir a UTC
                 fecha_sql = fecha_obj.strftime('%Y-%m-%d %H:%M:%S')
                 print(f"[DEBUG] Fecha a guardar en BD (CDMX): {fecha_sql}")
-                
+
             except Exception as e:
                 print(f"[ERROR] Error al procesar la fecha {reporte_data['fecha_reporte']}: {e}")
                 # En caso de error, usar la fecha y hora actual en CDMX
                 fecha_obj = get_current_cdmx_time()
                 fecha_sql = fecha_obj.strftime('%Y-%m-%d %H:%M:%S')
                 print(f"[WARN] Usando fecha actual (CDMX): {fecha_sql}")
-            
+
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                
+
                 # Obtener la hora actual en UTC
                 created_at_utc = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-                
+
                 # Insertar el reporte en la base de datos
                 cursor.execute('''
                     INSERT INTO reportes (
-                        indicativo, nombre, zona, sistema, ciudad, estado, 
+                        indicativo, nombre, zona, sistema, ciudad, estado,
                         senal, observaciones, origen, tipo_reporte, fecha_reporte,
                         created_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1539,11 +1709,11 @@ class FMREDatabase:
                     fecha_sql,
                     created_at_utc
                 ))
-                
+
                 reporte_id = cursor.lastrowid
                 conn.commit()
                 return reporte_id
-                
+
         except sqlite3.IntegrityError as e:
             if 'FOREIGN KEY constraint failed' in str(e):
                 raise ValueError("El indicativo no existe en la base de datos") from e

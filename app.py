@@ -1492,6 +1492,10 @@ def show_toma_reportes():
                                 st.error(f"❌ El registro de {registro.get('indicativo', 'desconocido')} no tiene los campos obligatorios")
                                 continue
 
+                            # Obtener la fecha de los parámetros de captura
+                            fecha_reporte = st.session_state.parametros_reporte.get('fecha_reporte', get_current_cdmx_time().strftime('%d/%m/%Y'))
+                            print(f"[DEBUG] Fecha de reporte a guardar: {fecha_reporte}")
+                            
                             # Preparar los datos del reporte según el esquema de la base de datos
                             reporte_data = {
                                 'indicativo': registro['indicativo'].upper(),
@@ -1501,7 +1505,7 @@ def show_toma_reportes():
                                 'zona': registro.get('zona', ''),
                                 'sistema': registro.get('sistema', ''),
                                 'senal': int(registro.get('senal', 59)),  # Asegurar que sea entero
-                                'fecha_reporte': registro.get('fecha', get_current_cdmx_time().strftime('%d/%m/%Y')),  # Usar fecha actual en CDMX si no hay
+                                'fecha_reporte': fecha_reporte,  # Usar fecha de parámetros de captura
                                 'tipo_reporte': registro.get('tipo_reporte', 'Boletín'),  # Valor por defecto 'Boletín'
                                 'origen': 'Sistema'  # Origen del reporte
                             }

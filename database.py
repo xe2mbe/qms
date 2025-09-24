@@ -1469,27 +1469,48 @@ class FMREDatabase:
             if 'senal' not in reporte_data or not reporte_data['senal']:
                 reporte_data['senal'] = 59
             
-            # Convertir la fecha al formato YYYY-MM-DD para SQLite
+            # Manejo de la fecha del reporte
             try:
-                from time_utils import convert_utc_to_cdmx, get_current_cdmx_time, format_datetime
+                from time_utils import get_current_cdmx_time
+                import pytz
                 
-                # Si la fecha viene en el formato dd/mm/yyyy, convertirla a datetime
+                # Definir la zona horaria de la Ciudad de México
+                def get_cdmx_timezone():
+                    return pytz.timezone('America/Mexico_City')
+                
+                print(f"[DEBUG] Fecha recibida en save_reporte: {reporte_data['fecha_reporte']}")
+                
+                # Obtener la fecha actual en CDMX para la hora
+                ahora_cdmx = get_current_cdmx_time()
+                
+                # Si la fecha viene como string en formato dd/mm/yyyy
                 if isinstance(reporte_data['fecha_reporte'], str) and '/' in reporte_data['fecha_reporte']:
-                    # Usar la función format_datetime para manejar la conversión de zona horaria
-                    fecha_obj = datetime.strptime(reporte_data['fecha_reporte'], '%d/%m/%Y')
-                    # Usar la zona horaria de CDMX
-                    fecha_obj = get_cdmx_timezone().localize(fecha_obj)
+                    # Convertir solo la fecha (sin hora) del string a datetime
+                    fecha_parts = reporte_data['fecha_reporte'].split('/')
+                    dia = int(fecha_parts[0])
+                    mes = int(fecha_parts[1])
+                    anio = int(fecha_parts[2])
+                    
+                    # Crear un objeto datetime con la fecha seleccionada pero con la hora actual
+                    fecha_obj = get_cdmx_timezone().localize(
+                        datetime(anio, mes, dia, ahora_cdmx.hour, ahora_cdmx.minute, ahora_cdmx.second)
+                    )
+                    print(f"[DEBUG] Fecha seleccionada con hora actual: {fecha_obj}")
                 else:
-                    # Usar la fecha y hora actual en CDMX
-                    fecha_obj = get_current_cdmx_time()
+                    # Si no es un formato reconocido, usar la fecha y hora actual
+                    print("[WARN] Formato de fecha no reconocido, usando fecha y hora actual")
+                    fecha_obj = ahora_cdmx
                 
-                # Formatear para SQLite en UTC para consistencia
-                fecha_sql = fecha_obj.astimezone(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S')
+                # Usar directamente la hora de CDMX sin convertir a UTC
+                fecha_sql = fecha_obj.strftime('%Y-%m-%d %H:%M:%S')
+                print(f"[DEBUG] Fecha a guardar en BD (CDMX): {fecha_sql}")
+                
             except Exception as e:
-                print(f"Error al procesar la fecha: {e}")
+                print(f"[ERROR] Error al procesar la fecha {reporte_data['fecha_reporte']}: {e}")
                 # En caso de error, usar la fecha y hora actual en CDMX
                 fecha_obj = get_current_cdmx_time()
                 fecha_sql = fecha_obj.strftime('%Y-%m-%d %H:%M:%S')
+                print(f"[WARN] Usando fecha actual (CDMX): {fecha_sql}")
             
             with self.get_connection() as conn:
                 cursor = conn.cursor()

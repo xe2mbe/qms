@@ -826,41 +826,42 @@ def show_toma_reportes():
                 # Cargar estado SWL si existe
                 if usuario and 'swl_estado' in usuario and usuario['swl_estado'] is not None:
                     estado_guardado = usuario['swl_estado']
-                    # Buscar coincidencia en la lista de estados
+                    # Buscar coincidencia exacta en la lista de estados
                     for e in estados:
-                        if e.get('estado') == estado_guardado:
-                            swl_estado_guardado = f"{e.get('abreviatura', '')} - {e.get('estado', '')}"
+                        if e and 'estado' in e and str(e['estado']) == str(estado_guardado):
+                            swl_estado_guardado = str(e['estado'])  # Solo el nombre del estado
                             break
                             
                 # Cargar ciudad SWL si existe
                 if usuario and 'swl_ciudad' in usuario and usuario['swl_ciudad'] is not None:
-                    # Obtener solo el nombre de la ciudad (sin el estado)
-                    ciudad_completa = usuario['swl_ciudad']
-                    if ' - ' in ciudad_completa:
-                        swl_ciudad_guardada = ciudad_completa.split(' - ')[1].strip()
-                    else:
-                        swl_ciudad_guardada = ciudad_completa
+                    swl_ciudad_guardada = str(usuario['swl_ciudad'])
+                    # Si la ciudad incluye el estado (formato "Estado - Ciudad"), extraer solo la ciudad
+                    if ' - ' in swl_ciudad_guardada:
+                        swl_ciudad_guardada = swl_ciudad_guardada.split(' - ')[1].strip()
 
             # Crear columnas para los campos SWL
             col_swl1, col_swl2 = st.columns(2)
             
             with col_swl1:
                 # Mostrar el campo de estado SWL
+                # Encontrar el índice del estado guardado en las opciones
+                estado_index = 0
+                if swl_estado_guardado and swl_estado_guardado in opciones_estados:
+                    estado_index = opciones_estados.index(swl_estado_guardado)
+                
                 swl_estado = st.selectbox(
                     "SWL Estado",
                     options=opciones_estados,
-                    index=opciones_estados.index(swl_estado_guardado) if swl_estado_guardado and swl_estado_guardado in opciones_estados else 0,
+                    index=estado_index,
                     help="Selecciona el estado donde se realiza la escucha"
                 )
-                # Obtener solo el nombre del estado seleccionado (sin la abreviatura)
-                estado_seleccionado = swl_estado.split(' - ', 1)[1] if swl_estado and ' - ' in swl_estado else swl_estado
-
+            
             with col_swl2:
                 # Mostrar el campo de ciudad SWL (solo el nombre de la ciudad)
                 swl_ciudad = st.text_input(
                     "SWL Ciudad",
-                    value=swl_ciudad_guardada,
-                help="Ingresa la ciudad donde se realiza la escucha (solo el nombre de la ciudad)"
+                    value=swl_ciudad_guardada if swl_ciudad_guardada else "",
+                    help="Ingresa la ciudad donde se realiza la escucha (solo el nombre de la ciudad)"
             )
 
 

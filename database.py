@@ -652,7 +652,8 @@ class FMREDatabase:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT id, username, full_name, email, phone, role, 
-                       last_login, created_at, updated_at, sistema_preferido, frecuencia, modo, potencia, pre_registro
+                       last_login, created_at, updated_at, sistema_preferido, 
+                       frecuencia, modo, potencia, pre_registro, swl_estado, swl_ciudad
                 FROM users 
                 WHERE id = ?
             ''', (user_id,))
@@ -665,7 +666,8 @@ class FMREDatabase:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT id, username, password_hash, full_name, email, phone, role, 
-                       last_login, created_at, updated_at, sistema_preferido, frecuencia, modo, potencia, pre_registro
+                       last_login, created_at, updated_at, sistema_preferido, 
+                       frecuencia, modo, potencia, pre_registro, swl_estado, swl_ciudad
                 FROM users 
                 WHERE username = ?
             ''', (username,))

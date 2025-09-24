@@ -1796,10 +1796,10 @@ def show_lista_registros():
 
     # Campo de búsqueda unificado
     busqueda = st.text_input(
-        "🔍 Buscar en todos los campos",
+        "🔍 Buscar en todos los campos (insensible a acentos)",
         value=st.session_state.registros_filtros['busqueda'],
-        placeholder="Indicativo, nombre, ciudad, estado, zona, sistema...",
-        help="Busca simultáneamente en: indicativo, nombre, ciudad, estado, zona y sistema",
+        placeholder="Indicativo, nombre, ciudad, estado, zona, sistema, tipo...",
+        help="Busca simultáneamente en: indicativo, nombre, ciudad, estado, zona, sistema y tipo. Funciona con o sin acentos (boletin/boletín)",
         key="busqueda_lista"
     )
 
@@ -1939,9 +1939,9 @@ def show_editar_registros():
 
     # Campo de búsqueda unificado
     busqueda = st.text_input(
-        "🔍 Buscar en todos los campos",
-        placeholder="Indicativo, nombre, ciudad, estado, zona, sistema...",
-        help="Busca simultáneamente en: indicativo, nombre, ciudad, estado, zona y sistema",
+        "🔍 Buscar en todos los campos (insensible a acentos)",
+        placeholder="Indicativo, nombre, ciudad, estado, zona, sistema, tipo...",
+        help="Busca simultáneamente en: indicativo, nombre, ciudad, estado, zona, sistema y tipo. Funciona con o sin acentos (boletin/boletín)",
         key="busqueda_editar"
     )
 

@@ -37,6 +37,20 @@ class FMREDatabase:
         conn.execute('PRAGMA busy_timeout=5000')  # 5 segundos de timeout
         conn.execute('PRAGMA synchronous=NORMAL')
         conn.row_factory = sqlite3.Row
+
+        # Registrar función personalizada para quitar acentos
+        def remove_accents(text):
+            if text is None:
+                return ''
+            import unicodedata
+            return ''.join(
+                c for c in unicodedata.normalize('NFD', str(text))
+                if unicodedata.category(c) != 'Mn'
+            )
+
+        # Registrar con nombre válido para SQLite (sin mayúsculas)
+        conn.create_function("remove_accents", 1, remove_accents)
+
         return conn
     
     def init_database(self):
@@ -1450,6 +1464,16 @@ class FMREDatabase:
         Returns:
             tuple: (reportes_filtrados, total_registros)
         """
+        def normalize_text(text):
+            """Normaliza el texto eliminando acentos y caracteres especiales"""
+            if not text:
+                return ''
+            import unicodedata
+            # Normalizar a NFD (decomponer caracteres con acentos)
+            normalized = unicodedata.normalize('NFD', text)
+            # Filtrar solo caracteres que no sean marcas de acento (category 'Mn')
+            return ''.join(char for char in normalized if unicodedata.category(char) != 'Mn').lower()
+
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
@@ -1492,16 +1516,20 @@ class FMREDatabase:
 
                 # Agregar búsqueda si existe
                 if busqueda:
-                    search_term = f'%{busqueda}%'
+                    # Normalizar el término de búsqueda
+                    busqueda_normalized = normalize_text(busqueda)
+                    search_term = f'%{busqueda_normalized}%'
+
                     query += ''' AND (
-                        indicativo LIKE ? OR
-                        nombre LIKE ? OR
-                        ciudad LIKE ? OR
-                        estado LIKE ? OR
-                        zona LIKE ? OR
-                        sistema LIKE ?
+                        remove_accents(indicativo) LIKE ? OR
+                        remove_accents(nombre) LIKE ? OR
+                        remove_accents(ciudad) LIKE ? OR
+                        remove_accents(estado) LIKE ? OR
+                        remove_accents(zona) LIKE ? OR
+                        remove_accents(sistema) LIKE ? OR
+                        remove_accents(tipo_reporte) LIKE ?
                     )'''
-                    params.extend([search_term] * 6)
+                    params.extend([search_term] * 7)
 
                 # Ordenar por fecha descendente
                 query += ' ORDER BY fecha_reporte DESC'

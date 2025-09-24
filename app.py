@@ -1143,16 +1143,28 @@ def show_toma_reportes():
 
                 # Si el indicativo es SWR, usar el estado y ciudad de SWL (esto tiene prioridad sobre la zona)
                 if indicativo == "SWR":
+                    print(f"DEBUG - Procesando estación SWR")
                     if 'swl_estado' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_estado']:
-                        registro['estado'] = str(st.session_state.parametros_reporte['swl_estado'])
-                        print(f"DEBUG - Asignando estado SWL a SWR: {registro['estado']}")
+                        # Guardar el estado original de SWL
+                        swl_estado = str(st.session_state.parametros_reporte['swl_estado']).strip()
+                        registro['estado'] = swl_estado
+                        registro['_es_swr'] = True  # Marcar como SWR para evitar sobrescritura
+                        print(f"DEBUG - Asignando estado SWL a SWR: '{swl_estado}' (tipo: {type(swl_estado).__name__})")
+                    
                     if 'swl_ciudad' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_ciudad']:
-                        registro['ciudad'] = str(st.session_state.parametros_reporte['swl_ciudad'])
-                        print(f"DEBUG - Asignando ciudad SWL a SWR: {registro['ciudad']}")
-                # Si el indicativo es extranjero, pre-llenar Estado y Zona
+                        swl_ciudad = str(st.session_state.parametros_reporte['swl_ciudad']).strip()
+                        registro['ciudad'] = swl_ciudad
+                        print(f"DEBUG - Asignando ciudad SWL a SWR: '{swl_ciudad}' (tipo: {type(swl_ciudad).__name__})")
+                    
+                    # Forzar la zona a vacío para SWR
+                    registro['zona'] = ''
+                    registro['_es_swr'] = True  # Asegurar que la bandera esté establecida
+                    print(f"DEBUG - Estado final de SWR: '{registro.get('estado')}', Ciudad: '{registro.get('ciudad')}', Zona: '{registro.get('zona')}'")
+                # Si el indicativo es extranjero y no es SWR, pre-llenar Estado y Zona
                 elif result["Zona"] == "Extranjera":
                     registro['estado'] = "Extranjero"
                     registro['zona'] = "EXT"
+                    print(f"DEBUG - Asignando estado Extranjero a {indicativo}")
 
                 # Obtener datos del radioexperimentador si existe
                 radioexperimentador = db.get_radioexperimentador_por_indicativo(indicativo)
@@ -1225,10 +1237,22 @@ def show_toma_reportes():
                         print(f"{key}: {value} (tipo: {type(value).__name__})")
                     print("===========================================\n")
                         
-                    # Si el indicativo es SWR, mantener el estado y ciudad de SWL
-                    if indicativo != "SWR" and result["Zona"] == "Extranjera":
+                    # Si el registro está marcado como SWR, mantener sus valores
+                    if registro.get('_es_swr', False):
+                        # Restaurar los valores de SWR para asegurar que no se sobrescriban
+                        if 'swl_estado' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_estado']:
+                            registro['estado'] = str(st.session_state.parametros_reporte['swl_estado']).strip()
+                        if 'swl_ciudad' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_ciudad']:
+                            registro['ciudad'] = str(st.session_state.parametros_reporte['swl_ciudad']).strip()
+                        registro['zona'] = ''
+                        print(f"DEBUG - Manteniendo valores de SWR: estado='{registro.get('estado')}', ciudad='{registro.get('ciudad')}'")
+                    # Si no es SWR pero es extranjero
+                    elif result["Zona"] == "Extranjera":
                         registro['estado'] = "Extranjero"
                         registro['zona'] = "EXT"
+                        print(f"DEBUG - Asignando estado Extranjero a {indicativo}")
+                    else:
+                        print(f"DEBUG - Estado actual para {indicativo}: {registro.get('estado')} (tipo: {type(registro.get('estado')).__name__})")
 
                     # Intentar determinar la zona basada en el prefijo
                     prefijo = indicativo[:3]  # Tomar los primeros 3 caracteres como prefijo
@@ -1282,7 +1306,14 @@ def show_toma_reportes():
             registros_para_df = []
             for reg in st.session_state.registros:
                 reg_copy = reg.copy()
-                if 'estado' in reg_copy and reg_copy['estado'] is not None:
+                if reg_copy.get('_es_swr', False):
+                    # Para SWR, asegurarse de que los valores sean los correctos
+                    if 'swl_estado' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_estado']:
+                        reg_copy['estado'] = str(st.session_state.parametros_reporte['swl_estado']).strip()
+                    if 'swl_ciudad' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_ciudad']:
+                        reg_copy['ciudad'] = str(st.session_state.parametros_reporte['swl_ciudad']).strip()
+                    reg_copy['zona'] = ''
+                elif 'estado' in reg_copy and reg_copy['estado'] is not None:
                     reg_copy['estado'] = str(reg_copy['estado'])
                 registros_para_df.append(reg_copy)
             

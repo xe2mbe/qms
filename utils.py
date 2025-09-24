@@ -39,13 +39,23 @@ def get_sistemas():
 
 def validar_call_sign(callsign: str) -> dict:
     """
-    Valida un indicativo de radioaficionado y regresa un diccionario con:
-    - indicativo: True/False (si es válido)
-    - completo: True/False (si incluye sufijo)
-    - Zona: XE1, XE2, XE3, Especial, Extranjera o Error
+    Valida un indicativo y regresa un diccionario con:
+    - indicativo: True/False
+    - completo: True/False
+    - Zona: XE1, XE2, XE3, Definir, Extranjera o Error
+    - tipo: ham, SWL o Error
     """
 
     callsign = callsign.strip().upper()
+
+    # Caso especial: SWL
+    if callsign == "SWL":
+        return {
+            "indicativo": True,
+            "completo": True,
+            "Zona": "Definir",
+            "tipo": "SWL"
+        }
 
     # XE1, XE2, XE3 (con o sin sufijo de 1 a 3 letras)
     regex_xe123 = re.compile(r'^(XE[123])([A-Z]{1,3})?$')
@@ -64,7 +74,8 @@ def validar_call_sign(callsign: str) -> dict:
         return {
             "indicativo": True,
             "completo": bool(sufijo),
-            "Zona": zona
+            "Zona": zona,
+            "tipo": "ham"
         }
 
     # Caso mexicano general o especial
@@ -80,7 +91,8 @@ def validar_call_sign(callsign: str) -> dict:
         return {
             "indicativo": False,
             "completo": False,
-            "Zona": "Error"
+            "Zona": "Error",
+            "tipo": "Error"
         }
 
     # Caso extranjero genérico: debe empezar con letra y tener al menos 3 caracteres
@@ -89,14 +101,16 @@ def validar_call_sign(callsign: str) -> dict:
         return {
             "indicativo": True,
             "completo": True,
-            "Zona": "Extranjera"
+            "Zona": "Extranjera",
+            "tipo": "ham"
         }
 
     # No válido
     return {
         "indicativo": False,
         "completo": False,
-        "Zona": "Error"
+        "Zona": "Error",
+        "tipo": "Error"
     }
 
 def validate_operator_name(name):

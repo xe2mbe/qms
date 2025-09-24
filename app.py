@@ -3,7 +3,7 @@ import sqlite3
 import time
 import secrets
 import string
-from time_utils import format_datetime
+from time_utils import format_datetime, get_current_cdmx_time
 import hashlib
 from datetime import datetime
 import pytz
@@ -38,11 +38,10 @@ def show_sidebar():
         st.markdown(f"### {user['full_name']}")
         st.caption(f"👤 {user['role'].capitalize()}")
         
-        # Mostrar fecha actual
-        mexico_tz = pytz.timezone('America/Mexico_City')
-        current_date = datetime.now(mexico_tz).strftime("%d/%m/%Y %H:%M")
+        # Mostrar fecha actual en CDMX
+        current_date = get_current_cdmx_time().strftime("%d/%m/%Y %H:%M %Z")
         st.markdown(f"---")
-        st.caption(f"📅 Sesión: {current_date}")
+        st.caption(f"📅 Sesión: {current_date} (Hora CDMX)")
         
         # Menú de navegación
         st.markdown("### Menú")
@@ -750,7 +749,8 @@ def show_toma_reportes():
     with st.expander("📋 Parámetros de Captura", expanded=st.session_state.expander_abierto):
         with st.form("reporte_form"):
             # Campos del formulario en el orden solicitado
-            fecha_actual = datetime.now().date()
+            from time_utils import get_current_cdmx_time
+            fecha_actual = get_current_cdmx_time().date()
             fecha = st.date_input("Fecha de Reporte", fecha_actual)
             
             # Mostrar advertencia si la fecha no es la actual
@@ -1501,7 +1501,7 @@ def show_toma_reportes():
                                 'zona': registro.get('zona', ''),
                                 'sistema': registro.get('sistema', ''),
                                 'senal': int(registro.get('senal', 59)),  # Asegurar que sea entero
-                                'fecha_reporte': registro.get('fecha', datetime.now().strftime('%d/%m/%Y')),  # Usar fecha actual si no hay
+                                'fecha_reporte': registro.get('fecha', get_current_cdmx_time().strftime('%d/%m/%Y')),  # Usar fecha actual en CDMX si no hay
                                 'tipo_reporte': registro.get('tipo_reporte', 'Boletín'),  # Valor por defecto 'Boletín'
                                 'origen': 'Sistema'  # Origen del reporte
                             }
@@ -1550,11 +1550,26 @@ def show_toma_reportes():
             # Mostrar estadísticas y reportes fuera del botón de guardar
             st.markdown("---")
             
-            # Obtener la fecha actual para mostrar los reportes del día
-            fecha_actual = datetime.now().strftime('%d/%m/%Y')
+            # Obtener la fecha de los parámetros de captura
+            fecha_reporte = st.session_state.parametros_reporte.get('fecha_reporte')
             
-            # Obtener reportes del día
-            reportes, estadisticas = db.get_reportes_por_fecha(fecha_actual)
+            # Verificar si la fecha tiene el formato correcto (DD/MM/YYYY)
+            try:
+                # Convertir a datetime para validar el formato
+                from datetime import datetime
+                fecha_dt = datetime.strptime(fecha_reporte, '%d/%m/%Y')
+                # Convertir al formato YYYY-MM-DD para la consulta SQL
+                fecha_consulta = fecha_dt.strftime('%Y-%m-%d')
+                
+                # Obtener reportes del día seleccionado
+                reportes, estadisticas = db.get_reportes_por_fecha(fecha_consulta)
+                
+                # Mostrar la fecha de consulta para referencia
+                st.caption(f"📅 Mostrando reportes del: {fecha_reporte}")
+                
+            except (ValueError, TypeError) as e:
+                st.error("❌ Error en el formato de la fecha. Asegúrate de usar el formato DD/MM/YYYY")
+                reportes, estadisticas = [], {}
             
             st.subheader("📊 Estadísticas del Día")
             
@@ -1673,13 +1688,27 @@ def show_toma_reportes():
                     subtitulos=estados if estados else [{'nombre': 'Sin datos', 'cantidad': ''}]
                 )
             
-            # Mostrar tabla de reportes del día
-            st.markdown("---")
-            st.subheader(f"📋 Reportes del Día ({fecha_actual})")
-            
+            # Mostrar la tabla de reportes
             if reportes:
-                # Crear un DataFrame con los datos para mostrarlos en una tabla
-                reportes_df = pd.DataFrame([{
+                import pandas as pd
+                from time_utils import format_datetime
+                
+                # Convertir a DataFrame
+                def format_time(dt_str):
+                    if not dt_str:
+                        return ''
+                    try:
+                        # Intentar con formato YYYY-MM-DD HH:MM:SS
+                        dt = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
+                    except ValueError:
+                        try:
+                            # Si falla, intentar con formato DD/MM/YYYY HH:MM:SS
+                            dt = datetime.strptime(dt_str, '%d/%m/%Y %H:%M:%S')
+                        except ValueError:
+                            return ''  # Si no coincide ningún formato, devolver vacío
+                    return dt.strftime('%H:%M')
+                
+                df_reportes = pd.DataFrame([{
                     'Indicativo': r.get('indicativo', ''),
                     'Nombre': r.get('nombre', ''),
                     'Sistema': r.get('sistema', ''),
@@ -1687,12 +1716,12 @@ def show_toma_reportes():
                     'Estado': r.get('estado', ''),
                     'Ciudad': r.get('ciudad', ''),
                     'Señal': r.get('senal', ''),
-                    'Hora': datetime.strptime(r.get('created_at'), '%Y-%m-%d %H:%M:%S').strftime('%H:%M:%S') if r.get('created_at') else ''
+                    'Hora': format_time(r.get('fecha_reporte'))
                 } for r in reportes])
                 
-                # Mostrar la tabla con estilo
-                st.dataframe(
-                    reportes_df,
+                # Mostrar la tabla
+                st.data_editor(
+                    df_reportes,
                     column_config={
                         'Indicativo': st.column_config.TextColumn("Indicativo"),
                         'Nombre': st.column_config.TextColumn("Nombre"),

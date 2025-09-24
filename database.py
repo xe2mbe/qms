@@ -1347,7 +1347,7 @@ class FMREDatabase:
         Obtiene los reportes de una fecha específica con estadísticas
         
         Args:
-            fecha_reporte (str): Fecha en formato 'dd/mm/yyyy'
+            fecha_reporte (str): Fecha en formato 'dd/mm/yyyy' o 'YYYY-MM-DD'
             
         Returns:
             tuple: (reportes, estadisticas) donde:
@@ -1355,9 +1355,28 @@ class FMREDatabase:
                 - estadisticas: Diccionario con estadísticas de los reportes
         """
         try:
+            from time_utils import get_cdmx_timezone, get_current_cdmx_time, format_datetime
+            import pytz
+            
             # Convertir la fecha al formato YYYY-MM-DD para SQLite
-            fecha_obj = datetime.strptime(fecha_reporte, '%d/%m/%Y')
-            fecha_sql = fecha_obj.strftime('%Y-%m-%d')
+            try:
+                # Si la fecha viene en formato dd/mm/yyyy, convertirla a datetime
+                if '/' in fecha_reporte:
+                    fecha_obj = datetime.strptime(fecha_reporte, '%d/%m/%Y')
+                    # Asignar la zona horaria de CDMX
+                    fecha_obj = get_cdmx_timezone().localize(fecha_obj)
+                else:
+                    # Asumir que ya está en formato YYYY-MM-DD
+                    fecha_obj = datetime.strptime(fecha_reporte, '%Y-%m-%d')
+                    fecha_obj = get_cdmx_timezone().localize(fecha_obj)
+                
+                # Formatear para SQLite (solo la fecha) en UTC para consistencia
+                fecha_sql = fecha_obj.astimezone(pytz.UTC).strftime('%Y-%m-%d')
+            except Exception as e:
+                print(f"Error al procesar la fecha: {e}")
+                # En caso de error, usar la fecha actual en CDMX
+                fecha_obj = get_current_cdmx_time()
+                fecha_sql = fecha_obj.astimezone(pytz.UTC).strftime('%Y-%m-%d')
             
             with self.get_connection() as conn:
                 cursor = conn.cursor()
@@ -1452,20 +1471,39 @@ class FMREDatabase:
             
             # Convertir la fecha al formato YYYY-MM-DD para SQLite
             try:
-                fecha_obj = datetime.strptime(reporte_data['fecha_reporte'], '%d/%m/%Y')
-                fecha_sql = fecha_obj.strftime('%Y-%m-%d')
-            except ValueError as e:
-                raise ValueError("Formato de fecha inválido. Use el formato dd/mm/yyyy") from e
+                from time_utils import convert_utc_to_cdmx, get_current_cdmx_time, format_datetime
+                
+                # Si la fecha viene en el formato dd/mm/yyyy, convertirla a datetime
+                if isinstance(reporte_data['fecha_reporte'], str) and '/' in reporte_data['fecha_reporte']:
+                    # Usar la función format_datetime para manejar la conversión de zona horaria
+                    fecha_obj = datetime.strptime(reporte_data['fecha_reporte'], '%d/%m/%Y')
+                    # Usar la zona horaria de CDMX
+                    fecha_obj = get_cdmx_timezone().localize(fecha_obj)
+                else:
+                    # Usar la fecha y hora actual en CDMX
+                    fecha_obj = get_current_cdmx_time()
+                
+                # Formatear para SQLite en UTC para consistencia
+                fecha_sql = fecha_obj.astimezone(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S')
+            except Exception as e:
+                print(f"Error al procesar la fecha: {e}")
+                # En caso de error, usar la fecha y hora actual en CDMX
+                fecha_obj = get_current_cdmx_time()
+                fecha_sql = fecha_obj.strftime('%Y-%m-%d %H:%M:%S')
             
             with self.get_connection() as conn:
                 cursor = conn.cursor()
+                
+                # Obtener la hora actual en UTC
+                created_at_utc = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
                 
                 # Insertar el reporte en la base de datos
                 cursor.execute('''
                     INSERT INTO reportes (
                         indicativo, nombre, zona, sistema, ciudad, estado, 
-                        senal, observaciones, origen, tipo_reporte, fecha_reporte
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        senal, observaciones, origen, tipo_reporte, fecha_reporte,
+                        created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     reporte_data['indicativo'],
                     reporte_data.get('nombre', ''),
@@ -1477,7 +1515,8 @@ class FMREDatabase:
                     reporte_data.get('observaciones', ''),
                     reporte_data.get('origen', ''),
                     reporte_data['tipo_reporte'],
-                    fecha_sql
+                    fecha_sql,
+                    created_at_utc
                 ))
                 
                 reporte_id = cursor.lastrowid

@@ -1141,8 +1141,16 @@ def show_toma_reportes():
                         'potencia': st.session_state.parametros_reporte.get('potencia', '')
                     })
 
+                # Si el indicativo es SWR, usar el estado y ciudad de SWL (esto tiene prioridad sobre la zona)
+                if indicativo == "SWR":
+                    if 'swl_estado' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_estado']:
+                        registro['estado'] = str(st.session_state.parametros_reporte['swl_estado'])
+                        print(f"DEBUG - Asignando estado SWL a SWR: {registro['estado']}")
+                    if 'swl_ciudad' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_ciudad']:
+                        registro['ciudad'] = str(st.session_state.parametros_reporte['swl_ciudad'])
+                        print(f"DEBUG - Asignando ciudad SWL a SWR: {registro['ciudad']}")
                 # Si el indicativo es extranjero, pre-llenar Estado y Zona
-                if result["Zona"] == "Extranjera":
+                elif result["Zona"] == "Extranjera":
                     registro['estado'] = "Extranjero"
                     registro['zona'] = "EXT"
 
@@ -1193,9 +1201,32 @@ def show_toma_reportes():
                             'modo': st.session_state.parametros_reporte.get('modo', ''),
                             'potencia': st.session_state.parametros_reporte.get('potencia', '')
                         })
-
-                    # Si el indicativo es extranjero, pre-llenar Estado y Zona
-                    if result["Zona"] == "Extranjera":
+                    
+                    # Para cualquier indicativo que no exista en la base de datos, usar SWL Estado y SWL Ciudad
+                    if 'swl_estado' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_estado']:
+                        print(f"DEBUG - Asignando estado desde parametros_reporte: {st.session_state.parametros_reporte['swl_estado']}")
+                        # Asegurarse de que el estado sea una cadena
+                        estado_swl = str(st.session_state.parametros_reporte['swl_estado'])
+                        registro['estado'] = estado_swl
+                        print(f"DEBUG - Estado asignado: {registro['estado']} (tipo: {type(registro['estado']).__name__})")
+                        
+                        # Verificar si el estado está en las opciones disponibles
+                        if estado_swl not in [e['estado'] for e in _get_estados_options()]:
+                            print(f"ADVERTENCIA: El estado '{estado_swl}' no está en las opciones disponibles")
+                    
+                    if 'swl_ciudad' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_ciudad']:
+                        print(f"DEBUG - Asignando ciudad desde parametros_reporte: {st.session_state.parametros_reporte['swl_ciudad']}")
+                        registro['ciudad'] = str(st.session_state.parametros_reporte['swl_ciudad'])
+                        print(f"DEBUG - Ciudad asignada: {registro['ciudad']} (tipo: {type(registro['ciudad']).__name__})")
+                    
+                    # Depuración adicional
+                    print("\n=== DEBUG - Contenido de parametros_reporte ===")
+                    for key, value in st.session_state.parametros_reporte.items():
+                        print(f"{key}: {value} (tipo: {type(value).__name__})")
+                    print("===========================================\n")
+                        
+                    # Si el indicativo es SWR, mantener el estado y ciudad de SWL
+                    if indicativo != "SWR" and result["Zona"] == "Extranjera":
                         registro['estado'] = "Extranjero"
                         registro['zona'] = "EXT"
 
@@ -1247,7 +1278,15 @@ def show_toma_reportes():
                 return
                 
             # Crear DataFrame con los datos de los registros
-            df = pd.DataFrame(st.session_state.registros)
+            # Asegurarse de que los valores de estado sean cadenas
+            registros_para_df = []
+            for reg in st.session_state.registros:
+                reg_copy = reg.copy()
+                if 'estado' in reg_copy and reg_copy['estado'] is not None:
+                    reg_copy['estado'] = str(reg_copy['estado'])
+                registros_para_df.append(reg_copy)
+            
+            df = pd.DataFrame(registros_para_df)
 
             # Seleccionar y ordenar columnas para mostrar
             columnas_a_mostrar = ['indicativo', 'nombre_operador', 'estado', 'ciudad', 'zona', 'sistema', 'senal']
@@ -1261,9 +1300,22 @@ def show_toma_reportes():
             # Obtener opciones para los dropdowns
             estados_db = _get_estados_options()
             estados_options = [estado['estado'] for estado in estados_db]
-
+            
+            # Asegurarse de que el estado actual esté en las opciones
+            for registro in st.session_state.registros:
+                if 'estado' in registro and registro['estado'] and registro['estado'] not in estados_options:
+                    estados_options.append(registro['estado'])
+            
             zonas_db = _get_zonas_options()
             zonas_options = [zona['zona'] for zona in zonas_db]
+            
+            # Depuración: Mostrar los estados disponibles y los estados en los registros
+            print("\n=== DEBUG - Estados disponibles ===")
+            print(estados_options)
+            print("\n=== DEBUG - Estados en registros ===")
+            for reg in st.session_state.registros:
+                print(f"{reg.get('indicativo')}: {reg.get('estado')}")
+            print("==================================\n")
 
             # Mostrar la tabla editable con estilos
             st.markdown("###### ✏️ Tabla Editable - Corrige los datos antes de guardar")
@@ -1283,7 +1335,9 @@ def show_toma_reportes():
                     'Estado',
                     help="Estado donde reside",
                     options=estados_options,
-                    required=False
+                    required=False,
+                    default=None,  # Permitir valores que no estén en las opciones
+                    format_func=lambda x: str(x) if x is not None else ""  # Asegurar que el valor se muestre como cadena
                 ),
                 'ciudad': st.column_config.TextColumn(
                     'Ciudad',

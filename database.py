@@ -208,11 +208,15 @@ class FMREDatabase:
                 )
             ''')
             
-            # Verificar y agregar la columna 'origen' si no existe
+            # Verificar y agregar columnas adicionales si no existen
             cursor.execute("PRAGMA table_info(radioexperimentadores)")
             columns = [column[1] for column in cursor.fetchall()]
+            
             if 'origen' not in columns:
                 cursor.execute('ALTER TABLE radioexperimentadores ADD COLUMN origen TEXT')
+                
+            if 'tipo_ham' not in columns:
+                cursor.execute('ALTER TABLE radioexperimentadores ADD COLUMN tipo_ham TEXT')
             
             # Crear índices para búsquedas frecuentes
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_radioexperimentadores_indicativo ON radioexperimentadores(indicativo)')
@@ -838,18 +842,32 @@ class FMREDatabase:
             int: ID del registro creado, o None en caso de error
         """
         required_fields = ['indicativo', 'nombre_completo']
-        for field in required_fields:
-            if field not in data or not data[field]:
-                raise ValueError(f"El campo {field} es requerido")
-        
-        # Asegurar que el indicativo esté en mayúsculas
-        data['indicativo'] = data['indicativo'].upper()
+        if not all(field in data for field in required_fields):
+            print("Error: Faltan campos obligatorios")
+            return None
+            
+        # Asegurar que los campos opcionales tengan valores por defecto
+        defaults = {
+            'municipio': None,
+            'estado': None,
+            'pais': None,
+            'fecha_nacimiento': None,
+            'nacionalidad': None,
+            'genero': None,
+            'tipo_licencia': None,
+            'tipo_ham': None,
+            'fecha_expedicion': None,
+            'estatus': 'ACTIVO',
+            'observaciones': None,
+            'origen': None,
+            'activo': 1
+        }
         
         # Filtrar solo los campos que existen en la tabla
         campos_permitidos = [
             'indicativo', 'nombre_completo', 'municipio', 'estado', 'pais',
             'fecha_nacimiento', 'nacionalidad', 'genero', 'tipo_licencia',
-            'fecha_expedicion', 'estatus', 'observaciones', 'activo'
+            'tipo_ham', 'fecha_expedicion', 'estatus', 'observaciones', 'origen', 'activo'
         ]
         
         data_filtrado = {k: v for k, v in data.items() if k in campos_permitidos}
@@ -884,17 +902,13 @@ class FMREDatabase:
         Returns:
             bool: True si la actualización fue exitosa, False en caso contrario
         """
-        if not data:
-            return False
-            
-        # Filtrar solo los campos que existen en la tabla
-        campos_permitidos = [
+        allowed_fields = [
             'indicativo', 'nombre_completo', 'municipio', 'estado', 'pais',
             'fecha_nacimiento', 'nacionalidad', 'genero', 'tipo_licencia',
-            'fecha_expedicion', 'estatus', 'observaciones', 'activo', 'updated_at'
+            'tipo_ham', 'fecha_expedicion', 'estatus', 'observaciones', 'origen', 'activo'
         ]
         
-        data_filtrado = {k: v for k, v in data.items() if k in campos_permitidos}
+        data_filtrado = {k: v for k, v in data.items() if k in allowed_fields}
         
         if not data_filtrado:
             return False

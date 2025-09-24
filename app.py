@@ -732,10 +732,19 @@ def show_toma_reportes():
             if usuario and usuario.get('sistema_preferido') == 'HF':
                 hf_info = f" | 📻 HF: {usuario.get('frecuencia', '')} {usuario.get('modo', '')} {usuario.get('potencia', '')}"
 
+        # Obtener solo el nombre del estado sin la abreviatura
+        swl_estado_display = st.session_state.parametros_reporte['swl_estado']
+        if ' - ' in swl_estado_display:
+            swl_estado_display = swl_estado_display.split(' - ', 1)[1]
+            
         st.info(f"📅 **Fecha de Reporte:** {st.session_state.parametros_reporte['fecha_reporte']} | "
                 f"📋 **Tipo de Reporte:** {st.session_state.parametros_reporte['tipo_reporte']} | "
                 f"🖥️ **Sistema Preferido:** {st.session_state.parametros_reporte['sistema_preferido'] or 'Ninguno'} | "
-                f"📝 **Pre-Registros:** {st.session_state.parametros_reporte['pre_registro']}{hf_info}")
+                f"📝 **Pre-Registros:** {st.session_state.parametros_reporte['pre_registro']}{hf_info}"
+                f"📍 **SWL Estado:** {swl_estado_display} | "
+                f"🏙️ **SWL Ciudad:** {st.session_state.parametros_reporte['swl_ciudad']}"
+                )
+                
     
     # Formulario de parámetros de captura - Siempre expandido al inicio
     with st.expander("📋 Parámetros de Captura", expanded=st.session_state.expander_abierto):
@@ -790,7 +799,71 @@ def show_toma_reportes():
                 index=opciones_sistemas.index(sistema_default) if sistema_default in opciones_sistemas else 0,
                 help="Selecciona un sistema de la lista"
             )
+
+
+        # Obtener la lista de Estados para SWL
+            try:
+                # Obtener la lista de estados como diccionarios
+                estados = db.get_estados()
+                # Formatear como 'ABREVIATURA - ESTADO' para mejor visualización
+                opciones_estados = [""] + [str(e['estado']) for e in estados if e and 'estado' in e]
+                if not opciones_estados or opciones_estados == [""]:
+                    st.error("No se encontraron Estados configurados en la base de datos")
+                    opciones_estados = [""]
+            except Exception as e:
+                st.error(f"Error al cargar los Estados: {str(e)}")
+                opciones_estados = [""]
+
+            # Inicializar variables para los valores del usuario
+            usuario = None
+            swl_estado_guardado = ""
+            swl_ciudad_guardada = ""
             
+            # Obtener datos del usuario si está autenticado
+            if 'user' in st.session_state and st.session_state.user and 'id' in st.session_state.user:
+                usuario = db.get_user_by_id(st.session_state.user['id'])
+                
+                # Cargar estado SWL si existe
+                if usuario and 'swl_estado' in usuario and usuario['swl_estado'] is not None:
+                    estado_guardado = usuario['swl_estado']
+                    # Buscar coincidencia en la lista de estados
+                    for e in estados:
+                        if e.get('estado') == estado_guardado:
+                            swl_estado_guardado = f"{e.get('abreviatura', '')} - {e.get('estado', '')}"
+                            break
+                            
+                # Cargar ciudad SWL si existe
+                if usuario and 'swl_ciudad' in usuario and usuario['swl_ciudad'] is not None:
+                    # Obtener solo el nombre de la ciudad (sin el estado)
+                    ciudad_completa = usuario['swl_ciudad']
+                    if ' - ' in ciudad_completa:
+                        swl_ciudad_guardada = ciudad_completa.split(' - ')[1].strip()
+                    else:
+                        swl_ciudad_guardada = ciudad_completa
+
+            # Crear columnas para los campos SWL
+            col_swl1, col_swl2 = st.columns(2)
+            
+            with col_swl1:
+                # Mostrar el campo de estado SWL
+                swl_estado = st.selectbox(
+                    "SWL Estado",
+                    options=opciones_estados,
+                    index=opciones_estados.index(swl_estado_guardado) if swl_estado_guardado and swl_estado_guardado in opciones_estados else 0,
+                    help="Selecciona el estado donde se realiza la escucha"
+                )
+                # Obtener solo el nombre del estado seleccionado (sin la abreviatura)
+                estado_seleccionado = swl_estado.split(' - ', 1)[1] if swl_estado and ' - ' in swl_estado else swl_estado
+
+            with col_swl2:
+                # Mostrar el campo de ciudad SWL (solo el nombre de la ciudad)
+                swl_ciudad = st.text_input(
+                    "SWL Ciudad",
+                    value=swl_ciudad_guardada,
+                help="Ingresa la ciudad donde se realiza la escucha (solo el nombre de la ciudad)"
+            )
+
+
             # Campo Pre-registro con slider
             # Obtener el valor guardado del usuario o usar 1 como predeterminado
             pre_registro_guardado = 1
@@ -852,52 +925,7 @@ def show_toma_reportes():
 
                 st.markdown("---")
             
-            # Campos SWL
-            st.markdown("**📡 Datos de Escucha (SWL)**")
-            
-            # Obtener valores guardados del usuario si existen
-            swl_estado = ""
-            swl_ciudad = ""
-            if 'user' in st.session_state and st.session_state.user and 'id' in st.session_state.user:
-                usuario = db.get_user_by_id(st.session_state.user['id'])
-                if usuario:
-                    swl_estado = usuario.get('swl_estado', '')
-                    swl_ciudad = usuario.get('swl_ciudad', '')
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Obtener la lista de estados desde la base de datos
-                try:
-                    estados = db.get_estados()
-                    if not estados:
-                        st.error("No se encontraron estados en la base de datos")
-                        estados_nombres = ["Ninguno"]
-                    else:
-                        # Extraer solo los nombres de los estados
-                        estados_nombres = [e.get('estado') for e in estados if e.get('estado')]
-                except Exception as e:
-                    st.error(f"Error al cargar los estados: {str(e)}")
-                    estados_nombres = ["Ninguno"]
-                
-                # Agregar el estado actual si no está en la lista
-                if swl_estado and swl_estado not in estados_nombres:
-                    estados_nombres.append(swl_estado)
-                
-                swl_estado = st.selectbox(
-                    "Estado (SWL)*",
-                    options=estados_nombres,
-                    index=estados_nombres.index(swl_estado) if swl_estado and swl_estado in estados_nombres else 0,
-                    help="Selecciona el estado donde se realiza la escucha"
-                )
-            
-            with col2:
-                swl_ciudad = st.text_input(
-                    "Ciudad (SWL)",
-                    value=swl_ciudad,
-                    placeholder="Ej: Guadalajara",
-                    help="Ciudad donde se realiza la escucha"
-                )
+            # Sección de Datos de Escucha (SWL) eliminada
             
             st.markdown("---")
             
@@ -932,8 +960,8 @@ def show_toma_reportes():
                         modo=modo if sistema_preferido == 'HF' else None,
                         potencia=potencia if sistema_preferido == 'HF' else None,
                         pre_registro=pre_registro,
-                        swl_estado=swl_estado if 'swl_estado' in locals() else None,
-                        swl_ciudad=swl_ciudad if 'swl_ciudad' in locals() else None
+                        swl_estado=swl_estado,
+                        swl_ciudad=swl_ciudad
                     )
                     
                     # Guardar parámetros en la sesión
@@ -942,8 +970,8 @@ def show_toma_reportes():
                         'tipo_reporte': tipo_reporte,
                         'sistema_preferido': sistema_preferido,
                         'pre_registro': pre_registro,
-                        'swl_estado': swl_estado if 'swl_estado' in locals() else '',
-                        'swl_ciudad': swl_ciudad if 'swl_ciudad' in locals() else ''
+                        'swl_estado': swl_estado,
+                        'swl_ciudad': swl_ciudad
                     }
 
                     # Guardar parámetros HF si se seleccionó HF

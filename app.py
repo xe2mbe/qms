@@ -1306,7 +1306,7 @@ def show_toma_reportes():
                     st.markdown("---")
             
             # Botones de acción
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns([2, 1, 1])
 
             with col1:
                 # Botón para guardar en la base de datos
@@ -1362,6 +1362,23 @@ def show_toma_reportes():
 
                     except Exception as e:
                         st.error(f"❌ Error al guardar en la base de datos: {str(e)}")
+            
+            with col2:
+                # Botón para deshacer cambios
+                if st.session_state.get('registros_editados', False):
+                    if st.button("↩️ Deshacer Cambios", type="secondary", use_container_width=True):
+                        # Recargar los registros originales desde la sesión
+                        st.session_state.registros_editados = False
+                        st.success("✅ Cambios deshechos. Los datos originales han sido restaurados.")
+                        st.rerun()
+            
+            with col3:
+                # Botón para limpiar los registros
+                if st.button("🗑️ Limpiar registros", type="secondary", use_container_width=True):
+                    st.session_state.registros = []
+                    st.session_state.registros_editados = False
+                    st.session_state.expander_abierto = True  # Mostrar el formulario de nuevo
+                    st.rerun()
             
             # Mostrar estadísticas y reportes fuera del botón de guardar
             st.markdown("---")
@@ -1525,21 +1542,6 @@ def show_toma_reportes():
             else:
                 st.info("No hay reportes registrados para el día de hoy.")
             
-            with col2:
-                # Botón para deshacer cambios
-                if st.session_state.get('registros_editados', False):
-                    if st.button("↩️ Deshacer Cambios", type="secondary", use_container_width=True):
-                        # Recargar los registros originales desde la sesión
-                        st.session_state.registros_editados = False
-                        st.success("✅ Cambios deshechos. Los datos originales han sido restaurados.")
-                        st.rerun()
-
-                # Botón para limpiar los registros
-                if st.button("🗑️ Limpiar todos los registros", type="secondary", use_container_width=True):
-                    st.session_state.registros = []
-                    st.session_state.registros_editados = False
-                    st.session_state.expander_abierto = True  # Mostrar el formulario de nuevo
-                    st.rerun()
 
 
 @st.cache_data(ttl=300)  # Cache por 5 minutos

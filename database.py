@@ -159,7 +159,9 @@ class FMREDatabase:
                     frecuencia TEXT,
                     modo TEXT,
                     potencia TEXT,
-                    pre_registro INTEGER DEFAULT 0
+                    pre_registro INTEGER DEFAULT 0,
+                    swl_estado TEXT,
+                    swl_ciudad TEXT
                 )
             ''')
             
@@ -178,6 +180,10 @@ class FMREDatabase:
                 cursor.execute('ALTER TABLE users ADD COLUMN potencia TEXT')
             if 'pre_registro' not in columns:
                 cursor.execute('ALTER TABLE users ADD COLUMN pre_registro INTEGER DEFAULT 0')
+            if 'swl_estado' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN swl_estado TEXT')
+            if 'swl_ciudad' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN swl_ciudad TEXT')
                         
             # Tabla de Radioexperimentadores
             cursor.execute('''
@@ -534,7 +540,7 @@ class FMREDatabase:
                 conn.rollback()
                 raise
     
-    def update_user(self, user_id, username=None, full_name=None, email=None, phone=None, role=None, password=None, is_active=None, sistema_preferido=None, frecuencia=None, modo=None, potencia=None, pre_registro=None):
+    def update_user(self, user_id, username=None, full_name=None, email=None, phone=None, role=None, password=None, is_active=None, sistema_preferido=None, frecuencia=None, modo=None, potencia=None, pre_registro=None, swl_estado=None, swl_ciudad=None):
         """
         Actualiza los datos de un usuario existente
         
@@ -552,72 +558,70 @@ class FMREDatabase:
             modo: Modo preferido (opcional)
             potencia: Potencia preferida (opcional)
             pre_registro: Valor de pre-registro (opcional)
+            swl_estado: Estado del radioescucha (opcional)
+            swl_ciudad: Ciudad del radioescucha (opcional)
             
         Returns:
             bool: True si la actualización fue exitosa
         """
-        try:
-            with self.get_connection() as conn:
+        with self.get_connection() as conn:
+            try:
                 cursor = conn.cursor()
                 
-                # Construir la consulta dinámicamente basada en los parámetros proporcionados
+                # Construir la consulta de actualización dinámicamente
                 update_fields = []
                 params = []
                 
                 if username is not None:
                     update_fields.append("username = ?")
                     params.append(username)
-                    
                 if full_name is not None:
                     update_fields.append("full_name = ?")
                     params.append(full_name)
-                    
                 if email is not None:
                     update_fields.append("email = ?")
                     params.append(email)
-                    
                 if phone is not None:
                     update_fields.append("phone = ?")
                     params.append(phone)
-                    
                 if role is not None:
                     update_fields.append("role = ?")
                     params.append(role)
-                    
+                if password is not None:
+                    hashed_password = self._hash_password(password)
+                    update_fields.append("password_hash = ?")
+                    params.append(hashed_password)
                 if is_active is not None:
                     update_fields.append("is_active = ?")
                     params.append(1 if is_active else 0)
-                    
-                if password is not None:
-                    password_hash = self._hash_password(password)
-                    update_fields.append("password_hash = ?")
-                    params.append(password_hash)
-                    
                 if sistema_preferido is not None:
                     update_fields.append("sistema_preferido = ?")
                     params.append(sistema_preferido)
-                    
                 if frecuencia is not None:
                     update_fields.append("frecuencia = ?")
                     params.append(frecuencia)
-                    
                 if modo is not None:
                     update_fields.append("modo = ?")
                     params.append(modo)
-                    
                 if potencia is not None:
                     update_fields.append("potencia = ?")
                     params.append(potencia)
-                    
                 if pre_registro is not None:
                     update_fields.append("pre_registro = ?")
                     params.append(pre_registro)
+                if swl_estado is not None:
+                    update_fields.append("swl_estado = ?")
+                    params.append(swl_estado)
+                if swl_ciudad is not None:
+                    update_fields.append("swl_ciudad = ?")
+                    params.append(swl_ciudad)
                 
-                # Agregar siempre la actualización de updated_at
-                update_fields.append("updated_at = CURRENT_TIMESTAMP")
-                
+                # Si no hay campos para actualizar, retornar False
                 if not update_fields:
-                    return False  # No hay nada que actualizar
+                    return False
+                
+                # Agregar la fecha de actualización
+                update_fields.append("updated_at = CURRENT_TIMESTAMP")
                 
                 # Construir y ejecutar la consulta
                 query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
@@ -625,18 +629,18 @@ class FMREDatabase:
                 
                 cursor.execute(query, params)
                 conn.commit()
-                return cursor.rowcount > 0
+                return True
                 
-        except sqlite3.IntegrityError as e:
-            if 'UNIQUE constraint failed: users.username' in str(e):
-                raise ValueError(f"El nombre de usuario ya está en uso") from e
-            if 'UNIQUE constraint failed: users.email' in str(e):
-                raise ValueError(f"El correo electrónico ya está registrado") from e
-            raise
-        except Exception as e:
-            if conn:
+            except sqlite3.IntegrityError as e:
                 conn.rollback()
-            raise
+                if "UNIQUE constraint failed: users.username" in str(e):
+                    raise ValueError("El nombre de usuario ya está en uso")
+                elif "UNIQUE constraint failed: users.email" in str(e):
+                    raise ValueError("El correo electrónico ya está en uso")
+                raise
+            except Exception as e:
+                conn.rollback()
+                raise
     
     def get_user_by_id(self, user_id):
         """Obtiene un usuario por su ID"""

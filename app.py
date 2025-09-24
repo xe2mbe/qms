@@ -852,6 +852,55 @@ def show_toma_reportes():
 
                 st.markdown("---")
             
+            # Campos SWL
+            st.markdown("**📡 Datos de Escucha (SWL)**")
+            
+            # Obtener valores guardados del usuario si existen
+            swl_estado = ""
+            swl_ciudad = ""
+            if 'user' in st.session_state and st.session_state.user and 'id' in st.session_state.user:
+                usuario = db.get_user_by_id(st.session_state.user['id'])
+                if usuario:
+                    swl_estado = usuario.get('swl_estado', '')
+                    swl_ciudad = usuario.get('swl_ciudad', '')
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Obtener la lista de estados desde la base de datos
+                try:
+                    estados = db.get_estados()
+                    if not estados:
+                        st.error("No se encontraron estados en la base de datos")
+                        estados_nombres = ["Ninguno"]
+                    else:
+                        # Extraer solo los nombres de los estados
+                        estados_nombres = [e.get('estado') for e in estados if e.get('estado')]
+                except Exception as e:
+                    st.error(f"Error al cargar los estados: {str(e)}")
+                    estados_nombres = ["Ninguno"]
+                
+                # Agregar el estado actual si no está en la lista
+                if swl_estado and swl_estado not in estados_nombres:
+                    estados_nombres.append(swl_estado)
+                
+                swl_estado = st.selectbox(
+                    "Estado (SWL)*",
+                    options=estados_nombres,
+                    index=estados_nombres.index(swl_estado) if swl_estado and swl_estado in estados_nombres else 0,
+                    help="Selecciona el estado donde se realiza la escucha"
+                )
+            
+            with col2:
+                swl_ciudad = st.text_input(
+                    "Ciudad (SWL)",
+                    value=swl_ciudad,
+                    placeholder="Ej: Guadalajara",
+                    help="Ciudad donde se realiza la escucha"
+                )
+            
+            st.markdown("---")
+            
             # Botones del formulario centrados
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
@@ -882,7 +931,9 @@ def show_toma_reportes():
                         frecuencia=frecuencia if sistema_preferido == 'HF' else None,
                         modo=modo if sistema_preferido == 'HF' else None,
                         potencia=potencia if sistema_preferido == 'HF' else None,
-                        pre_registro=pre_registro
+                        pre_registro=pre_registro,
+                        swl_estado=swl_estado if 'swl_estado' in locals() else None,
+                        swl_ciudad=swl_ciudad if 'swl_ciudad' in locals() else None
                     )
                     
                     # Guardar parámetros en la sesión
@@ -890,7 +941,9 @@ def show_toma_reportes():
                         'fecha_reporte': fecha.strftime('%d/%m/%Y'),
                         'tipo_reporte': tipo_reporte,
                         'sistema_preferido': sistema_preferido,
-                        'pre_registro': pre_registro
+                        'pre_registro': pre_registro,
+                        'swl_estado': swl_estado if 'swl_estado' in locals() else '',
+                        'swl_ciudad': swl_ciudad if 'swl_ciudad' in locals() else ''
                     }
 
                     # Guardar parámetros HF si se seleccionó HF
@@ -2079,6 +2132,24 @@ def _mostrar_formulario_edicion(radio_id):
             
             observaciones = st.text_area("Observaciones", value=radio['observaciones'] or '')
             
+            # Sección de datos SWL
+            st.subheader("Datos SWL")
+            col_swl1, col_swl2 = st.columns(2)
+            
+            with col_swl1:
+                swl_estado = st.text_input(
+                    "Estado SWL",
+                    value=radio.get('swl_estado', ''),
+                    help="Estado para reportes SWL"
+                )
+                
+            with col_swl2:
+                swl_ciudad = st.text_input(
+                    "Ciudad SWL",
+                    value=radio.get('swl_ciudad', ''),
+                    help="Ciudad para reportes SWL"
+                )
+            
             # Botones de acción
             col1, col2, col3 = st.columns([1, 1, 2])
             
@@ -2107,6 +2178,8 @@ def _mostrar_formulario_edicion(radio_id):
                             'fecha_expedicion': fecha_exp.strftime('%Y-%m-%d') if fecha_exp else None,
                             'estatus': estatus.upper() if estatus else 'ACTIVO',  # Se mantiene en mayúsculas
                             'observaciones': observaciones,  # No se formatea para mantener el formato original
+                            'swl_estado': swl_estado.strip() if swl_estado else None,
+                            'swl_ciudad': swl_ciudad.strip() if swl_ciudad else None,
                             'activo': 1 if estatus == "ACTIVO" else 0
                         }
                         
@@ -2449,7 +2522,9 @@ def _show_crear_radioexperimentador():
             'genero': '',
             'tipo_licencia': '',
             'estatus': 'ACTIVO',
-            'observaciones': ''
+            'observaciones': '',
+            'swl_estado': '',
+            'swl_ciudad': ''
         }
     
     # Obtener referencias directas a los datos del formulario
@@ -2549,6 +2624,26 @@ def _show_crear_radioexperimentador():
             key='form_observaciones'
         )
         
+        # Campos SWL
+        st.subheader("Datos SWL")
+        col_swl1, col_swl2 = st.columns(2)
+        
+        with col_swl1:
+            form_data['swl_estado'] = st.text_input(
+                "Estado SWL",
+                value=form_data['swl_estado'],
+                key='form_swl_estado',
+                help="Estado para reportes SWL"
+            )
+            
+        with col_swl2:
+            form_data['swl_ciudad'] = st.text_input(
+                "Ciudad SWL",
+                value=form_data['swl_ciudad'],
+                key='form_swl_ciudad',
+                help="Ciudad para reportes SWL"
+            )
+        
         # Botones del formulario
         col_btn1, col_btn2, _ = st.columns([1, 1, 4])
         
@@ -2584,6 +2679,8 @@ def _show_crear_radioexperimentador():
                         'fecha_expedicion': form_data['fecha_exp'].strftime('%Y-%m-%d') if form_data['fecha_exp'] else None,
                         'estatus': form_data['estatus'].upper(),
                         'observaciones': form_data['observaciones'],
+                        'swl_estado': form_data['swl_estado'],
+                        'swl_ciudad': form_data['swl_ciudad'],
                         'activo': 1 if form_data['estatus'] == 'ACTIVO' else 0
                     }
                     

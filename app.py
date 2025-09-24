@@ -1803,23 +1803,26 @@ def show_lista_registros():
         key="busqueda_lista"
     )
 
-    # Botón de aplicar filtros
-    if st.button("🔍 Buscar Registros", type="primary", key="buscar_lista"):
-        st.session_state.registros_filtros.update({
-            'fecha_inicio': fecha_inicio,
-            'fecha_fin': fecha_fin,
-            'busqueda': busqueda
-        })
-        st.rerun()
+    # Botones de acción - disposición directa
+    col_buscar, col_limpiar, _ = st.columns([1, 1, 6])
 
-    # Botón de limpiar filtros
-    if st.button("🧹 Limpiar Filtros", key="limpiar_lista"):
-        st.session_state.registros_filtros = {
-            'fecha_inicio': None,
-            'fecha_fin': None,
-            'busqueda': ''
-        }
-        st.rerun()
+    with col_buscar:
+        if st.button("🔍 Buscar Registros", type="primary", key="buscar_lista"):
+            st.session_state.registros_filtros.update({
+                'fecha_inicio': fecha_inicio,
+                'fecha_fin': fecha_fin,
+                'busqueda': busqueda
+            })
+            st.rerun()
+
+    with col_limpiar:
+        if st.button("🧹 Limpiar Filtros", key="limpiar_lista"):
+            st.session_state.registros_filtros = {
+                'fecha_inicio': None,
+                'fecha_fin': None,
+                'busqueda': ''
+            }
+            st.rerun()
 
     # Obtener registros con filtros aplicados
     try:
@@ -1971,78 +1974,172 @@ def show_editar_registros():
 
         st.caption(f"Mostrando {len(registros)} de {total_registros} registros")
 
+        # Inicializar variables de sesión para selección masiva si no existen
+        if 'registros_seleccionados' not in st.session_state:
+            st.session_state.registros_seleccionados = set()
+        if 'eliminando_masivo' not in st.session_state:
+            st.session_state.eliminando_masivo = False
+
         if registros:
+            # Controles de selección masiva
+            col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+
+            with col1:
+                # Checkbox maestro para seleccionar/deseleccionar todos
+                seleccionar_todos = st.checkbox(
+                    "Seleccionar Todos",
+                    value=len(st.session_state.registros_seleccionados) == len(registros),
+                    key="select_all"
+                )
+
+                # Lógica para manejar el checkbox maestro
+                if seleccionar_todos:
+                    # Agregar todos los IDs si no están seleccionados
+                    for registro in registros:
+                        st.session_state.registros_seleccionados.add(registro['id'])
+                else:
+                    # Limpiar todos los IDs seleccionados
+                    st.session_state.registros_seleccionados.clear()
+
+            with col2:
+                if st.button("🧹 Limpiar Selección", key="clear_selection"):
+                    st.session_state.registros_seleccionados.clear()
+                    st.rerun()
+
+            with col3:
+                if st.button("🗑️ Eliminar Seleccionados",
+                            type="primary" if st.session_state.registros_seleccionados else "secondary",
+                            disabled=len(st.session_state.registros_seleccionados) == 0,
+                            key="delete_selected"):
+                    st.session_state.eliminando_masivo = True
+                    st.rerun()
+
+            with col4:
+                # Mostrar contador de seleccionados
+                if st.session_state.registros_seleccionados:
+                    st.caption(f"✅ {len(st.session_state.registros_seleccionados)} registros seleccionados")
+
+            # Confirmación de eliminación masiva
+            if st.session_state.eliminando_masivo:
+                st.warning(f"¿Estás seguro de que quieres eliminar {len(st.session_state.registros_seleccionados)} registros? Esta acción no se puede deshacer.")
+
+                col_conf1, col_conf2 = st.columns(2)
+
+                with col_conf1:
+                    if st.button("✅ Confirmar Eliminación Masiva", type="primary", key="confirm_bulk_delete"):
+                        try:
+                            registros_eliminados = 0
+                            for registro_id in st.session_state.registros_seleccionados:
+                                if db.delete_reporte(registro_id):
+                                    registros_eliminados += 1
+
+                            if registros_eliminados > 0:
+                                st.success(f"✅ {registros_eliminados} registros eliminados correctamente")
+                                st.session_state.registros_seleccionados.clear()
+                                st.session_state.eliminando_masivo = False
+                                time.sleep(2)
+                                st.rerun()
+                            else:
+                                st.error("No se pudo eliminar ningún registro")
+                        except Exception as e:
+                            st.error(f"Error al eliminar registros: {str(e)}")
+
+                with col_conf2:
+                    if st.button("❌ Cancelar", key="cancel_bulk_delete"):
+                        st.session_state.eliminando_masivo = False
+                        st.rerun()
+
             # Mostrar registros en formato expandible
             for registro in registros:
                 # Determinar si estamos editando este registro
                 is_editing = st.session_state.get(f'editing_registro_{registro["id"]}', False)
 
-                with st.expander(
-                    f"{'✅' if registro.get('activo', 1) == 1 else '⏸️'} {registro['indicativo']} - {registro['nombre'] or 'Sin nombre'}",
-                    expanded=is_editing
-                ):
-                    if not is_editing:
-                        # Vista normal del registro
-                        col1, col2 = st.columns(2)
+                # Checkbox para seleccionar individualmente
+                col_checkbox, col_expander = st.columns([0.5, 9.5])
 
-                        with col1:
-                            st.write(f"**Indicativo:** {registro['indicativo']}")
-                            st.write(f"**Nombre:** {registro['nombre'] or 'Sin nombre'}")
-                            st.write(f"**Sistema:** {registro['sistema']}")
-                            st.write(f"**Zona:** {registro['zona']}")
-                            st.write(f"**Estado:** {registro['estado']}")
+                with col_checkbox:
+                    # Mantener el estado del checkbox sincronizado con la selección
+                    is_selected = registro['id'] in st.session_state.registros_seleccionados
+                    checkbox_value = st.checkbox(
+                        "Seleccionar",
+                        value=is_selected,
+                        key=f"select_registro_{registro['id']}",
+                        label_visibility="collapsed"
+                    )
 
-                        with col2:
-                            st.write(f"**Ciudad:** {registro['ciudad']}")
-                            st.write(f"**Señal:** {registro['senal']}")
-                            st.write(f"**Tipo:** {registro['tipo_reporte']}")
-                            st.write(f"**Fecha:** {registro['fecha_reporte']}")
+                    # Actualizar la selección cuando cambia el checkbox
+                    if checkbox_value:
+                        st.session_state.registros_seleccionados.add(registro['id'])
+                    else:
+                        st.session_state.registros_seleccionados.discard(registro['id'])
 
-                            # Mostrar observaciones si existen
-                            if registro.get('observaciones'):
-                                st.write("**Observaciones:**")
-                                st.text(registro['observaciones'])
+                with col_expander:
+                    with st.expander(
+                        f"{'✅' if registro.get('activo', 1) == 1 else '⏸️'} {registro['indicativo']} - {registro['nombre'] or 'Sin nombre'}",
+                        expanded=is_editing
+                    ):
+                        if not is_editing:
+                            # Vista normal del registro
+                            col1, col2 = st.columns(2)
 
-                        # Botones de acción
-                        col_btn1, col_btn2, col_btn3 = st.columns(3)
+                            with col1:
+                                st.write(f"**Indicativo:** {registro['indicativo']}")
+                                st.write(f"**Nombre:** {registro['nombre'] or 'Sin nombre'}")
+                                st.write(f"**Sistema:** {registro['sistema']}")
+                                st.write(f"**Zona:** {registro['zona']}")
+                                st.write(f"**Estado:** {registro['estado']}")
 
-                        with col_btn1:
-                            if st.button(f"✏️ Editar", key=f"edit_registro_{registro['id']}"):
-                                st.session_state.editando_registro_id = registro['id']
-                                st.rerun()
+                            with col2:
+                                st.write(f"**Ciudad:** {registro['ciudad']}")
+                                st.write(f"**Señal:** {registro['senal']}")
+                                st.write(f"**Tipo:** {registro['tipo_reporte']}")
+                                st.write(f"**Fecha:** {registro['fecha_reporte']}")
 
-                        with col_btn2:
-                            if st.button(f"🗑️ Eliminar", key=f"delete_registro_{registro['id']}"):
-                                st.session_state.eliminando_registro_id = registro['id']
-                                st.rerun()
+                                # Mostrar observaciones si existen
+                                if registro.get('observaciones'):
+                                    st.write("**Observaciones:**")
+                                    st.text(registro['observaciones'])
 
-                        # Mostrar confirmación de eliminación si corresponde
-                        if st.session_state.get('eliminando_registro_id') == registro['id']:
-                            st.warning("¿Estás seguro de que quieres eliminar este registro? Esta acción no se puede deshacer.")
+                            # Botones de acción
+                            col_btn1, col_btn2, col_btn3 = st.columns(3)
 
-                            col_conf1, col_conf2 = st.columns(2)
-
-                            with col_conf1:
-                                if st.button("✅ Confirmar eliminación", type="primary", key=f"confirm_delete_{registro['id']}"):
-                                    try:
-                                        if db.delete_reporte(registro['id']):
-                                            st.success("Registro eliminado correctamente")
-                                            time.sleep(2)
-                                            del st.session_state.eliminando_registro_id
-                                            st.rerun()
-                                        else:
-                                            st.error("No se pudo eliminar el registro")
-                                    except Exception as e:
-                                        st.error(f"Error al eliminar: {str(e)}")
-
-                            with col_conf2:
-                                if st.button("❌ Cancelar", key=f"cancel_delete_{registro['id']}"):
-                                    del st.session_state.eliminando_registro_id
+                            with col_btn1:
+                                if st.button(f"✏️ Editar", key=f"edit_registro_{registro['id']}"):
+                                    st.session_state.editando_registro_id = registro['id']
                                     st.rerun()
 
-                    else:
-                        # Vista de edición - mostrar formulario
-                        _mostrar_formulario_edicion_registro(registro['id'])
+                            with col_btn2:
+                                if st.button(f"🗑️ Eliminar", key=f"delete_registro_{registro['id']}"):
+                                    st.session_state.eliminando_registro_id = registro['id']
+                                    st.rerun()
+
+                            # Mostrar confirmación de eliminación si corresponde
+                            if st.session_state.get('eliminando_registro_id') == registro['id']:
+                                st.warning("¿Estás seguro de que quieres eliminar este registro? Esta acción no se puede deshacer.")
+
+                                col_conf1, col_conf2 = st.columns(2)
+
+                                with col_conf1:
+                                    if st.button("✅ Confirmar eliminación", type="primary", key=f"confirm_delete_{registro['id']}"):
+                                        try:
+                                            if db.delete_reporte(registro['id']):
+                                                st.success("Registro eliminado correctamente")
+                                                time.sleep(2)
+                                                del st.session_state.eliminando_registro_id
+                                                st.rerun()
+                                            else:
+                                                st.error("No se pudo eliminar el registro")
+                                        except Exception as e:
+                                            st.error(f"Error al eliminar: {str(e)}")
+
+                                with col_conf2:
+                                    if st.button("❌ Cancelar", key=f"cancel_delete_{registro['id']}"):
+                                        del st.session_state.eliminando_registro_id
+                                        st.rerun()
+
+                        else:
+                            # Vista de edición - mostrar formulario
+                            _mostrar_formulario_edicion_registro(registro['id'])
 
         else:
             st.info("No se encontraron registros con los filtros aplicados")

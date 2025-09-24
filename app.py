@@ -1264,7 +1264,7 @@ def show_toma_reportes():
             if not edited_df.equals(df):
                 # Actualizar los registros en la sesión con los cambios
                 st.session_state.registros_editados = True
-                st.success("✅ Tabla editada. Haz clic en '💾 Guardar en Base de Datos' para aplicar los cambios.")
+                #st.success("✅ Tabla editada. Haz clic en '💾 Guardar en Base de Datos' para aplicar los cambios.")
 
                 # Actualizar los registros con los datos editados
                 for i, registro_editado in enumerate(edited_df.to_dict('records')):
@@ -1372,26 +1372,122 @@ def show_toma_reportes():
             # Obtener reportes del día
             reportes, estadisticas = db.get_reportes_por_fecha(fecha_actual)
             
-            # Mostrar estadísticas en columnas
             st.subheader("📊 Estadísticas del Día")
             
             if estadisticas:
+                # Crear una fila con 4 columnas iguales
                 col1, col2, col3, col4 = st.columns(4)
                 
-                with col1:
-                    st.metric("📋 Total de Reportes", estadisticas.get('total', 0))
+                # Función para crear una tarjeta de estadística
+                def crear_tarjeta(column, titulo, valor=None, subtitulos=None):
+                    with column:
+                        # Crear el contenedor principal con st.container()
+                        with st.container():
+                            # Usar st.markdown para el título
+                            st.markdown(f"""
+                                <div style="
+                                    font-size: 0.9rem;
+                                    color: #2e7d32;
+                                    font-weight: 600;
+                                    margin-bottom: 10px;
+                                    white-space: nowrap;
+                                    overflow: hidden;
+                                    text-overflow: ellipsis;
+                                ">{titulo}</div>
+                            """, unsafe_allow_html=True)
+                            
+                            # Mostrar el valor si existe
+                            if valor is not None and valor != "":
+                                st.markdown(f"""
+                                    <div style="
+                                        font-size: 1.8rem;
+                                        font-weight: 700;
+                                        color: #1b5e20;
+                                        margin-bottom: 10px;
+                                        text-align: center;
+                                        background-color: #e8f5e9;
+                                        border-radius: 4px;
+                                        padding: 10px 0;
+                                        min-height: 60px;
+                                        display: flex;
+                                        align-items: center;
+                                        justify-content: center;
+                                    ">{valor}</div>
+                                """, unsafe_allow_html=True)
+                            
+                            # Mostrar subtítulos si existen
+                            if subtitulos:
+                                for item in subtitulos:
+                                    if isinstance(item, dict):
+                                        nombre = item.get('nombre', '')
+                                        cantidad = item.get('cantidad', '')
+                                    else:
+                                        nombre = item
+                                        cantidad = ''
+                                    
+                                    st.markdown(f"""
+                                        <div style="
+                                            font-size: 0.75rem;
+                                            color: #4caf50;
+                                            margin: 5px 0;
+                                            display: flex;
+                                            justify-content: space-between;
+                                            align-items: center;
+                                        ">
+                                            <span>{nombre}</span>
+                                            {'<span style="background-color: #e8f5e9; border-radius: 10px; padding: 0 6px; font-weight: 600; font-size: 0.7rem;">' + str(cantidad) + '</span>' if cantidad else ''}
+                                        </div>
+                                    """, unsafe_allow_html=True)
+                            
+                            # Estilo del contenedor
+                            st.markdown("""
+                                <style>
+                                    div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column"] > div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"] {
+                                        background-color: #f0f9f0;
+                                        border-radius: 8px;
+                                        padding: 15px;
+                                        border-left: 4px solid #2e7d32;
+                                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                                        height: 100%;
+                                        display: flex;
+                                        flex-direction: column;
+                                    }
+                                </style>
+                            """, unsafe_allow_html=True)
                 
-                with col2:
-                    zonas = ", ".join([f"{z['zona']} ({z['cantidad']})" for z in estadisticas.get('zonas_mas_reportadas', [])])
-                    st.metric("📍 Zonas más reportadas", zonas if zonas else "Sin datos")
+                # Tarjeta de Total de Reportes
+                crear_tarjeta(
+                    column=col1,
+                    titulo="📋 Total de Reportes",
+                    valor=str(estadisticas.get('total', 0))
+                )
                 
-                with col3:
-                    sistemas = ", ".join([f"{s['sistema']} ({s['cantidad']})" for s in estadisticas.get('sistemas_mas_utilizados', [])])
-                    st.metric("📡 Sistemas más usados", sistemas if sistemas else "Sin datos")
+                # Tarjeta de Zonas más reportadas
+                zonas = [{'nombre': z['zona'], 'cantidad': str(z['cantidad'])} 
+                        for z in estadisticas.get('zonas_mas_reportadas', [])[:3]]
+                crear_tarjeta(
+                    column=col2,
+                    titulo="📍 Zonas más reportadas",
+                    subtitulos=zonas if zonas else [{'nombre': 'Sin datos', 'cantidad': ''}]
+                )
                 
-                with col4:
-                    estados = ", ".join([f"{e['estado']} ({e['cantidad']})" for e in estadisticas.get('estados_mas_reportados', [])])
-                    st.metric("🏙️ Estados más reportados", estados if estados else "Sin datos")
+                # Tarjeta de Sistemas más usados
+                sistemas = [{'nombre': s['sistema'], 'cantidad': str(s['cantidad'])} 
+                          for s in estadisticas.get('sistemas_mas_utilizados', [])[:3]]
+                crear_tarjeta(
+                    column=col3,
+                    titulo="📡 Sistemas más usados",
+                    subtitulos=sistemas if sistemas else [{'nombre': 'Sin datos', 'cantidad': ''}]
+                )
+                
+                # Tarjeta de Estados más reportados
+                estados = [{'nombre': e['estado'], 'cantidad': str(e['cantidad'])} 
+                         for e in estadisticas.get('estados_mas_reportados', [])[:3]]
+                crear_tarjeta(
+                    column=col4,
+                    titulo="🏙️ Estados más reportados",
+                    subtitulos=estados if estados else [{'nombre': 'Sin datos', 'cantidad': ''}]
+                )
             
             # Mostrar tabla de reportes del día
             st.markdown("---")

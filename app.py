@@ -2270,66 +2270,127 @@ def show_toma_reportes():
     # Siempre se muestran cuando ya cerraste el expander,
     # aunque no haya registros en edición.
     # ==========================
+        # ==========================
+    # Estadísticas + Tabla del día (versión original con estilo)
+    # ==========================
     if st.session_state.parametros_reporte:
         st.markdown("---")
-        st.subheader("📊 Estadísticas del Día")
+
+        # Obtener la fecha de los parámetros de captura
+        fecha_reporte = st.session_state.parametros_reporte.get('fecha_reporte')
 
         try:
-            fecha_consulta = _get_fecha_consulta_from_parametros()
+            from datetime import datetime
+            fecha_dt = datetime.strptime(fecha_reporte, '%d/%m/%Y')
+            fecha_consulta = fecha_dt.strftime('%Y-%m-%d')
             reportes, estadisticas = db.get_reportes_por_fecha(fecha_consulta)
-        except Exception:
+            st.caption(f"📅 Mostrando reportes del: {fecha_reporte}")
+        except (ValueError, TypeError):
+            st.error("❌ Error en el formato de la fecha. Asegúrate de usar el formato DD/MM/YYYY")
             reportes, estadisticas = [], {}
 
-        st.caption(f"📅 Mostrando reportes del: {st.session_state.parametros_reporte.get('fecha_reporte','')}")
+        st.subheader("📊 Estadísticas del Día")
 
-        # Tarjetas simples
         if estadisticas:
             col1, col2, col3, col4 = st.columns(4)
-            col1.metric("📋 Total", estadisticas.get("total", 0))
-            try:
-                zonas_top = ", ".join([z["zona"] for z in estadisticas.get("zonas_mas_reportadas", [])[:3]])
-            except Exception:
-                zonas_top = ""
-            try:
-                sist_top = ", ".join([s["sistema"] for s in estadisticas.get("sistemas_mas_utilizados", [])[:3]])
-            except Exception:
-                sist_top = ""
-            try:
-                est_top = ", ".join([e["estado"] for e in estadisticas.get("estados_mas_reportados", [])[:3]])
-            except Exception:
-                est_top = ""
-            col2.metric("📍 Zonas", zonas_top or "—")
-            col3.metric("📡 Sistemas", sist_top or "—")
-            col4.metric("🏙️ Estados", est_top or "—")
-        else:
-            st.info("No hay estadísticas disponibles para la fecha seleccionada.")
 
-        # Tabla del día (histórico)
-        st.markdown("#### 📄 Registros del día")
+            def crear_tarjeta(column, titulo, valor=None, subtitulos=None):
+                with column:
+                    with st.container():
+                        st.markdown(f"""
+                            <div style="
+                                font-size: 0.9rem;
+                                color: #2e7d32;
+                                font-weight: 600;
+                                margin-bottom: 10px;
+                                white-space: nowrap;
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                            ">{titulo}</div>
+                        """, unsafe_allow_html=True)
+
+                        if valor is not None and valor != "":
+                            st.markdown(f"""
+                                <div style="
+                                    font-size: 1.8rem;
+                                    font-weight: 700;
+                                    color: #1b5e20;
+                                    margin-bottom: 10px;
+                                    text-align: center;
+                                    background-color: #e8f5e9;
+                                    border-radius: 4px;
+                                    padding: 10px 0;
+                                    min-height: 60px;
+                                    display: flex;
+                                    align-items: center;
+                                    justify-content: center;
+                                ">{valor}</div>
+                            """, unsafe_allow_html=True)
+
+                        if subtitulos:
+                            for item in subtitulos:
+                                nombre = item.get('nombre','')
+                                cantidad = str(item.get('cantidad',''))
+                                st.markdown(f"""
+                                    <div style="
+                                        font-size: 0.75rem;
+                                        color: #4caf50;
+                                        margin: 5px 0;
+                                        display: flex;
+                                        justify-content: space-between;
+                                        align-items: center;
+                                    ">
+                                        <span>{nombre}</span>
+                                        {'<span style="background-color: #e8f5e9; border-radius: 10px; padding: 0 6px; font-weight: 600; font-size: 0.7rem;">' + cantidad + '</span>' if cantidad else ''}
+                                    </div>
+                                """, unsafe_allow_html=True)
+
+                        st.markdown("""
+                            <style>
+                                div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column"] > div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"] {
+                                    background-color: #f0f9f0;
+                                    border-radius: 8px;
+                                    padding: 15px;
+                                    border-left: 4px solid #2e7d32;
+                                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                                    height: 100%;
+                                    display: flex;
+                                    flex-direction: column;
+                                }
+                            </style>
+                        """, unsafe_allow_html=True)
+
+            crear_tarjeta(col1, "📋 Total de Reportes", str(estadisticas.get('total', 0)))
+            zonas = [{'nombre': z['zona'], 'cantidad': str(z['cantidad'])} for z in estadisticas.get('zonas_mas_reportadas', [])[:3]]
+            crear_tarjeta(col2, "📍 Zonas más reportadas", subtitulos=zonas if zonas else [{'nombre':'Sin datos'}])
+            sistemas = [{'nombre': s['sistema'], 'cantidad': str(s['cantidad'])} for s in estadisticas.get('sistemas_mas_utilizados', [])[:3]]
+            crear_tarjeta(col3, "📡 Sistemas más usados", subtitulos=sistemas if sistemas else [{'nombre':'Sin datos'}])
+            estados = [{'nombre': e['estado'], 'cantidad': str(e['cantidad'])} for e in estadisticas.get('estados_mas_reportados', [])[:3]]
+            crear_tarjeta(col4, "🏙️ Estados más reportados", subtitulos=estados if estados else [{'nombre':'Sin datos'}])
+
+        # Tabla de reportes del día
         if reportes:
-            def _format_time(dt_str):
-                if not dt_str:
-                    return ""
+            import pandas as pd
+            def format_time(dt_str):
+                if not dt_str: return ''
                 for fmt in ('%Y-%m-%d %H:%M:%S','%d/%m/%Y %H:%M:%S'):
-                    try:
-                        return datetime.strptime(dt_str, fmt).strftime('%H:%M')
-                    except ValueError:
-                        continue
-                return ""
+                    try: return datetime.strptime(dt_str, fmt).strftime('%H:%M')
+                    except ValueError: continue
+                return ''
 
-            df_day = pd.DataFrame([{
-                'Indicativo': _safe_str(r.get('indicativo')),
-                'Nombre': _safe_str(r.get('nombre')),
-                'Sistema': _safe_str(r.get('sistema')),
-                'Zona': _safe_str(r.get('zona')),
-                'Estado': _safe_str(r.get('estado')),
-                'Ciudad': _safe_str(r.get('ciudad')),
-                'Señal': int(r.get('senal') or 59) if str(r.get('senal','')).isdigit() else _safe_str(r.get('senal')),
-                'Hora': _format_time(r.get('fecha_reporte')),
-            } for r in reportes]).fillna("")
+            df_reportes = pd.DataFrame([{
+                'Indicativo': r.get('indicativo',''),
+                'Nombre': r.get('nombre',''),
+                'Sistema': r.get('sistema',''),
+                'Zona': r.get('zona',''),
+                'Estado': r.get('estado',''),
+                'Ciudad': r.get('ciudad',''),
+                'Señal': r.get('senal',''),
+                'Hora': format_time(r.get('fecha_reporte'))
+            } for r in reportes])
 
             st.data_editor(
-                df_day,
+                df_reportes,
                 column_config={
                     'Indicativo': st.column_config.TextColumn("Indicativo"),
                     'Nombre': st.column_config.TextColumn("Nombre"),
@@ -2338,15 +2399,13 @@ def show_toma_reportes():
                     'Estado': st.column_config.TextColumn("Estado"),
                     'Ciudad': st.column_config.TextColumn("Ciudad"),
                     'Señal': st.column_config.NumberColumn("Señal"),
-                    'Hora': st.column_config.TextColumn("Hora"),
+                    'Hora': st.column_config.TextColumn("Hora")
                 },
                 hide_index=True,
-                use_container_width=True,
-                disabled=True
+                use_container_width=True
             )
         else:
-            st.info("No hay reportes registrados para la fecha seleccionada.")
-
+            st.info("No hay reportes registrados para el día de hoy.")
 
 
 def show_registros():

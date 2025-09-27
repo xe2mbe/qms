@@ -12,6 +12,7 @@ from auth import AuthManager
 from email_sender import EmailSender
 import utils
 import re
+import uuid
 
 # Inicializar la base de datos y autenticación
 db = FMREDatabase()
@@ -689,1061 +690,1663 @@ def show_settings():
         st.write("Configuración general del sistema.")
         # Aquí puedes agregar más opciones de configuración en el futuro
 
+# def show_toma_reportes():
+#     """Muestra la sección de Toma de Reportes"""
+#     st.title("📝 Toma de Reportes")
+#     st.markdown("### Registro de Reportes")
+    
+#     st.markdown("""
+#     <div style="background-color: #f0f8ff; padding: 15px; border-radius: 10px; border-left: 4px solid #1f77b4; margin-bottom: 20px;">
+#         <h4 style="color: #1f77b4; margin-top: 0;">📋 Configuración de Parámetros</h4>
+#         <p style="margin-bottom: 10px;">
+#             <strong>Selecciona los parámetros iniciales</strong> para la generación de reportes. 
+#             Estos valores se utilizarán como <strong>configuración predeterminada</strong> en todos tus registros.
+#         </p>
+#         <p style="margin-bottom: 5px;">
+#             <strong>📅 Fecha del Reporte:</strong> Establece la fecha para el reporte actual. 
+#             Por defecto se muestra la fecha del sistema.
+#         </p>
+#         <p style="margin-bottom: 0;">
+#             <strong>📋 Tipo de Boletín:</strong> Selecciona el tipo de boletín para clasificar 
+#             tu reporte. Las opciones disponibles se cargan automáticamente 
+#             desde la configuración del sistema.
+#         </p>
+#     </div>
+#     """, unsafe_allow_html=True)
+#     st.write("📦 Contenido de session_state: Anterior a Parametros")
+#     st.json(st.session_state)
+
+#     # Inicializar el estado del expander y parámetros si no existen
+
+#     st.session_state.expander1_abierto = True
+#     if 'expander_abierto' not in st.session_state:
+#         st.session_state.expander_abierto = True  # Siempre inicia expandido
+#     if 'parametros_reporte' not in st.session_state:
+#         st.session_state.parametros_reporte = {}  
+#     st.write("📦 Contenido de session_state: Posterior a Parametros")
+#     st.json(st.session_state)
+    
+#     # Resetear el estado del expander si se recarga la página
+#     if 'just_saved' in st.session_state and st.session_state.just_saved:
+#         st.session_state.expander_abierto = False
+#         st.session_state.just_saved = False
+    
+#     # Mostrar parámetros guardados si existen
+#     if st.session_state.parametros_reporte:
+#         # Obtener información adicional de HF si existe
+#         hf_info = ""
+#         if 'user' in st.session_state and st.session_state.user:
+#             usuario = db.get_user_by_id(st.session_state.user['id'])
+#             if usuario and usuario.get('sistema_preferido') == 'HF':
+#                 hf_info = f" | 📻 HF: {usuario.get('frecuencia', '')} {usuario.get('modo', '')} {usuario.get('potencia', '')}"
+
+#         # Obtener solo el nombre del estado sin la abreviatura
+#         swl_estado_display = st.session_state.parametros_reporte['swl_estado']
+#         if ' - ' in swl_estado_display:
+#             swl_estado_display = swl_estado_display.split(' - ', 1)[1]
+            
+#         st.info(f"📅 **Fecha de Reporte:** {st.session_state.parametros_reporte['fecha_reporte']} | "
+#                 f"📋 **Tipo de Reporte:** {st.session_state.parametros_reporte['tipo_reporte']} | "
+#                 f"🖥️ **Sistema Preferido:** {st.session_state.parametros_reporte['sistema_preferido'] or 'Ninguno'} | "
+#                 f"📝 **Pre-Registros:** {st.session_state.parametros_reporte['pre_registro']}{hf_info}"
+#                 f"📍 **SWL Estado:** {swl_estado_display} | "
+#                 f"🏙️ **SWL Ciudad:** {st.session_state.parametros_reporte['swl_ciudad']}"
+#                 )
+                
+    
+#     # Formulario de parámetros de captura - Siempre expandido al inicio
+#     with st.expander("📋 Parámetros de Captura", expanded=st.session_state.expander_abierto):
+#         with st.form("reporte_form"):
+#             # Campos del formulario en el orden solicitado
+#             from time_utils import get_current_cdmx_time
+#             fecha_actual = get_current_cdmx_time().date()
+#             fecha = st.date_input("Fecha de Reporte", fecha_actual)
+            
+#             # Mostrar advertencia si la fecha no es la actual
+#             if fecha != fecha_actual:
+#                 st.warning("⚠️ Los reportes se están capturando con fecha distinta a la actual y así serán guardados.")
+            
+#             # Obtener la lista de eventos activos
+#             try:
+#                 eventos = db.get_all_eventos()
+#                 opciones_eventos = [e['tipo'] for e in eventos]
+#                 if not opciones_eventos:
+#                     opciones_eventos = ["No hay eventos configurados"]  # Valor por defecto si no hay eventos
+#                     st.warning("No se encontraron tipos de eventos configurados")
+#             except Exception as e:
+#                 st.error(f"Error al cargar los tipos de eventos: {str(e)}")
+#                 opciones_eventos = ["Boletín"]  # Valor por defecto en caso de error
+                
+#             tipo_reporte = st.selectbox(
+#                 "Tipo de Reporte",
+#                 opciones_eventos,
+#                 index=0
+#             )
+            
+#             # Obtener la lista de sistemas para el selectbox
+#             try:
+#                 sistemas_dict = db.get_sistemas()
+#                 opciones_sistemas = sorted(list(sistemas_dict.keys()))  # Ordenar alfabéticamente
+#                 if not opciones_sistemas:
+#                     st.error("No se encontraron sistemas configurados en la base de datos")
+#                     opciones_sistemas = ["ASL"]
+#             except Exception as e:
+#                 st.error(f"Error al cargar los sistemas: {str(e)}")
+#                 opciones_sistemas = ["ASL"] # Valor por defecto en caso de error
+            
+#             # Obtener el sistema actual del usuario si existe
+#             sistema_actual = None
+#             if 'user' in st.session_state and 'sistema_preferido' in st.session_state.user:
+#                 sistema_actual = st.session_state.user['sistema_preferido']
+            
+#             # Si no hay sistema actual, usar 'ASL' como predeterminado
+#             sistema_default = sistema_actual if sistema_actual in opciones_sistemas else (opciones_sistemas[0] if opciones_sistemas else "ASL")
+                
+#             sistema_preferido = st.selectbox(
+#                 "Sistema Preferido *",
+#                 opciones_sistemas,
+#                 index=opciones_sistemas.index(sistema_default) if sistema_default in opciones_sistemas else 0,
+#                 help="Selecciona un sistema de la lista"
+#             )
+
+
+#         # Obtener la lista de Estados para SWL
+#             try:
+#                 # Obtener la lista de estados como diccionarios
+#                 estados = db.get_estados()
+#                 # Formatear como 'ABREVIATURA - ESTADO' para mejor visualización
+#                 opciones_estados = [""] + [str(e['estado']) for e in estados if e and 'estado' in e]
+#                 if not opciones_estados or opciones_estados == [""]:
+#                     st.error("No se encontraron Estados configurados en la base de datos")
+#                     opciones_estados = [""]
+#             except Exception as e:
+#                 st.error(f"Error al cargar los Estados: {str(e)}")
+#                 opciones_estados = [""]
+
+#             # Inicializar variables para los valores del usuario
+#             usuario = None
+#             swl_estado_guardado = ""
+#             swl_ciudad_guardada = ""
+            
+#             # Obtener datos del usuario si está autenticado
+#             if 'user' in st.session_state and st.session_state.user and 'id' in st.session_state.user:
+#                 usuario = db.get_user_by_id(st.session_state.user['id'])
+                
+#                 # Cargar estado SWL si existe
+#                 if usuario and 'swl_estado' in usuario and usuario['swl_estado'] is not None:
+#                     estado_guardado = usuario['swl_estado']
+#                     # Buscar coincidencia exacta en la lista de estados
+#                     for e in estados:
+#                         if e and 'estado' in e and str(e['estado']) == str(estado_guardado):
+#                             swl_estado_guardado = str(e['estado'])  # Solo el nombre del estado
+#                             break
+                            
+#                 # Cargar ciudad SWL si existe
+#                 if usuario and 'swl_ciudad' in usuario and usuario['swl_ciudad'] is not None:
+#                     swl_ciudad_guardada = str(usuario['swl_ciudad'])
+#                     # Si la ciudad incluye el estado (formato "Estado - Ciudad"), extraer solo la ciudad
+#                     if ' - ' in swl_ciudad_guardada:
+#                         swl_ciudad_guardada = swl_ciudad_guardada.split(' - ')[1].strip()
+
+#             # Crear columnas para los campos SWL
+#             col_swl1, col_swl2 = st.columns(2)
+            
+#             with col_swl1:
+#                 # Mostrar el campo de estado SWL
+#                 # Encontrar el índice del estado guardado en las opciones
+#                 estado_index = 0
+#                 if swl_estado_guardado and swl_estado_guardado in opciones_estados:
+#                     estado_index = opciones_estados.index(swl_estado_guardado)
+                
+#                 swl_estado = st.selectbox(
+#                     "SWL Estado",
+#                     options=opciones_estados,
+#                     index=estado_index,
+#                     help="Selecciona el estado donde se realiza la escucha"
+#                 )
+            
+#             with col_swl2:
+#                 # Mostrar el campo de ciudad SWL (solo el nombre de la ciudad)
+#                 swl_ciudad = st.text_input(
+#                     "SWL Ciudad",
+#                     value=swl_ciudad_guardada if swl_ciudad_guardada else "",
+#                     help="Ingresa la ciudad donde se realiza la escucha (solo el nombre de la ciudad)"
+#             )
+
+
+#             # Campo Pre-registro con slider
+#             # Obtener el valor guardado del usuario o usar 1 como predeterminado
+#             pre_registro_guardado = 1
+#             if 'user' in st.session_state and st.session_state.user and 'id' in st.session_state.user:
+#                 usuario = db.get_user_by_id(st.session_state.user['id'])
+#                 if usuario and 'pre_registro' in usuario and usuario['pre_registro'] is not None:
+#                     pre_registro_guardado = usuario['pre_registro']
+
+#             pre_registro = st.slider(
+#                 "Pre-Registros",
+#                 min_value=1,
+#                 max_value=10,
+#                 value=pre_registro_guardado,
+#                 help=f"Valor actual: {pre_registro_guardado}. Selecciona un valor entre 1 y 10 para el pre-registro"
+#             )
+
+#             # Campos adicionales para HF
+#             frecuencia = ""
+#             modo = ""
+#             potencia = ""
+
+#             # Obtener valores guardados del usuario si existen
+#             if 'user' in st.session_state and st.session_state.user and 'id' in st.session_state.user:
+#                 usuario = db.get_user_by_id(st.session_state.user['id'])
+#                 if usuario:
+#                     frecuencia = usuario.get('frecuencia', '')
+#                     modo = usuario.get('modo', '')
+#                     potencia = usuario.get('potencia', '')
+
+#             # Mostrar campos HF solo si se selecciona HF
+#             if sistema_preferido == 'HF':
+#                 st.markdown("**📻 Configuración HF**")
+
+#                 col1, col2, col3 = st.columns(3)
+
+#                 with col1:
+#                     frecuencia = st.text_input(
+#                         "Frecuencia (MHz)",
+#                         value=frecuencia,
+#                         placeholder="Ej: 7.100",
+#                         help="Frecuencia en MHz (ej: 7.100 para 40m)"
+#                     )
+
+#                 with col2:
+#                     modo = st.selectbox(
+#                         "Modo",
+#                         ["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"],
+#                         index=["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"].index(modo) if modo in ["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"] else 0,
+#                         help="Modo de operación HF"
+#                     )
+
+#                 with col3:
+#                     potencia = st.selectbox(
+#                         "Potencia",
+#                         ["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"],
+#                         index=["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"].index(potencia) if potencia in ["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"] else 0,
+#                         help="Nivel de potencia de transmisión"
+#                     )
+
+#                 st.markdown("---")           
+                  
+#             # Botones del formulario centrados
+#             col1, col2, col3 = st.columns([1, 2, 1])
+#             with col2:
+#                 col_btn1, col_btn2 = st.columns(2)
+#                 with col_btn1:
+#                     guardar = st.form_submit_button("💾 Guardar Parámetros", type="primary", use_container_width=True)
+#                 with col_btn2:
+#                     cancelar = st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True)
+            
+#             if guardar:
+#                 try:
+#                     # Validar que se haya seleccionado un sistema
+#                     if not sistema_preferido:
+#                         st.error("Por favor selecciona un Sistema Preferido")
+#                         st.session_state.expander_abierto = True  # Mantener expandido si hay error
+#                         st.stop()
+                    
+#                     # Marcar que se acaba de guardar para cerrar el expander
+#                     st.session_state.just_saved = True
+                        
+#                     # Obtener el ID del usuario actual
+#                     user_id = st.session_state.user['id']
+                    
+#                     # Actualizar los datos del usuario
+#                     db.update_user(
+#                         user_id=user_id,
+#                         sistema_preferido=sistema_preferido,
+#                         frecuencia=frecuencia if sistema_preferido == 'HF' else None,
+#                         modo=modo if sistema_preferido == 'HF' else None,
+#                         potencia=potencia if sistema_preferido == 'HF' else None,
+#                         pre_registro=pre_registro,
+#                         swl_estado=swl_estado,
+#                         swl_ciudad=swl_ciudad
+#                     )
+                    
+#                     # Guardar parámetros en la sesión
+#                     st.session_state.parametros_reporte = {
+#                         'fecha_reporte': fecha.strftime('%d/%m/%Y'),
+#                         'tipo_reporte': tipo_reporte,
+#                         'sistema_preferido': sistema_preferido,
+#                         'pre_registro': pre_registro,
+#                         'swl_estado': swl_estado,
+#                         'swl_ciudad': swl_ciudad
+#                     }
+
+#                     # Guardar parámetros HF si se seleccionó HF
+#                     if sistema_preferido == 'HF':
+#                         st.session_state.parametros_reporte.update({
+#                             'frecuencia': frecuencia,
+#                             'modo': modo,
+#                             'potencia': potencia
+#                         })
+                    
+#                     st.success("✅ Parámetros guardados correctamente")
+#                     # Cerrar el expander después de guardar
+#                     st.session_state.expander_abierto = False
+#                     time.sleep(2)
+#                     st.rerun()
+                    
+#                 except Exception as e:
+#                     st.error(f"Error al guardar los parámetros: {str(e)}")
+#                     st.stop()
+            
+#             if cancelar:
+#                 st.session_state.expander_abierto = False
+#                 st.rerun()
+    
+#     st.session_state.expander2_abierto = True
+#     # Mostrar tabla de pre-registros si los parámetros están guardados
+#     st.write("📦 Contenido de session_state: Pre-Registro")
+#     st.json(st.session_state)
+#     if st.session_state.parametros_reporte and not st.session_state.expander_abierto:
+#         st.markdown("### Pre-Registros")
+        
+#         # Inicializar la variable de sesión para los registros si no existe
+#         if 'registros' not in st.session_state:
+#             st.session_state.registros = []
+#         if 'registros_editados' not in st.session_state:
+#             st.session_state.registros_editados = False
+        
+#         # Crear un formulario para los pre-registros
+#         form_submitted = False
+#         with st.form("pre_registros_form"):
+#             # Crear una tabla con los campos de entrada
+#             for i in range(st.session_state.parametros_reporte['pre_registro']):
+#                 # Usar CSS personalizado para alinear perfectamente los campos
+#                 st.markdown(f"""
+#                 <style>
+#                 .row-{i} {{
+#                     display: flex;
+#                     gap: 20px;
+#                     margin-bottom: 20px;
+#                     align-items: flex-start;
+#                 }}
+#                 .field-indicativo-{i} {{
+#                     flex: 3;
+#                     display: flex;
+#                     flex-direction: column;
+#                 }}
+#                 .field-sistema-{i} {{
+#                     flex: 1;
+#                     display: flex;
+#                     flex-direction: column;
+#                 }}
+#                 .field-indicativo-{i} label {{
+#                     font-weight: bold;
+#                     margin-bottom: 5px;
+#                     color: #1f77b4;
+#                 }}
+#                 .field-sistema-{i} label {{
+#                     font-weight: bold;
+#                     margin-bottom: 5px;
+#                     color: #1f77b4;
+#                 }}
+#                 </style>
+#                 <div class="row-{i}">
+#                     <div class="field-indicativo-{i}"></div>
+#                     <div class="field-sistema-{i}"></div>
+#                 </div>
+#                 """, unsafe_allow_html=True)
+
+#                 col1, col2 = st.columns([3, 1])
+
+#                 with col1:
+#                     # Usar el valor guardado o vacío si no existe
+#                     valor_guardado = st.session_state.get(f'indicativo_{i}', '')
+#                     st.markdown(f"**Indicativo {i+1}**")
+#                     indicativo = st.text_input(
+#                         f"Indicativo {i+1}",
+#                         key=f"indicativo_{i}",
+#                         value=valor_guardado,
+#                         placeholder="Ej: XE1ABC",
+#                         label_visibility="collapsed"
+#                     )
+
+#                 with col2:
+#                     # Obtener la lista de sistemas desde la base de datos
+#                     try:
+#                         sistemas_dict = db.get_sistemas()
+#                         opciones_sistemas = sorted(list(sistemas_dict.keys()))  # Usar campo 'codigo'
+#                         if not opciones_sistemas:
+#                             st.error("No se encontraron sistemas configurados en la base de datos")
+#                             opciones_sistemas = ["ASL"]
+#                     except Exception as e:
+#                         st.error(f"Error al cargar los sistemas: {str(e)}")
+#                         opciones_sistemas = ["ASL"]
+
+#                     sistema_guardado = st.session_state.get(f'sistema_{i}', st.session_state.parametros_reporte['sistema_preferido'])
+#                     # Asegurarse de que el sistema guardado esté en la lista de opciones
+#                     try:
+#                         indice = opciones_sistemas.index(sistema_guardado)
+#                     except ValueError:
+#                         indice = 0
+
+#                     st.markdown("**Sistema**")
+#                     sistema = st.selectbox(
+#                         f"Sistema {i+1}",
+#                         opciones_sistemas,
+#                         key=f"sistema_{i}",
+#                         index=indice,
+#                         label_visibility="collapsed"
+#                     )
+
+#             # Botón para pre-registrar todos
+#             col1, col2, col3 = st.columns([1, 2, 1])
+#             with col2:
+#                 form_submitted = st.form_submit_button(
+#                     "📋 Pre-Registrar Todos",
+#                     type="primary",
+#                     use_container_width=True
+#                 )
+#         st.write("📦 Contenido de session_state: Pre-Registrar")
+#         st.json(st.session_state)
+#         # Procesar el formulario cuando se envía
+#         if form_submitted:
+#             # Recopilar todos los registros
+#             registros_guardar = []
+#             indicativos_invalidos = []
+#             indicativos_incompletos = []
+
+#             # Procesar cada indicativo
+#             for i in range(st.session_state.parametros_reporte['pre_registro']):
+#                 indicativo = st.session_state.get(f'indicativo_{i}', '').strip().upper()
+#                 if not indicativo:  # Saltar si está vacío
+#                     continue
+
+#                 # Validar el indicativo
+#                 result = utils.validar_call_sign(indicativo)
+
+#                 # Verificar que sea válido Y completo
+#                 if not result["indicativo"]:
+#                     indicativos_invalidos.append(indicativo)
+#                     continue
+
+#                 if not result["completo"]:
+#                     indicativos_incompletos.append(indicativo)
+#                     continue
+
+#                 # Crear registro base con datos mínimos
+#                 registro = {
+#                     'indicativo': indicativo,
+#                     'sistema': st.session_state.get(f'sistema_{i}', st.session_state.parametros_reporte['sistema_preferido']),
+#                     'fecha': st.session_state.parametros_reporte['fecha_reporte'],
+#                     'tipo_reporte': st.session_state.parametros_reporte['tipo_reporte'],
+#                     'senal': '59'  # Valor por defecto para la señal
+#                 }
+
+#                 # Agregar campos HF si el sistema es HF
+#                 if st.session_state.parametros_reporte.get('sistema_preferido') == 'HF':
+#                     registro.update({
+#                         'frecuencia': st.session_state.parametros_reporte.get('frecuencia', ''),
+#                         'modo': st.session_state.parametros_reporte.get('modo', ''),
+#                         'potencia': st.session_state.parametros_reporte.get('potencia', '')
+#                     })
+
+#                 # Si el indicativo es SWR, usar el estado y ciudad de SWL (esto tiene prioridad sobre la zona)
+#                 if indicativo == "SWR":
+#                     print(f"DEBUG - Procesando estación SWR")
+#                     if 'swl_estado' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_estado']:
+#                         # Guardar el estado original de SWL
+#                         swl_estado = str(st.session_state.parametros_reporte['swl_estado']).strip()
+#                         registro['estado'] = swl_estado
+#                         registro['_es_swr'] = True  # Marcar como SWR para evitar sobrescritura
+#                         print(f"DEBUG - Asignando estado SWL a SWR: '{swl_estado}' (tipo: {type(swl_estado).__name__})")
+                    
+#                     if 'swl_ciudad' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_ciudad']:
+#                         swl_ciudad = str(st.session_state.parametros_reporte['swl_ciudad']).strip()
+#                         registro['ciudad'] = swl_ciudad
+#                         print(f"DEBUG - Asignando ciudad SWL a SWR: '{swl_ciudad}' (tipo: {type(swl_ciudad).__name__})")
+                    
+#                     # Forzar la zona a vacío para SWR
+#                     registro['zona'] = ''
+#                     registro['_es_swr'] = True  # Asegurar que la bandera esté establecida
+#                     print(f"DEBUG - Estado final de SWR: '{registro.get('estado')}', Ciudad: '{registro.get('ciudad')}', Zona: '{registro.get('zona')}'")
+#                 # Si el indicativo es extranjero y no es SWR, pre-llenar Estado y Zona
+#                 elif result["Zona"] == "Extranjera":
+#                     registro['estado'] = "Extranjero"
+#                     registro['zona'] = "EXT"
+#                     print(f"DEBUG - Asignando estado Extranjero a {indicativo}")
+
+#                 # Obtener datos del radioexperimentador si existe
+#                 radioexperimentador = db.get_radioexperimentador_por_indicativo(indicativo)
+
+#                 if radioexperimentador:
+#                     # Guardar los datos completos del radioexperimentador para depuración
+#                     registro['radioexperimentador_data'] = dict(radioexperimentador)
+
+#                     # Si existe en la base de datos, actualizar el registro con los datos
+#                     registro.update({
+#                         'nombre_operador': radioexperimentador.get('nombre_completo', ''),  # ← CORREGIDO: usar 'nombre_completo'
+#                         'apellido_paterno': radioexperimentador.get('apellido_paterno', ''),
+#                         'apellido_materno': radioexperimentador.get('apellido_materno', ''),
+#                         'estado': radioexperimentador.get('estado', ''),           # ← Correcto
+#                         'ciudad': radioexperimentador.get('municipio', ''),        # ← CORREGIDO: usar 'municipio' en lugar de 'ciudad'
+#                         'colonia': radioexperimentador.get('colonia', ''),
+#                         'codigo_postal': radioexperimentador.get('codigo_postal', ''),
+#                         'telefono': radioexperimentador.get('telefono', ''),
+#                         'email': radioexperimentador.get('email', ''),
+#                         'zona': radioexperimentador.get('zona', '')               # ← CORREGIDO: usar zona de BD o calcular
+#                     })
+
+#                     # Si no hay zona en BD, calcularla automáticamente
+#                     if not registro['zona']:
+#                         prefijo = indicativo[:3]
+#                         if prefijo.startswith('XE') and len(indicativo) >= 3 and indicativo[2] in ['1', '2', '3']:
+#                             registro['zona'] = f"XE{indicativo[2]}"
+#                 else:
+#                     # Si no existe, crear un registro básico
+#                     registro = {
+#                         'indicativo': indicativo,
+#                         'nombre_operador': '',
+#                         'estado': '',
+#                         'ciudad': '',
+#                         'zona': '',
+#                         'sistema': st.session_state.get(f'sistema_{i}', st.session_state.parametros_reporte['sistema_preferido']),
+#                         'fecha': st.session_state.parametros_reporte['fecha_reporte'],
+#                         'tipo_reporte': st.session_state.parametros_reporte['tipo_reporte'],
+#                         'senal': '59'  # Valor por defecto para la señal
+#                     }
+
+#                     # Agregar campos HF si el sistema es HF
+#                     if st.session_state.parametros_reporte.get('sistema_preferido') == 'HF':
+#                         registro.update({
+#                             'frecuencia': st.session_state.parametros_reporte.get('frecuencia', ''),
+#                             'modo': st.session_state.parametros_reporte.get('modo', ''),
+#                             'potencia': st.session_state.parametros_reporte.get('potencia', '')
+#                         })
+                    
+#                     # Para cualquier indicativo que no exista en la base de datos, usar SWL Estado y SWL Ciudad
+#                     if 'swl_estado' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_estado']:
+#                         print(f"DEBUG - Asignando estado desde parametros_reporte: {st.session_state.parametros_reporte['swl_estado']}")
+#                         # Asegurarse de que el estado sea una cadena
+#                         estado_swl = str(st.session_state.parametros_reporte['swl_estado'])
+#                         registro['estado'] = estado_swl
+#                         print(f"DEBUG - Estado asignado: {registro['estado']} (tipo: {type(registro['estado']).__name__})")
+                        
+#                         # Verificar si el estado está en las opciones disponibles
+#                         if estado_swl not in [e['estado'] for e in _get_estados_options()]:
+#                             print(f"ADVERTENCIA: El estado '{estado_swl}' no está en las opciones disponibles")
+                    
+#                     if 'swl_ciudad' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_ciudad']:
+#                         print(f"DEBUG - Asignando ciudad desde parametros_reporte: {st.session_state.parametros_reporte['swl_ciudad']}")
+#                         registro['ciudad'] = str(st.session_state.parametros_reporte['swl_ciudad'])
+#                         print(f"DEBUG - Ciudad asignada: {registro['ciudad']} (tipo: {type(registro['ciudad']).__name__})")
+                    
+#                     # Depuración adicional
+#                     print("\n=== DEBUG - Contenido de parametros_reporte ===")
+#                     for key, value in st.session_state.parametros_reporte.items():
+#                         print(f"{key}: {value} (tipo: {type(value).__name__})")
+#                     print("===========================================\n")
+                        
+#                     # Si el registro está marcado como SWR, mantener sus valores
+#                     if registro.get('_es_swr', False):
+#                         # Restaurar los valores de SWR para asegurar que no se sobrescriban
+#                         if 'swl_estado' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_estado']:
+#                             registro['estado'] = str(st.session_state.parametros_reporte['swl_estado']).strip()
+#                         if 'swl_ciudad' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_ciudad']:
+#                             registro['ciudad'] = str(st.session_state.parametros_reporte['swl_ciudad']).strip()
+#                         registro['zona'] = ''
+#                         print(f"DEBUG - Manteniendo valores de SWR: estado='{registro.get('estado')}', ciudad='{registro.get('ciudad')}'")
+#                     # Si no es SWR pero es extranjero
+#                     elif result["Zona"] == "Extranjera":
+#                         registro['estado'] = "Extranjero"
+#                         registro['zona'] = "EXT"
+#                         print(f"DEBUG - Asignando estado Extranjero a {indicativo}")
+#                     else:
+#                         print(f"DEBUG - Estado actual para {indicativo}: {registro.get('estado')} (tipo: {type(registro.get('estado')).__name__})")
+
+#                     # Intentar determinar la zona basada en el prefijo
+#                     prefijo = indicativo[:3]  # Tomar los primeros 3 caracteres como prefijo
+#                     if prefijo.startswith('XE') and len(indicativo) >= 3 and indicativo[2] in ['1', '2', '3']:
+#                         registro['zona'] = f"XE{indicativo[2]}"
+
+#                 registros_guardar.append(registro)
+
+#             # Mostrar errores de validación si los hay
+#             if indicativos_invalidos:
+#                 st.error(f"❌ Los siguientes indicativos no son válidos: {', '.join(indicativos_invalidos)}")
+#                 return
+
+#             if indicativos_incompletos:
+#                 st.error(f"⚠️ Los siguientes indicativos están incompletos (necesitan sufijo): {', '.join(indicativos_incompletos)}")
+#                 return
+
+#             # Solo proceder si hay registros válidos
+#             if not registros_guardar:
+#                 st.warning("⚠️ No hay registros válidos para procesar. Complete todos los indicativos correctamente.")
+#                 return
+
+#             # Actualizar la variable de sesión con los nuevos registros
+#             st.session_state.registros = registros_guardar
+#             st.session_state.expander_abierto = False  # Minimizar el formulario
+
+#             # Limpiar los campos del formulario
+#             for i in range(st.session_state.parametros_reporte['pre_registro']):
+#                 if f'indicativo_{i}' in st.session_state:
+#                     del st.session_state[f'indicativo_{i}']
+#                 if f'sistema_{i}' in st.session_state:
+#                     del st.session_state[f'sistema_{i}']
+
+#             st.rerun()
+#         st.session_state.expander3_abierto = True
+#         # Mostrar la tabla de registros si hay registros guardados
+#         if 'registros' in st.session_state and st.session_state.registros:
+#             st.markdown("---")
+#             st.subheader("📋 Estaciones a Reportar")
+            
+#             # Crear una tabla con los registros
+#             import pandas as pd
+            
+#             # Verificar si hay registros para mostrar
+#             if not st.session_state.registros:
+#                 st.info("No hay registros para mostrar. Agrega indicativos usando el formulario superior.")
+#                 return
+                
+#             # Crear DataFrame con los datos de los registros
+#             # Asegurarse de que los valores de estado sean cadenas
+#             registros_para_df = []
+#             for reg in st.session_state.registros:
+#                 reg_copy = reg.copy()
+#                 if reg_copy.get('_es_swr', False):
+#                     # Para SWR, asegurarse de que los valores sean los correctos
+#                     if 'swl_estado' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_estado']:
+#                         reg_copy['estado'] = str(st.session_state.parametros_reporte['swl_estado']).strip()
+#                     if 'swl_ciudad' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_ciudad']:
+#                         reg_copy['ciudad'] = str(st.session_state.parametros_reporte['swl_ciudad']).strip()
+#                     reg_copy['zona'] = ''
+#                 elif 'estado' in reg_copy and reg_copy['estado'] is not None:
+#                     reg_copy['estado'] = str(reg_copy['estado'])
+#                 registros_para_df.append(reg_copy)
+            
+#             df = pd.DataFrame(registros_para_df)
+
+#             # Seleccionar y ordenar columnas para mostrar
+#             columnas_a_mostrar = ['indicativo', 'nombre_operador', 'estado', 'ciudad', 'zona', 'sistema', 'senal']
+
+#             # Agregar columnas HF si el sistema es HF
+#             if st.session_state.parametros_reporte.get('sistema_preferido') == 'HF':
+#                 columnas_a_mostrar.extend(['frecuencia', 'modo', 'potencia'])
+
+#             columnas_disponibles = [col for col in columnas_a_mostrar if col in df.columns]
+
+#             # Obtener opciones para los dropdowns
+#             estados_db = _get_estados_options()
+#             estados_options = [estado['estado'] for estado in estados_db]
+            
+#             # Asegurarse de que el estado actual esté en las opciones
+#             for registro in st.session_state.registros:
+#                 if 'estado' in registro and registro['estado'] and registro['estado'] not in estados_options:
+#                     estados_options.append(registro['estado'])
+            
+#             zonas_db = _get_zonas_options()
+#             zonas_options = [zona['zona'] for zona in zonas_db]
+            
+#             # Depuración: Mostrar los estados disponibles y los estados en los registros
+#             print("\n=== DEBUG - Estados disponibles ===")
+#             print(estados_options)
+#             print("\n=== DEBUG - Estados en registros ===")
+#             for reg in st.session_state.registros:
+#                 print(f"{reg.get('indicativo')}: {reg.get('estado')}")
+#             print("==================================\n")
+
+#             # Mostrar la tabla editable con estilos
+#             st.markdown("###### ✏️ Tabla Editable - Corrige los datos antes de guardar")
+
+#             # Crear configuración para la tabla editable
+#             column_config = {
+#                 'indicativo': st.column_config.TextColumn(
+#                     'Indicativo',
+#                     help="Indicativo del radioexperimentador (solo lectura)",
+#                     disabled=True  # No editable
+#                 ),
+#                 'nombre_operador': st.column_config.TextColumn(
+#                     'Operador',
+#                     help="Nombre completo del operador"
+#                 ),
+#                 'estado': st.column_config.SelectboxColumn(
+#                     'Estado',
+#                     help="Estado donde reside",
+#                     options=estados_options,
+#                     required=False,
+#                     default=None,  # Permitir valores que no estén en las opciones
+#                     format_func=lambda x: str(x) if x is not None else ""  # Asegurar que el valor se muestre como cadena
+#                 ),
+#                 'ciudad': st.column_config.TextColumn(
+#                     'Ciudad',
+#                     help="Ciudad o municipio"
+#                 ),
+#                 'zona': st.column_config.SelectboxColumn(
+#                     'Zona',
+#                     help="Zona geográfica (XE1, XE2, XE3, etc.)",
+#                     options=zonas_options,
+#                     required=False
+#                 ),
+#                 'sistema': st.column_config.SelectboxColumn(
+#                     'Sistema',
+#                     help="Sistema de comunicación utilizado",
+#                     options=['HF', 'ASL', 'IRLP', 'DMR', 'Fusion', 'D-Star', 'P25', 'M17'],
+#                     required=True
+#                 ),
+#                 'senal': st.column_config.NumberColumn(
+#                     'Señal',
+#                     help="Calidad de señal reportada",
+#                     min_value=1,
+#                     max_value=99,
+#                     step=1,
+#                     format="%d"
+#                 )
+#             }
+
+#             # Agregar configuración de columnas HF si el sistema es HF
+#             if st.session_state.parametros_reporte.get('sistema_preferido') == 'HF':
+#                 column_config.update({
+#                     'frecuencia': st.column_config.TextColumn(
+#                         'Frecuencia (MHz)',
+#                         help="Frecuencia en MHz"
+#                     ),
+#                     'modo': st.column_config.SelectboxColumn(
+#                         'Modo',
+#                         help="Modo de operación HF",
+#                         options=["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"],
+#                         required=False
+#                     ),
+#                     'potencia': st.column_config.SelectboxColumn(
+#                         'Potencia',
+#                         help="Nivel de potencia de transmisión",
+#                         options=["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"],
+#                         required=False
+#                     )
+#                 })
+
+#             # Mostrar tabla editable
+#             edited_df = st.data_editor(
+#                 df[columnas_disponibles],
+#                 column_config=column_config,
+#                 hide_index=True,
+#                 use_container_width=True,
+#                 height=min(400, 35 * len(df) + 40),  # Ajustar altura automáticamente
+#                 key="editable_table"
+#             )
+
+#             # Detectar cambios en la tabla
+#             if not edited_df.equals(df):
+#                 # Actualizar los registros en la sesión con los cambios
+#                 st.session_state.registros_editados = True
+#                 #st.success("✅ Tabla editada. Haz clic en '💾 Guardar en Base de Datos' para aplicar los cambios.")
+
+#                 # Actualizar los registros con los datos editados
+#                 for i, registro_editado in enumerate(edited_df.to_dict('records')):
+#                     if i < len(st.session_state.registros):
+#                         # Actualizar el registro existente
+#                         st.session_state.registros[i].update(registro_editado)
+
+#             # Mostrar resumen y botones de acción
+#             st.caption(f"Total de registros: {len(df)}")
+
+#             # Mostrar información sobre edición
+#             if st.session_state.get('registros_editados', False):
+#                 st.info("💡 **Nota:** Los cambios se aplicarán cuando guardes en la base de datos.")
+
+#             # Sección de depuración
+#             with st.expander("🔍 Datos de depuración (solo desarrollo)", expanded=False):
+#                 st.write("### Datos completos de los indicativos consultados en la base de datos")
+#                 for idx, registro in enumerate(st.session_state.registros, 1):
+#                     st.write(f"#### Indicativo {idx}: {registro.get('indicativo', 'N/A')}")
+
+#                     # Mostrar datos básicos del registro
+#                     st.write("**Datos del registro:**")
+#                     st.json({
+#                         'indicativo': registro.get('indicativo', ''),
+#                         'sistema': registro.get('sistema', ''),
+#                         'fecha': registro.get('fecha', ''),
+#                         'tipo_reporte': registro.get('tipo_reporte', ''),
+#                         'senal': registro.get('senal', ''),
+#                         'frecuencia': registro.get('frecuencia', ''),
+#                         'modo': registro.get('modo', ''),
+#                         'potencia': registro.get('potencia', '')
+#                     })
+
+#                     # Mostrar datos del radioexperimentador si se consultaron
+#                     if 'radioexperimentador_data' in registro:
+#                         st.write("**Datos completos del radioexperimentador desde la base de datos:**")
+#                         st.json(registro['radioexperimentador_data'])
+
+#                     st.markdown("---")
+            
+#             # Botones de acción
+#             col1, col2, col3 = st.columns([2, 1, 1])
+
+#             with col1:
+#                 # Botón para guardar en la base de datos
+#                 if st.button("💾 Guardar en Base de Datos", type="primary", use_container_width=True):
+#                     try:
+#                         # Verificar que haya registros para guardar
+#                         if not st.session_state.registros:
+#                             st.error("❌ No hay registros para guardar")
+#                             return
+
+#                         # Guardar cada registro en la base de datos
+#                         registros_guardados = 0
+#                         for registro in st.session_state.registros:
+#                             # Validar que el registro tenga los campos obligatorios
+#                             if not registro.get('indicativo') or not registro.get('tipo_reporte'):
+#                                 st.error(f"❌ El registro de {registro.get('indicativo', 'desconocido')} no tiene los campos obligatorios")
+#                                 continue
+
+#                             # Obtener la fecha de los parámetros de captura
+#                             fecha_reporte = st.session_state.parametros_reporte.get('fecha_reporte', get_current_cdmx_time().strftime('%d/%m/%Y'))
+#                             print(f"[DEBUG] Fecha de reporte a guardar: {fecha_reporte}")
+                            
+#                             # Preparar los datos del reporte según el esquema de la base de datos
+#                             reporte_data = {
+#                                 'indicativo': registro['indicativo'].upper(),
+#                                 'nombre': registro.get('nombre_operador', ''),  # Mapear a 'nombre' en la BD
+#                                 'estado': registro.get('estado', ''),
+#                                 'ciudad': registro.get('ciudad', ''),
+#                                 'zona': registro.get('zona', ''),
+#                                 'sistema': registro.get('sistema', ''),
+#                                 'senal': int(registro.get('senal', 59)),  # Asegurar que sea entero
+#                                 'fecha_reporte': fecha_reporte,  # Usar fecha de parámetros de captura
+#                                 'tipo_reporte': registro.get('tipo_reporte', 'Boletín'),  # Valor por defecto 'Boletín'
+#                                 'origen': 'Sistema'  # Origen del reporte
+#                             }
+                            
+#                             # Agregar campos específicos de HF si corresponde
+#                             if registro.get('sistema') == 'HF':
+#                                 reporte_data.update({
+#                                     'observaciones': f"Frecuencia: {registro.get('frecuencia', '')}, "
+#                                                   f"Modo: {registro.get('modo', '')}, "
+#                                                   f"Potencia: {registro.get('potencia', '')}"
+#                                 })
+                            
+#                             # Guardar el reporte en la base de datos
+#                             db.save_reporte(reporte_data)
+#                             registros_guardados += 1
+
+#                         if registros_guardados > 0:
+#                             st.success(f"✅ {registros_guardados} registro(s) guardado(s) correctamente en la base de datos")
+#                             # Limpiar solo el estado de edición
+#                             st.session_state.registros_editados = False
+#                             # Forzar recarga de la página para actualizar la vista
+#                             st.rerun()
+#                         else:
+#                             st.error("❌ No se pudo guardar ningún registro. Verifica que tengan los campos obligatorios.")
+
+#                     except Exception as e:
+#                         st.error(f"❌ Error al guardar en la base de datos: {str(e)}")
+            
+#             with col2:
+#                 # Botón para deshacer cambios
+#                 if st.session_state.get('registros_editados', False):
+#                     if st.button("↩️ Deshacer Cambios", type="secondary", use_container_width=True):
+#                         # Recargar los registros originales desde la sesión
+#                         st.session_state.registros_editados = False
+#                         st.success("✅ Cambios deshechos. Los datos originales han sido restaurados.")
+#                         st.rerun()
+            
+#             with col3:
+#                 # Botón para limpiar los registros
+#                 if st.button("🗑️ Limpiar registros", type="secondary", use_container_width=True):
+#                     st.session_state.registros = []
+#                     st.session_state.registros_editados = False
+#                     st.session_state.expander_abierto = True  # Mostrar el formulario de nuevo
+#                     st.rerun()
+            
+#             # Mostrar estadísticas y reportes fuera del botón de guardar
+#             st.markdown("---")
+            
+#             # Obtener la fecha de los parámetros de captura
+#             fecha_reporte = st.session_state.parametros_reporte.get('fecha_reporte')
+            
+#             # Verificar si la fecha tiene el formato correcto (DD/MM/YYYY)
+#             try:
+#                 # Convertir a datetime para validar el formato
+#                 from datetime import datetime
+#                 fecha_dt = datetime.strptime(fecha_reporte, '%d/%m/%Y')
+#                 # Convertir al formato YYYY-MM-DD para la consulta SQL
+#                 fecha_consulta = fecha_dt.strftime('%Y-%m-%d')
+                
+#                 # Obtener reportes del día seleccionado
+#                 reportes, estadisticas = db.get_reportes_por_fecha(fecha_consulta)
+                
+#                 # Mostrar la fecha de consulta para referencia
+#                 st.caption(f"📅 Mostrando reportes del: {fecha_reporte}")
+                
+#             except (ValueError, TypeError) as e:
+#                 st.error("❌ Error en el formato de la fecha. Asegúrate de usar el formato DD/MM/YYYY")
+#                 reportes, estadisticas = [], {}
+            
+#             st.subheader("📊 Estadísticas del Día")
+            
+#             if estadisticas:
+#                 # Crear una fila con 4 columnas iguales
+#                 col1, col2, col3, col4 = st.columns(4)
+                
+#                 # Función para crear una tarjeta de estadística
+#                 def crear_tarjeta(column, titulo, valor=None, subtitulos=None):
+#                     with column:
+#                         # Crear el contenedor principal con st.container()
+#                         with st.container():
+#                             # Usar st.markdown para el título
+#                             st.markdown(f"""
+#                                 <div style="
+#                                     font-size: 0.9rem;
+#                                     color: #2e7d32;
+#                                     font-weight: 600;
+#                                     margin-bottom: 10px;
+#                                     white-space: nowrap;
+#                                     overflow: hidden;
+#                                     text-overflow: ellipsis;
+#                                 ">{titulo}</div>
+#                             """, unsafe_allow_html=True)
+                            
+#                             # Mostrar el valor si existe
+#                             if valor is not None and valor != "":
+#                                 st.markdown(f"""
+#                                     <div style="
+#                                         font-size: 1.8rem;
+#                                         font-weight: 700;
+#                                         color: #1b5e20;
+#                                         margin-bottom: 10px;
+#                                         text-align: center;
+#                                         background-color: #e8f5e9;
+#                                         border-radius: 4px;
+#                                         padding: 10px 0;
+#                                         min-height: 60px;
+#                                         display: flex;
+#                                         align-items: center;
+#                                         justify-content: center;
+#                                     ">{valor}</div>
+#                                 """, unsafe_allow_html=True)
+                            
+#                             # Mostrar subtítulos si existen
+#                             if subtitulos:
+#                                 for item in subtitulos:
+#                                     if isinstance(item, dict):
+#                                         nombre = item.get('nombre', '')
+#                                         cantidad = item.get('cantidad', '')
+#                                     else:
+#                                         nombre = item
+#                                         cantidad = ''
+                                    
+#                                     st.markdown(f"""
+#                                         <div style="
+#                                             font-size: 0.75rem;
+#                                             color: #4caf50;
+#                                             margin: 5px 0;
+#                                             display: flex;
+#                                             justify-content: space-between;
+#                                             align-items: center;
+#                                         ">
+#                                             <span>{nombre}</span>
+#                                             {'<span style="background-color: #e8f5e9; border-radius: 10px; padding: 0 6px; font-weight: 600; font-size: 0.7rem;">' + str(cantidad) + '</span>' if cantidad else ''}
+#                                         </div>
+#                                     """, unsafe_allow_html=True)
+                            
+#                             # Estilo del contenedor
+#                             st.markdown("""
+#                                 <style>
+#                                     div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column"] > div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"] {
+#                                         background-color: #f0f9f0;
+#                                         border-radius: 8px;
+#                                         padding: 15px;
+#                                         border-left: 4px solid #2e7d32;
+#                                         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+#                                         height: 100%;
+#                                         display: flex;
+#                                         flex-direction: column;
+#                                     }
+#                                 </style>
+#                             """, unsafe_allow_html=True)
+                
+#                 # Tarjeta de Total de Reportes
+#                 crear_tarjeta(
+#                     column=col1,
+#                     titulo="📋 Total de Reportes",
+#                     valor=str(estadisticas.get('total', 0))
+#                 )
+                
+#                 # Tarjeta de Zonas más reportadas
+#                 zonas = [{'nombre': z['zona'], 'cantidad': str(z['cantidad'])} 
+#                         for z in estadisticas.get('zonas_mas_reportadas', [])[:3]]
+#                 crear_tarjeta(
+#                     column=col2,
+#                     titulo="📍 Zonas más reportadas",
+#                     subtitulos=zonas if zonas else [{'nombre': 'Sin datos', 'cantidad': ''}]
+#                 )
+                
+#                 # Tarjeta de Sistemas más usados
+#                 sistemas = [{'nombre': s['sistema'], 'cantidad': str(s['cantidad'])} 
+#                           for s in estadisticas.get('sistemas_mas_utilizados', [])[:3]]
+#                 crear_tarjeta(
+#                     column=col3,
+#                     titulo="📡 Sistemas más usados",
+#                     subtitulos=sistemas if sistemas else [{'nombre': 'Sin datos', 'cantidad': ''}]
+#                 )
+                
+#                 # Tarjeta de Estados más reportados
+#                 estados = [{'nombre': e['estado'], 'cantidad': str(e['cantidad'])} 
+#                          for e in estadisticas.get('estados_mas_reportados', [])[:3]]
+#                 crear_tarjeta(
+#                     column=col4,
+#                     titulo="🏙️ Estados más reportados",
+#                     subtitulos=estados if estados else [{'nombre': 'Sin datos', 'cantidad': ''}]
+#                 )
+            
+#             # Mostrar la tabla de reportes
+#             if reportes:
+#                 import pandas as pd
+#                 from time_utils import format_datetime
+                
+#                 # Convertir a DataFrame
+#                 def format_time(dt_str):
+#                     if not dt_str:
+#                         return ''
+#                     try:
+#                         # Intentar con formato YYYY-MM-DD HH:MM:SS
+#                         dt = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
+#                     except ValueError:
+#                         try:
+#                             # Si falla, intentar con formato DD/MM/YYYY HH:MM:SS
+#                             dt = datetime.strptime(dt_str, '%d/%m/%Y %H:%M:%S')
+#                         except ValueError:
+#                             return ''  # Si no coincide ningún formato, devolver vacío
+#                     return dt.strftime('%H:%M')
+                
+#                 df_reportes = pd.DataFrame([{
+#                     'Indicativo': r.get('indicativo', ''),
+#                     'Nombre': r.get('nombre', ''),
+#                     'Sistema': r.get('sistema', ''),
+#                     'Zona': r.get('zona', ''),
+#                     'Estado': r.get('estado', ''),
+#                     'Ciudad': r.get('ciudad', ''),
+#                     'Señal': r.get('senal', ''),
+#                     'Hora': format_time(r.get('fecha_reporte'))
+#                 } for r in reportes])
+                
+#                 # Mostrar la tabla
+#                 st.data_editor(
+#                     df_reportes,
+#                     column_config={
+#                         'Indicativo': st.column_config.TextColumn("Indicativo"),
+#                         'Nombre': st.column_config.TextColumn("Nombre"),
+#                         'Sistema': st.column_config.TextColumn("Sistema"),
+#                         'Zona': st.column_config.TextColumn("Zona"),
+#                         'Estado': st.column_config.TextColumn("Estado"),
+#                         'Ciudad': st.column_config.TextColumn("Ciudad"),
+#                         'Señal': st.column_config.NumberColumn("Señal"),
+#                         'Hora': st.column_config.TextColumn("Hora")
+#                     },
+#                     hide_index=True,
+#                     use_container_width=True
+#                 )
+#             else:
+#                 st.info("No hay reportes registrados para el día de hoy.")
+
 def show_toma_reportes():
-    """Muestra la sección de Toma de Reportes"""
+    """Muestra la sección de Toma de Reportes con el flujo solicitado."""
+    import pandas as pd
+    from datetime import datetime
+    from time import sleep
+    from time_utils import get_current_cdmx_time
+
+    # ==========================
+    # Helpers internos
+    # ==========================
+    def _safe_str(x):
+        return "" if x is None else str(x)
+
+    def _pre_form_key(name: str) -> str:
+        """Genera keys únicas para widgets del Pre-Registro usando un nonce."""
+        nonce = st.session_state.get("pre_form_nonce", 0)
+        return f"{name}_{nonce}"
+
+    def _clear_current_pre_form_inputs():
+        """Elimina del session_state los widgets de pre-registro del nonce actual."""
+        nonce = st.session_state.get("pre_form_nonce", 0)
+        n = st.session_state.get("parametros_reporte", {}).get("pre_registro", 0)
+        for i in range(n):
+            k_ind = f"indicativo_{i}_{nonce}"
+            k_sis = f"sistema_{i}_{nonce}"
+            if k_ind in st.session_state:
+                del st.session_state[k_ind]
+            if k_sis in st.session_state:
+                del st.session_state[k_sis]
+
+    def _bump_pre_form_nonce_and_clear():
+        """Aumenta el nonce para que los inputs del Pre-Registro salgan vacíos."""
+        st.session_state["pre_form_nonce"] = st.session_state.get("pre_form_nonce", 0) + 1
+
+    def _estimar_zona(indicativo: str, zona_bd: str = "", result_validacion=None) -> str:
+        """Regresa zona estimada."""
+        if indicativo == "SWR":
+            return ""  # SWR no lleva zona
+        if zona_bd:
+            return zona_bd
+        try:
+            if result_validacion is None:
+                result_validacion = utils.validar_call_sign(indicativo)
+        except Exception:
+            result_validacion = None
+
+        if result_validacion and result_validacion.get("Zona") == "Extranjera":
+            return "EXT"
+
+        # Regla por prefijo XE1/XE2/XE3
+        if indicativo.startswith("XE") and len(indicativo) >= 3 and indicativo[2] in ("1", "2", "3"):
+            return f"XE{indicativo[2]}"
+
+        # Fallback extranjero
+        return "EXT"
+
+    def _get_fecha_consulta_from_parametros() -> str:
+        """Convierte dd/mm/yyyy a yyyy-mm-dd para la consulta SQL."""
+        fecha_txt = st.session_state["parametros_reporte"].get("fecha_reporte")
+        fecha_dt = datetime.strptime(fecha_txt, "%d/%m/%Y")
+        return fecha_dt.strftime("%Y-%m-%d")
+
+    # ==========================
+    # UI: Encabezado
+    # ==========================
     st.title("📝 Toma de Reportes")
     st.markdown("### Registro de Reportes")
-    
     st.markdown("""
     <div style="background-color: #f0f8ff; padding: 15px; border-radius: 10px; border-left: 4px solid #1f77b4; margin-bottom: 20px;">
         <h4 style="color: #1f77b4; margin-top: 0;">📋 Configuración de Parámetros</h4>
-        <p style="margin-bottom: 10px;">
-            <strong>Selecciona los parámetros iniciales</strong> para la generación de reportes. 
-            Estos valores se utilizarán como <strong>configuración predeterminada</strong> en todos tus registros.
-        </p>
-        <p style="margin-bottom: 5px;">
-            <strong>📅 Fecha del Reporte:</strong> Establece la fecha para el reporte actual. 
-            Por defecto se muestra la fecha del sistema.
-        </p>
-        <p style="margin-bottom: 0;">
-            <strong>📋 Tipo de Boletín:</strong> Selecciona el tipo de boletín para clasificar 
-            tu reporte. Las opciones disponibles se cargan automáticamente 
-            desde la configuración del sistema.
-        </p>
+        <p>Selecciona los parámetros iniciales para la generación de reportes.
+        Estos valores se utilizarán como <strong>configuración predeterminada</strong> en todos tus registros.</p>
     </div>
     """, unsafe_allow_html=True)
-    
-    # Inicializar el estado del expander y parámetros si no existen
-    if 'expander_abierto' not in st.session_state:
-        st.session_state.expander_abierto = True  # Siempre inicia expandido
-    if 'parametros_reporte' not in st.session_state:
-        st.session_state.parametros_reporte = {}
-    
-    # Resetear el estado del expander si se recarga la página
-    if 'just_saved' in st.session_state and st.session_state.just_saved:
-        st.session_state.expander_abierto = False
-        st.session_state.just_saved = False
-    
-    # Mostrar parámetros guardados si existen
-    if st.session_state.parametros_reporte:
-        # Obtener información adicional de HF si existe
-        hf_info = ""
-        if 'user' in st.session_state and st.session_state.user:
-            usuario = db.get_user_by_id(st.session_state.user['id'])
-            if usuario and usuario.get('sistema_preferido') == 'HF':
-                hf_info = f" | 📻 HF: {usuario.get('frecuencia', '')} {usuario.get('modo', '')} {usuario.get('potencia', '')}"
 
-        # Obtener solo el nombre del estado sin la abreviatura
-        swl_estado_display = st.session_state.parametros_reporte['swl_estado']
-        if ' - ' in swl_estado_display:
-            swl_estado_display = swl_estado_display.split(' - ', 1)[1]
-            
-        st.info(f"📅 **Fecha de Reporte:** {st.session_state.parametros_reporte['fecha_reporte']} | "
-                f"📋 **Tipo de Reporte:** {st.session_state.parametros_reporte['tipo_reporte']} | "
-                f"🖥️ **Sistema Preferido:** {st.session_state.parametros_reporte['sistema_preferido'] or 'Ninguno'} | "
-                f"📝 **Pre-Registros:** {st.session_state.parametros_reporte['pre_registro']}{hf_info}"
-                f"📍 **SWL Estado:** {swl_estado_display} | "
-                f"🏙️ **SWL Ciudad:** {st.session_state.parametros_reporte['swl_ciudad']}"
-                )
-                
-    
-    # Formulario de parámetros de captura - Siempre expandido al inicio
+    # ==========================
+    # Session state base
+    # ==========================
+    if "expander_abierto" not in st.session_state:
+        st.session_state.expander_abierto = True  # primera vez abierto
+    if "parametros_reporte" not in st.session_state:
+        st.session_state.parametros_reporte = {}
+    if "registros" not in st.session_state:
+        st.session_state.registros = []
+    if "registros_editados" not in st.session_state:
+        st.session_state.registros_editados = False
+    if "pre_form_nonce" not in st.session_state:
+        st.session_state.pre_form_nonce = 0  # para vaciar los campos de pre-registro cuando se requiera
+
+    # Si justo se guardaron parámetros en esta corrida, mantener expander cerrado
+    if st.session_state.get("just_saved_params", False):
+        st.session_state.expander_abierto = False
+        st.session_state["just_saved_params"] = False
+
+    # ==========================
+    # Resumen de parámetros arriba
+    # ==========================
+    if st.session_state.parametros_reporte:
+        pr = st.session_state.parametros_reporte
+        hf_info = ""
+        if pr.get("sistema_preferido") == "HF":
+            hf_info = f" | 📻 HF: {pr.get('frecuencia','')} {pr.get('modo','')} {pr.get('potencia','')}"
+        st.info(
+            f"📅 **Fecha de Reporte:** {pr.get('fecha_reporte','')} | "
+            f"📋 **Tipo de Reporte:** {pr.get('tipo_reporte','')} | "
+            f"🖥️ **Sistema Preferido:** {pr.get('sistema_preferido','')} | "
+            f"📝 **Pre-Registros:** {pr.get('pre_registro','')}{hf_info} | "
+            f"📍 **SWL Estado:** {pr.get('swl_estado','')} | "
+            f"🏙️ **SWL Ciudad:** {pr.get('swl_ciudad','')}"
+        )
+
+    # ==========================
+    # Formulario Parámetros
+    # ==========================
     with st.expander("📋 Parámetros de Captura", expanded=st.session_state.expander_abierto):
-        with st.form("reporte_form"):
-            # Campos del formulario en el orden solicitado
-            from time_utils import get_current_cdmx_time
+        with st.form("form_parametros_reporte"):
+            # Fecha
             fecha_actual = get_current_cdmx_time().date()
             fecha = st.date_input("Fecha de Reporte", fecha_actual)
-            
-            # Mostrar advertencia si la fecha no es la actual
             if fecha != fecha_actual:
-                st.warning("⚠️ Los reportes se están capturando con fecha distinta a la actual y así serán guardados.")
-            
-            # Obtener la lista de eventos activos
+                st.warning("⚠️ Reporte con fecha distinta a la actual.")
+
+            # Tipo reporte
             try:
                 eventos = db.get_all_eventos()
-                opciones_eventos = [e['tipo'] for e in eventos]
-                if not opciones_eventos:
-                    opciones_eventos = ["Actividad de Radio"]  # Valor por defecto si no hay eventos
-                    st.warning("No se encontraron tipos de eventos configurados")
-            except Exception as e:
-                st.error(f"Error al cargar los tipos de eventos: {str(e)}")
-                opciones_eventos = ["Actividad de Radio"]  # Valor por defecto en caso de error
-                
-            tipo_reporte = st.selectbox(
-                "Tipo de Reporte",
-                opciones_eventos,
-                index=0
-            )
-            
-            # Obtener la lista de sistemas para el selectbox
+                opciones_eventos = [e["tipo"] for e in eventos] or ["Boletín"]
+            except Exception:
+                opciones_eventos = ["Boletín"]
+            tipo_reporte = st.selectbox("Tipo de Reporte", opciones_eventos)
+
+            # Sistemas
             try:
                 sistemas_dict = db.get_sistemas()
-                opciones_sistemas = sorted(list(sistemas_dict.keys()))  # Ordenar alfabéticamente
-                if not opciones_sistemas:
-                    st.error("No se encontraron sistemas configurados en la base de datos")
-                    opciones_sistemas = ["ASL"]
-            except Exception as e:
-                st.error(f"Error al cargar los sistemas: {str(e)}")
+                opciones_sistemas = sorted(list(sistemas_dict.keys())) or ["ASL"]
+            except Exception:
                 opciones_sistemas = ["ASL"]
-            
-            # Obtener el sistema actual del usuario si existe
-            sistema_actual = None
-            if 'user' in st.session_state and 'sistema_preferido' in st.session_state.user:
-                sistema_actual = st.session_state.user['sistema_preferido']
-            
-            # Si no hay sistema actual, usar 'ASL' como predeterminado
-            sistema_default = sistema_actual if sistema_actual in opciones_sistemas else (opciones_sistemas[0] if opciones_sistemas else "ASL")
-                
+
+            # Sugerir por usuario
+            sistema_default = None
+            if "user" in st.session_state and st.session_state.user and "sistema_preferido" in st.session_state.user:
+                sistema_default = st.session_state.user["sistema_preferido"]
+            if sistema_default not in opciones_sistemas:
+                sistema_default = opciones_sistemas[0] if opciones_sistemas else "ASL"
+
             sistema_preferido = st.selectbox(
                 "Sistema Preferido *",
                 opciones_sistemas,
-                index=opciones_sistemas.index(sistema_default) if sistema_default in opciones_sistemas else 0,
-                help="Selecciona un sistema de la lista"
+                index=(opciones_sistemas.index(sistema_default) if sistema_default in opciones_sistemas else 0),
             )
 
-
-        # Obtener la lista de Estados para SWL
+            # Estados SWL
             try:
-                # Obtener la lista de estados como diccionarios
                 estados = db.get_estados()
-                # Formatear como 'ABREVIATURA - ESTADO' para mejor visualización
-                opciones_estados = [""] + [str(e['estado']) for e in estados if e and 'estado' in e]
-                if not opciones_estados or opciones_estados == [""]:
-                    st.error("No se encontraron Estados configurados en la base de datos")
-                    opciones_estados = [""]
-            except Exception as e:
-                st.error(f"Error al cargar los Estados: {str(e)}")
+                opciones_estados = [""] + [str(e["estado"]) for e in estados if e]
+            except Exception:
                 opciones_estados = [""]
 
-            # Inicializar variables para los valores del usuario
-            usuario = None
-            swl_estado_guardado = ""
-            swl_ciudad_guardada = ""
-            
-            # Obtener datos del usuario si está autenticado
-            if 'user' in st.session_state and st.session_state.user and 'id' in st.session_state.user:
-                usuario = db.get_user_by_id(st.session_state.user['id'])
-                
-                # Cargar estado SWL si existe
-                if usuario and 'swl_estado' in usuario and usuario['swl_estado'] is not None:
-                    estado_guardado = usuario['swl_estado']
-                    # Buscar coincidencia exacta en la lista de estados
-                    for e in estados:
-                        if e and 'estado' in e and str(e['estado']) == str(estado_guardado):
-                            swl_estado_guardado = str(e['estado'])  # Solo el nombre del estado
-                            break
-                            
-                # Cargar ciudad SWL si existe
-                if usuario and 'swl_ciudad' in usuario and usuario['swl_ciudad'] is not None:
-                    swl_ciudad_guardada = str(usuario['swl_ciudad'])
-                    # Si la ciudad incluye el estado (formato "Estado - Ciudad"), extraer solo la ciudad
-                    if ' - ' in swl_ciudad_guardada:
-                        swl_ciudad_guardada = swl_ciudad_guardada.split(' - ')[1].strip()
-
-            # Crear columnas para los campos SWL
             col_swl1, col_swl2 = st.columns(2)
-            
             with col_swl1:
-                # Mostrar el campo de estado SWL
-                # Encontrar el índice del estado guardado en las opciones
-                estado_index = 0
-                if swl_estado_guardado and swl_estado_guardado in opciones_estados:
-                    estado_index = opciones_estados.index(swl_estado_guardado)
-                
-                swl_estado = st.selectbox(
-                    "SWL Estado",
-                    options=opciones_estados,
-                    index=estado_index,
-                    help="Selecciona el estado donde se realiza la escucha"
-                )
-            
+                swl_estado = st.selectbox("SWL Estado", options=opciones_estados)
             with col_swl2:
-                # Mostrar el campo de ciudad SWL (solo el nombre de la ciudad)
-                swl_ciudad = st.text_input(
-                    "SWL Ciudad",
-                    value=swl_ciudad_guardada if swl_ciudad_guardada else "",
-                    help="Ingresa la ciudad donde se realiza la escucha (solo el nombre de la ciudad)"
-            )
+                swl_ciudad = st.text_input("SWL Ciudad", "")
 
+            # Pre-registros
+            # Si el usuario ya tiene uno guardado, proponlo
+            pre_registro_guardado = 3
+            try:
+                if "user" in st.session_state and st.session_state.user and "id" in st.session_state.user:
+                    u = db.get_user_by_id(st.session_state.user["id"])
+                    if u and u.get("pre_registro") is not None:
+                        pre_registro_guardado = int(u.get("pre_registro") or 3)
+            except Exception:
+                pass
 
-            # Campo Pre-registro con slider
-            # Obtener el valor guardado del usuario o usar 1 como predeterminado
-            pre_registro_guardado = 1
-            if 'user' in st.session_state and st.session_state.user and 'id' in st.session_state.user:
-                usuario = db.get_user_by_id(st.session_state.user['id'])
-                if usuario and 'pre_registro' in usuario and usuario['pre_registro'] is not None:
-                    pre_registro_guardado = usuario['pre_registro']
+            pre_registro = st.slider("Pre-Registros", min_value=1, max_value=10, value=pre_registro_guardado)
 
-            pre_registro = st.slider(
-                "Pre-Registros",
-                min_value=1,
-                max_value=10,
-                value=pre_registro_guardado,
-                help=f"Valor actual: {pre_registro_guardado}. Selecciona un valor entre 1 y 10 para el pre-registro"
-            )
-
-            # Campos adicionales para HF
-            frecuencia = ""
-            modo = ""
-            potencia = ""
-
-            # Obtener valores guardados del usuario si existen
-            if 'user' in st.session_state and st.session_state.user and 'id' in st.session_state.user:
-                usuario = db.get_user_by_id(st.session_state.user['id'])
-                if usuario:
-                    frecuencia = usuario.get('frecuencia', '')
-                    modo = usuario.get('modo', '')
-                    potencia = usuario.get('potencia', '')
-
-            # Mostrar campos HF solo si se selecciona HF
-            if sistema_preferido == 'HF':
+            # HF si aplica
+            frecuencia = modo = potencia = ""
+            if sistema_preferido == "HF":
                 st.markdown("**📻 Configuración HF**")
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    frecuencia = st.text_input("Frecuencia (MHz)", "")
+                with c2:
+                    modo = st.selectbox("Modo", ["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"])
+                with c3:
+                    potencia = st.selectbox("Potencia", ["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"])
 
-                col1, col2, col3 = st.columns(3)
+            # Botones
+            cb1, cb2 = st.columns(2)
+            with cb1:
+                guardar = st.form_submit_button("💾 Guardar Parámetros", type="primary", use_container_width=True)
+            with cb2:
+                cancelar = st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True)
 
-                with col1:
-                    frecuencia = st.text_input(
-                        "Frecuencia (MHz)",
-                        value=frecuencia,
-                        placeholder="Ej: 7.100",
-                        help="Frecuencia en MHz (ej: 7.100 para 40m)"
-                    )
-
-                with col2:
-                    modo = st.selectbox(
-                        "Modo",
-                        ["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"],
-                        index=["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"].index(modo) if modo in ["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"] else 0,
-                        help="Modo de operación HF"
-                    )
-
-                with col3:
-                    potencia = st.selectbox(
-                        "Potencia",
-                        ["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"],
-                        index=["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"].index(potencia) if potencia in ["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"] else 0,
-                        help="Nivel de potencia de transmisión"
-                    )
-
-                st.markdown("---")
-            
-            # Sección de Datos de Escucha (SWL) eliminada
-            
-            st.markdown("---")
-            
-            # Botones del formulario centrados
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    guardar = st.form_submit_button("💾 Guardar Parámetros", type="primary", use_container_width=True)
-                with col_btn2:
-                    cancelar = st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True)
-            
-            if guardar:
-                try:
-                    # Validar que se haya seleccionado un sistema
-                    if not sistema_preferido:
-                        st.error("Por favor selecciona un Sistema Preferido")
-                        st.session_state.expander_abierto = True  # Mantener expandido si hay error
-                        st.stop()
-                    
-                    # Marcar que se acaba de guardar para cerrar el expander
-                    st.session_state.just_saved = True
-                        
-                    # Obtener el ID del usuario actual
-                    user_id = st.session_state.user['id']
-                    
-                    # Actualizar los datos del usuario
+        # Acciones del form de parámetros
+        if guardar:
+            try:
+                # Persistir preferencias de usuario
+                if "user" in st.session_state and st.session_state.user and "id" in st.session_state.user:
                     db.update_user(
-                        user_id=user_id,
+                        user_id=st.session_state.user["id"],
                         sistema_preferido=sistema_preferido,
-                        frecuencia=frecuencia if sistema_preferido == 'HF' else None,
-                        modo=modo if sistema_preferido == 'HF' else None,
-                        potencia=potencia if sistema_preferido == 'HF' else None,
+                        frecuencia=(frecuencia if sistema_preferido == "HF" else None),
+                        modo=(modo if sistema_preferido == "HF" else None),
+                        potencia=(potencia if sistema_preferido == "HF" else None),
                         pre_registro=pre_registro,
                         swl_estado=swl_estado,
-                        swl_ciudad=swl_ciudad
+                        swl_ciudad=swl_ciudad,
                     )
-                    
-                    # Guardar parámetros en la sesión
-                    st.session_state.parametros_reporte = {
-                        'fecha_reporte': fecha.strftime('%d/%m/%Y'),
-                        'tipo_reporte': tipo_reporte,
-                        'sistema_preferido': sistema_preferido,
-                        'pre_registro': pre_registro,
-                        'swl_estado': swl_estado,
-                        'swl_ciudad': swl_ciudad
-                    }
+            except Exception as e:
+                st.warning(f"⚠️ No se pudieron guardar preferencias de usuario: {e}")
 
-                    # Guardar parámetros HF si se seleccionó HF
-                    if sistema_preferido == 'HF':
-                        st.session_state.parametros_reporte.update({
-                            'frecuencia': frecuencia,
-                            'modo': modo,
-                            'potencia': potencia
-                        })
-                    
-                    st.success("✅ Parámetros guardados correctamente")
-                    # Cerrar el expander después de guardar
-                    st.session_state.expander_abierto = False
-                    time.sleep(2)
-                    st.rerun()
-                    
-                except Exception as e:
-                    st.error(f"Error al guardar los parámetros: {str(e)}")
-                    st.stop()
-            
-            if cancelar:
-                st.session_state.expander_abierto = False
-                st.rerun()
-    
-    # Mostrar tabla de pre-registros si los parámetros están guardados
+            # Guardar parámetros en sesión
+            st.session_state.parametros_reporte = {
+                "fecha_reporte": fecha.strftime("%d/%m/%Y"),
+                "tipo_reporte": tipo_reporte,
+                "sistema_preferido": sistema_preferido,
+                "pre_registro": pre_registro,
+                "swl_estado": swl_estado,
+                "swl_ciudad": swl_ciudad,
+            }
+            if sistema_preferido == "HF":
+                st.session_state.parametros_reporte.update({
+                    "frecuencia": frecuencia, "modo": modo, "potencia": potencia
+                })
+
+            # Cerrar expander y mostrar resto del flujo
+            st.session_state.expander_abierto = False
+            st.session_state.just_saved_params = True  # bandera para este ciclo
+            st.success("✅ Parámetros guardados.")
+            sleep(0.3)
+            st.rerun()
+
+        if cancelar:
+            st.session_state.expander_abierto = False
+            st.rerun()
+
+    # ==========================
+    # Pre-Registros (form)
+    # ==========================
     if st.session_state.parametros_reporte and not st.session_state.expander_abierto:
         st.markdown("### Pre-Registros")
-        
-        # Inicializar la variable de sesión para los registros si no existe
-        if 'registros' not in st.session_state:
-            st.session_state.registros = []
-        if 'registros_editados' not in st.session_state:
-            st.session_state.registros_editados = False
-        
-        # Crear un formulario para los pre-registros
-        form_submitted = False
-        with st.form("pre_registros_form"):
-            # Crear una tabla con los campos de entrada
-            for i in range(st.session_state.parametros_reporte['pre_registro']):
-                # Usar CSS personalizado para alinear perfectamente los campos
-                st.markdown(f"""
-                <style>
-                .row-{i} {{
-                    display: flex;
-                    gap: 20px;
-                    margin-bottom: 20px;
-                    align-items: flex-start;
-                }}
-                .field-indicativo-{i} {{
-                    flex: 3;
-                    display: flex;
-                    flex-direction: column;
-                }}
-                .field-sistema-{i} {{
-                    flex: 1;
-                    display: flex;
-                    flex-direction: column;
-                }}
-                .field-indicativo-{i} label {{
-                    font-weight: bold;
-                    margin-bottom: 5px;
-                    color: #1f77b4;
-                }}
-                .field-sistema-{i} label {{
-                    font-weight: bold;
-                    margin-bottom: 5px;
-                    color: #1f77b4;
-                }}
-                </style>
-                <div class="row-{i}">
-                    <div class="field-indicativo-{i}"></div>
-                    <div class="field-sistema-{i}"></div>
-                </div>
-                """, unsafe_allow_html=True)
 
+        # Clave única del form basada en nonce para evitar duplicados
+        pre_form_key = f"pre_registros_form_{st.session_state.get('pre_form_nonce',0)}"
+        with st.form(pre_form_key):
+            n = st.session_state.parametros_reporte["pre_registro"]
+            for i in range(n):
                 col1, col2 = st.columns([3, 1])
-
                 with col1:
-                    # Usar el valor guardado o vacío si no existe
-                    valor_guardado = st.session_state.get(f'indicativo_{i}', '')
-                    st.markdown(f"**Indicativo {i+1}**")
-                    indicativo = st.text_input(
+                    st.text_input(
                         f"Indicativo {i+1}",
-                        key=f"indicativo_{i}",
-                        value=valor_guardado,
-                        placeholder="Ej: XE1ABC",
-                        label_visibility="collapsed"
+                        key=_pre_form_key(f"indicativo_{i}"),
+                        placeholder="Ej: XE1ABC"
                     )
-
                 with col2:
-                    # Obtener la lista de sistemas desde la base de datos
+                    # Opciones de sistemas desde BD
                     try:
-                        sistemas_dict = db.get_sistemas()
-                        opciones_sistemas = sorted(list(sistemas_dict.keys()))  # Usar campo 'codigo'
-                        if not opciones_sistemas:
-                            st.error("No se encontraron sistemas configurados en la base de datos")
-                            opciones_sistemas = ["ASL"]
-                    except Exception as e:
-                        st.error(f"Error al cargar los sistemas: {str(e)}")
-                        opciones_sistemas = ["ASL"]
-
-                    sistema_guardado = st.session_state.get(f'sistema_{i}', st.session_state.parametros_reporte['sistema_preferido'])
-                    # Asegurarse de que el sistema guardado esté en la lista de opciones
-                    try:
-                        indice = opciones_sistemas.index(sistema_guardado)
-                    except ValueError:
-                        indice = 0
-
-                    st.markdown("**Sistema**")
-                    sistema = st.selectbox(
+                        sist_dict = db.get_sistemas()
+                        sist_opc = sorted(list(sist_dict.keys())) or ["ASL"]
+                    except Exception:
+                        sist_opc = ["ASL"]
+                    st.selectbox(
                         f"Sistema {i+1}",
-                        opciones_sistemas,
-                        key=f"sistema_{i}",
-                        index=indice,
-                        label_visibility="collapsed"
+                        sist_opc,
+                        key=_pre_form_key(f"sistema_{i}"),
                     )
 
-            # Botón para pre-registrar todos
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                form_submitted = st.form_submit_button(
-                    "📋 Pre-Registrar Todos",
-                    type="primary",
-                    use_container_width=True
-                )
-        
-        # Procesar el formulario cuando se envía
-        if form_submitted:
-            # Recopilar todos los registros
-            registros_guardar = []
-            indicativos_invalidos = []
-            indicativos_incompletos = []
+            pre_guardar = st.form_submit_button("📋 Pre-Registrar Todos", type="primary", use_container_width=True)
 
-            # Procesar cada indicativo
-            for i in range(st.session_state.parametros_reporte['pre_registro']):
-                indicativo = st.session_state.get(f'indicativo_{i}', '').strip().upper()
-                if not indicativo:  # Saltar si está vacío
+        # Procesar el pre-registro
+        if pre_guardar:
+            pr = st.session_state.parametros_reporte
+            registros_guardar = []
+            indicativos_invalidos, indicativos_incompletos = [], []
+
+            for i in range(pr["pre_registro"]):
+                indicativo = _safe_str(st.session_state.get(_pre_form_key(f"indicativo_{i}"))).strip().upper()
+                if not indicativo:
                     continue
 
-                # Validar el indicativo
-                result = utils.validar_call_sign(indicativo)
+                # Validar indicativo
+                try:
+                    result_val = utils.validar_call_sign(indicativo)
+                except Exception:
+                    result_val = {"indicativo": True, "completo": True, "Zona": ""}
 
-                # Verificar que sea válido Y completo
-                if not result["indicativo"]:
+                if not result_val.get("indicativo"):
                     indicativos_invalidos.append(indicativo)
                     continue
-
-                if not result["completo"]:
+                if not result_val.get("completo"):
                     indicativos_incompletos.append(indicativo)
                     continue
 
-                # Crear registro base con datos mínimos
+                # Base del registro
                 registro = {
-                    'indicativo': indicativo,
-                    'sistema': st.session_state.get(f'sistema_{i}', st.session_state.parametros_reporte['sistema_preferido']),
-                    'fecha': st.session_state.parametros_reporte['fecha_reporte'],
-                    'tipo_reporte': st.session_state.parametros_reporte['tipo_reporte'],
-                    'senal': '59'  # Valor por defecto para la señal
+                    "indicativo": indicativo,
+                    "sistema": st.session_state.get(_pre_form_key(f"sistema_{i}"), pr["sistema_preferido"]),
+                    "fecha": pr["fecha_reporte"],
+                    "tipo_reporte": pr["tipo_reporte"],
+                    "senal": "59",
                 }
 
-                # Agregar campos HF si el sistema es HF
-                if st.session_state.parametros_reporte.get('sistema_preferido') == 'HF':
-                    registro.update({
-                        'frecuencia': st.session_state.parametros_reporte.get('frecuencia', ''),
-                        'modo': st.session_state.parametros_reporte.get('modo', ''),
-                        'potencia': st.session_state.parametros_reporte.get('potencia', '')
-                    })
-
-                # Si el indicativo es SWR, usar el estado y ciudad de SWL (esto tiene prioridad sobre la zona)
+                # SWR: copiar SWL estado/ciudad y zona vacía
                 if indicativo == "SWR":
-                    print(f"DEBUG - Procesando estación SWR")
-                    if 'swl_estado' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_estado']:
-                        # Guardar el estado original de SWL
-                        swl_estado = str(st.session_state.parametros_reporte['swl_estado']).strip()
-                        registro['estado'] = swl_estado
-                        registro['_es_swr'] = True  # Marcar como SWR para evitar sobrescritura
-                        print(f"DEBUG - Asignando estado SWL a SWR: '{swl_estado}' (tipo: {type(swl_estado).__name__})")
-                    
-                    if 'swl_ciudad' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_ciudad']:
-                        swl_ciudad = str(st.session_state.parametros_reporte['swl_ciudad']).strip()
-                        registro['ciudad'] = swl_ciudad
-                        print(f"DEBUG - Asignando ciudad SWL a SWR: '{swl_ciudad}' (tipo: {type(swl_ciudad).__name__})")
-                    
-                    # Forzar la zona a vacío para SWR
-                    registro['zona'] = ''
-                    registro['_es_swr'] = True  # Asegurar que la bandera esté establecida
-                    print(f"DEBUG - Estado final de SWR: '{registro.get('estado')}', Ciudad: '{registro.get('ciudad')}', Zona: '{registro.get('zona')}'")
-                # Si el indicativo es extranjero y no es SWR, pre-llenar Estado y Zona
-                elif result["Zona"] == "Extranjera":
-                    registro['estado'] = "Extranjero"
-                    registro['zona'] = "EXT"
-                    print(f"DEBUG - Asignando estado Extranjero a {indicativo}")
-
-                # Obtener datos del radioexperimentador si existe
-                radioexperimentador = db.get_radioexperimentador_por_indicativo(indicativo)
-
-                if radioexperimentador:
-                    # Guardar los datos completos del radioexperimentador para depuración
-                    registro['radioexperimentador_data'] = dict(radioexperimentador)
-
-                    # Si existe en la base de datos, actualizar el registro con los datos
-                    registro.update({
-                        'nombre_operador': radioexperimentador.get('nombre_completo', ''),  # ← CORREGIDO: usar 'nombre_completo'
-                        'apellido_paterno': radioexperimentador.get('apellido_paterno', ''),
-                        'apellido_materno': radioexperimentador.get('apellido_materno', ''),
-                        'estado': radioexperimentador.get('estado', ''),           # ← Correcto
-                        'ciudad': radioexperimentador.get('municipio', ''),        # ← CORREGIDO: usar 'municipio' en lugar de 'ciudad'
-                        'colonia': radioexperimentador.get('colonia', ''),
-                        'codigo_postal': radioexperimentador.get('codigo_postal', ''),
-                        'telefono': radioexperimentador.get('telefono', ''),
-                        'email': radioexperimentador.get('email', ''),
-                        'zona': radioexperimentador.get('zona', '')               # ← CORREGIDO: usar zona de BD o calcular
-                    })
-
-                    # Si no hay zona en BD, calcularla automáticamente
-                    if not registro['zona']:
-                        prefijo = indicativo[:3]
-                        if prefijo.startswith('XE') and len(indicativo) >= 3 and indicativo[2] in ['1', '2', '3']:
-                            registro['zona'] = f"XE{indicativo[2]}"
+                    registro["estado"] = _safe_str(pr.get("swl_estado"))
+                    registro["ciudad"] = _safe_str(pr.get("swl_ciudad"))
+                    registro["zona"] = ""
+                    registro["_es_swr"] = True
                 else:
-                    # Si no existe, crear un registro básico
-                    registro = {
-                        'indicativo': indicativo,
-                        'nombre_operador': '',
-                        'estado': '',
-                        'ciudad': '',
-                        'zona': '',
-                        'sistema': st.session_state.get(f'sistema_{i}', st.session_state.parametros_reporte['sistema_preferido']),
-                        'fecha': st.session_state.parametros_reporte['fecha_reporte'],
-                        'tipo_reporte': st.session_state.parametros_reporte['tipo_reporte'],
-                        'senal': '59'  # Valor por defecto para la señal
-                    }
-
-                    # Agregar campos HF si el sistema es HF
-                    if st.session_state.parametros_reporte.get('sistema_preferido') == 'HF':
+                    # Buscar en radioexperimentadores
+                    rx = db.get_radioexperimentador_por_indicativo(indicativo)
+                    if rx:
                         registro.update({
-                            'frecuencia': st.session_state.parametros_reporte.get('frecuencia', ''),
-                            'modo': st.session_state.parametros_reporte.get('modo', ''),
-                            'potencia': st.session_state.parametros_reporte.get('potencia', '')
+                            "nombre_operador": _safe_str(rx.get("nombre_completo","")),
+                            "apellido_paterno": _safe_str(rx.get("apellido_paterno","")),
+                            "apellido_materno": _safe_str(rx.get("apellido_materno","")),
+                            "estado": _safe_str(rx.get("estado","")),
+                            "ciudad": _safe_str(rx.get("municipio","")),
+                            "colonia": _safe_str(rx.get("colonia","")),
+                            "codigo_postal": _safe_str(rx.get("codigo_postal","")),
+                            "telefono": _safe_str(rx.get("telefono","")),
+                            "email": _safe_str(rx.get("email","")),
                         })
-                    
-                    # Para cualquier indicativo que no exista en la base de datos, usar SWL Estado y SWL Ciudad
-                    if 'swl_estado' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_estado']:
-                        print(f"DEBUG - Asignando estado desde parametros_reporte: {st.session_state.parametros_reporte['swl_estado']}")
-                        # Asegurarse de que el estado sea una cadena
-                        estado_swl = str(st.session_state.parametros_reporte['swl_estado'])
-                        registro['estado'] = estado_swl
-                        print(f"DEBUG - Estado asignado: {registro['estado']} (tipo: {type(registro['estado']).__name__})")
-                        
-                        # Verificar si el estado está en las opciones disponibles
-                        if estado_swl not in [e['estado'] for e in _get_estados_options()]:
-                            print(f"ADVERTENCIA: El estado '{estado_swl}' no está en las opciones disponibles")
-                    
-                    if 'swl_ciudad' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_ciudad']:
-                        print(f"DEBUG - Asignando ciudad desde parametros_reporte: {st.session_state.parametros_reporte['swl_ciudad']}")
-                        registro['ciudad'] = str(st.session_state.parametros_reporte['swl_ciudad'])
-                        print(f"DEBUG - Ciudad asignada: {registro['ciudad']} (tipo: {type(registro['ciudad']).__name__})")
-                    
-                    # Depuración adicional
-                    print("\n=== DEBUG - Contenido de parametros_reporte ===")
-                    for key, value in st.session_state.parametros_reporte.items():
-                        print(f"{key}: {value} (tipo: {type(value).__name__})")
-                    print("===========================================\n")
-                        
-                    # Si el registro está marcado como SWR, mantener sus valores
-                    if registro.get('_es_swr', False):
-                        # Restaurar los valores de SWR para asegurar que no se sobrescriban
-                        if 'swl_estado' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_estado']:
-                            registro['estado'] = str(st.session_state.parametros_reporte['swl_estado']).strip()
-                        if 'swl_ciudad' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_ciudad']:
-                            registro['ciudad'] = str(st.session_state.parametros_reporte['swl_ciudad']).strip()
-                        registro['zona'] = ''
-                        print(f"DEBUG - Manteniendo valores de SWR: estado='{registro.get('estado')}', ciudad='{registro.get('ciudad')}'")
-                    # Si no es SWR pero es extranjero
-                    elif result["Zona"] == "Extranjera":
-                        registro['estado'] = "Extranjero"
-                        registro['zona'] = "EXT"
-                        print(f"DEBUG - Asignando estado Extranjero a {indicativo}")
-                    else:
-                        print(f"DEBUG - Estado actual para {indicativo}: {registro.get('estado')} (tipo: {type(registro.get('estado')).__name__})")
+                        zona_bd = _safe_str(rx.get("zona",""))
+                        registro["zona"] = _estimar_zona(indicativo, zona_bd=zona_bd, result_validacion=result_val)
 
-                    # Intentar determinar la zona basada en el prefijo
-                    prefijo = indicativo[:3]  # Tomar los primeros 3 caracteres como prefijo
-                    if prefijo.startswith('XE') and len(indicativo) >= 3 and indicativo[2] in ['1', '2', '3']:
-                        registro['zona'] = f"XE{indicativo[2]}"
+                        # Si sigue sin estado/ciudad, usa SWL como respaldo
+                        if not registro.get("estado"):
+                            registro["estado"] = _safe_str(pr.get("swl_estado"))
+                        if not registro.get("ciudad"):
+                            registro["ciudad"] = _safe_str(pr.get("swl_ciudad"))
+                    else:
+                        # No existe en BD → usar SWL + estimar zona y dejar nombre vacío
+                        registro.update({
+                            "nombre_operador": "",
+                            "estado": _safe_str(pr.get("swl_estado")),
+                            "ciudad": _safe_str(pr.get("swl_ciudad")),
+                        })
+                        # Extranjero directo si la validación lo marcó así
+                        if result_val.get("Zona") == "Extranjera":
+                            registro["zona"] = "EXT"
+                            registro["estado"] = "Extranjero"
+                        else:
+                            registro["zona"] = _estimar_zona(indicativo, zona_bd="", result_validacion=result_val)
+
+                # HF extras
+                if pr.get("sistema_preferido") == "HF":
+                    registro.update({
+                        "frecuencia": _safe_str(pr.get("frecuencia","")),
+                        "modo": _safe_str(pr.get("modo","")),
+                        "potencia": _safe_str(pr.get("potencia","")),
+                    })
 
                 registros_guardar.append(registro)
 
-            # Mostrar errores de validación si los hay
             if indicativos_invalidos:
-                st.error(f"❌ Los siguientes indicativos no son válidos: {', '.join(indicativos_invalidos)}")
+                st.error(f"❌ Indicativos inválidos: {', '.join(indicativos_invalidos)}")
                 return
-
             if indicativos_incompletos:
-                st.error(f"⚠️ Los siguientes indicativos están incompletos (necesitan sufijo): {', '.join(indicativos_incompletos)}")
+                st.error(f"⚠️ Indicativos incompletos (falta sufijo): {', '.join(indicativos_incompletos)}")
                 return
-
-            # Solo proceder si hay registros válidos
             if not registros_guardar:
-                st.warning("⚠️ No hay registros válidos para procesar. Complete todos los indicativos correctamente.")
+                st.warning("⚠️ No hay registros válidos para procesar.")
                 return
 
-            # Actualizar la variable de sesión con los nuevos registros
             st.session_state.registros = registros_guardar
-            st.session_state.expander_abierto = False  # Minimizar el formulario
-
-            # Limpiar los campos del formulario
-            for i in range(st.session_state.parametros_reporte['pre_registro']):
-                if f'indicativo_{i}' in st.session_state:
-                    del st.session_state[f'indicativo_{i}']
-                if f'sistema_{i}' in st.session_state:
-                    del st.session_state[f'sistema_{i}']
-
+            st.session_state.registros_editados = False
+            st.success("✅ Pre-registros cargados.")
             st.rerun()
-        
-        # Mostrar la tabla de registros si hay registros guardados
-        if 'registros' in st.session_state and st.session_state.registros:
-            st.markdown("---")
-            st.subheader("📋 Estaciones a Reportar")
-            
-            # Crear una tabla con los registros
-            import pandas as pd
-            
-            # Verificar si hay registros para mostrar
-            if not st.session_state.registros:
-                st.info("No hay registros para mostrar. Agrega indicativos usando el formulario superior.")
-                return
-                
-            # Crear DataFrame con los datos de los registros
-            # Asegurarse de que los valores de estado sean cadenas
-            registros_para_df = []
-            for reg in st.session_state.registros:
-                reg_copy = reg.copy()
-                if reg_copy.get('_es_swr', False):
-                    # Para SWR, asegurarse de que los valores sean los correctos
-                    if 'swl_estado' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_estado']:
-                        reg_copy['estado'] = str(st.session_state.parametros_reporte['swl_estado']).strip()
-                    if 'swl_ciudad' in st.session_state.parametros_reporte and st.session_state.parametros_reporte['swl_ciudad']:
-                        reg_copy['ciudad'] = str(st.session_state.parametros_reporte['swl_ciudad']).strip()
-                    reg_copy['zona'] = ''
-                elif 'estado' in reg_copy and reg_copy['estado'] is not None:
-                    reg_copy['estado'] = str(reg_copy['estado'])
-                registros_para_df.append(reg_copy)
-            
-            df = pd.DataFrame(registros_para_df)
 
-            # Seleccionar y ordenar columnas para mostrar
-            columnas_a_mostrar = ['indicativo', 'nombre_operador', 'estado', 'ciudad', 'zona', 'sistema', 'senal']
+    # ==========================
+    # Tabla editable de "Estaciones a Reportar"
+    # ==========================
+    if st.session_state.get("registros"):
+        st.markdown("---")
+        st.subheader("📋 Estaciones a Reportar")
 
-            # Agregar columnas HF si el sistema es HF
-            if st.session_state.parametros_reporte.get('sistema_preferido') == 'HF':
-                columnas_a_mostrar.extend(['frecuencia', 'modo', 'potencia'])
+        # Ajustar SWR y normalizar strings antes del DataFrame
+        pr = st.session_state.parametros_reporte
+        registros_para_df = []
+        for reg in st.session_state.registros:
+            r = dict(reg)
+            if r.get("_es_swr"):
+                r["estado"] = _safe_str(pr.get("swl_estado"))
+                r["ciudad"] = _safe_str(pr.get("swl_ciudad"))
+                r["zona"] = ""
+            # Convertir None->"" en campos de texto
+            for k in ("indicativo", "nombre_operador", "estado", "ciudad", "zona", "sistema", "frecuencia", "modo", "potencia"):
+                if k in r:
+                    r[k] = _safe_str(r[k])
+            # Señal a entero seguro
+            try:
+                r["senal"] = int(r.get("senal", 59) or 59)
+            except Exception:
+                r["senal"] = 59
+            registros_para_df.append(r)
 
-            columnas_disponibles = [col for col in columnas_a_mostrar if col in df.columns]
+        df = pd.DataFrame(registros_para_df).fillna("")
+        columnas_a_mostrar = ['indicativo', 'nombre_operador', 'estado', 'ciudad', 'zona', 'sistema', 'senal']
+        if pr.get('sistema_preferido') == 'HF':
+            columnas_a_mostrar += ['frecuencia', 'modo', 'potencia']
+        columnas_disponibles = [c for c in columnas_a_mostrar if c in df.columns]
 
-            # Obtener opciones para los dropdowns
+        # Opciones dropdown
+        try:
             estados_db = _get_estados_options()
-            estados_options = [estado['estado'] for estado in estados_db]
-            
-            # Asegurarse de que el estado actual esté en las opciones
-            for registro in st.session_state.registros:
-                if 'estado' in registro and registro['estado'] and registro['estado'] not in estados_options:
-                    estados_options.append(registro['estado'])
-            
+            estados_options = [e['estado'] for e in estados_db]
+        except Exception:
+            estados_options = []
+        try:
             zonas_db = _get_zonas_options()
-            zonas_options = [zona['zona'] for zona in zonas_db]
-            
-            # Depuración: Mostrar los estados disponibles y los estados en los registros
-            print("\n=== DEBUG - Estados disponibles ===")
-            print(estados_options)
-            print("\n=== DEBUG - Estados en registros ===")
-            for reg in st.session_state.registros:
-                print(f"{reg.get('indicativo')}: {reg.get('estado')}")
-            print("==================================\n")
+            zonas_options = [z['zona'] for z in zonas_db]
+        except Exception:
+            zonas_options = ["XE1", "XE2", "XE3", "EXT", ""]
 
-            # Mostrar la tabla editable con estilos
-            st.markdown("###### ✏️ Tabla Editable - Corrige los datos antes de guardar")
+        # Asegurar estados presentes
+        for r in registros_para_df:
+            if r.get("estado") and r["estado"] not in estados_options:
+                estados_options.append(r["estado"])
 
-            # Crear configuración para la tabla editable
-            column_config = {
-                'indicativo': st.column_config.TextColumn(
-                    'Indicativo',
-                    help="Indicativo del radioexperimentador (solo lectura)",
-                    disabled=True  # No editable
-                ),
-                'nombre_operador': st.column_config.TextColumn(
-                    'Operador',
-                    help="Nombre completo del operador"
-                ),
-                'estado': st.column_config.SelectboxColumn(
-                    'Estado',
-                    help="Estado donde reside",
-                    options=estados_options,
-                    required=False,
-                    default=None,  # Permitir valores que no estén en las opciones
-                    format_func=lambda x: str(x) if x is not None else ""  # Asegurar que el valor se muestre como cadena
-                ),
-                'ciudad': st.column_config.TextColumn(
-                    'Ciudad',
-                    help="Ciudad o municipio"
-                ),
-                'zona': st.column_config.SelectboxColumn(
-                    'Zona',
-                    help="Zona geográfica (XE1, XE2, XE3, etc.)",
-                    options=zonas_options,
-                    required=False
-                ),
-                'sistema': st.column_config.SelectboxColumn(
-                    'Sistema',
-                    help="Sistema de comunicación utilizado",
-                    options=['HF', 'ASL', 'IRLP', 'DMR', 'Fusion', 'D-Star', 'P25', 'M17'],
-                    required=True
-                ),
-                'senal': st.column_config.NumberColumn(
-                    'Señal',
-                    help="Calidad de señal reportada",
-                    min_value=1,
-                    max_value=99,
-                    step=1,
-                    format="%d"
-                )
-            }
+        # Column config sin NaN
+        column_config = {
+            'indicativo': st.column_config.TextColumn('Indicativo', disabled=True),
+            'nombre_operador': st.column_config.TextColumn('Operador'),
+            'estado': st.column_config.SelectboxColumn('Estado', options=estados_options or [""], required=False),
+            'ciudad': st.column_config.TextColumn('Ciudad'),
+            'zona': st.column_config.SelectboxColumn('Zona', options=zonas_options or [""], required=False),
+            'sistema': st.column_config.SelectboxColumn('Sistema', options=['HF','ASL','IRLP','DMR','Fusion','D-Star','P25','M17'], required=True),
+            'senal': st.column_config.NumberColumn('Señal', min_value=1, max_value=99, step=1, format="%d"),
+        }
+        if pr.get('sistema_preferido') == 'HF':
+            column_config.update({
+                'frecuencia': st.column_config.TextColumn('Frecuencia (MHz)'),
+                'modo': st.column_config.SelectboxColumn('Modo', options=["SSB","CW","FT8","RTTY","PSK31","Otro"], required=False),
+                'potencia': st.column_config.SelectboxColumn('Potencia', options=["QRP (≤5W)","Baja (≤50W)","Media (≤200W)","Alta (≤1kW)","Máxima (>1kW)"], required=False),
+            })
 
-            # Agregar configuración de columnas HF si el sistema es HF
-            if st.session_state.parametros_reporte.get('sistema_preferido') == 'HF':
-                column_config.update({
-                    'frecuencia': st.column_config.TextColumn(
-                        'Frecuencia (MHz)',
-                        help="Frecuencia en MHz"
-                    ),
-                    'modo': st.column_config.SelectboxColumn(
-                        'Modo',
-                        help="Modo de operación HF",
-                        options=["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"],
-                        required=False
-                    ),
-                    'potencia': st.column_config.SelectboxColumn(
-                        'Potencia',
-                        help="Nivel de potencia de transmisión",
-                        options=["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"],
-                        required=False
-                    )
-                })
+        edited_df = st.data_editor(
+            df[columnas_disponibles].fillna(""),
+            column_config=column_config,
+            hide_index=True,
+            use_container_width=True,
+            key="editable_table"
+        )
 
-            # Mostrar tabla editable
-            edited_df = st.data_editor(
-                df[columnas_disponibles],
-                column_config=column_config,
+        # Detectar cambios
+        if not edited_df.equals(df[columnas_disponibles].fillna("")):
+            st.session_state.registros_editados = True
+            for i, r_edit in enumerate(edited_df.to_dict("records")):
+                if i < len(st.session_state.registros):
+                    st.session_state.registros[i].update(r_edit)
+
+        st.caption(f"Total de registros: {len(df)}")
+        if st.session_state.get("registros_editados", False):
+            st.info("💡 Los cambios se aplicarán cuando guardes en la base de datos.")
+
+        # Botones Guardar / Deshacer / Limpiar
+        c1, c2, c3 = st.columns([2,1,1])
+        with c1:
+            if st.button("💾 Guardar en Base de Datos", type="primary", use_container_width=True):
+                # Guardar en BD
+                guardados = 0
+                pr = st.session_state.parametros_reporte
+                for registro in st.session_state.registros:
+                    if not registro.get("indicativo") or not pr.get("tipo_reporte"):
+                        continue
+                    # Ensamble payload
+                    payload = {
+                        'indicativo': _safe_str(registro.get('indicativo')).upper(),
+                        'nombre': _safe_str(registro.get('nombre_operador')),
+                        'estado': _safe_str(registro.get('estado')),
+                        'ciudad': _safe_str(registro.get('ciudad')),
+                        'zona': _safe_str(registro.get('zona')),
+                        'sistema': _safe_str(registro.get('sistema')),
+                        'senal': int(registro.get('senal') or 59),
+                        'fecha_reporte': pr.get('fecha_reporte', get_current_cdmx_time().strftime('%d/%m/%Y')),
+                        'tipo_reporte': pr.get('tipo_reporte','Boletín'),
+                        'origen': 'Sistema'
+                    }
+                    if payload['sistema'] == 'HF':
+                        payload['observaciones'] = f"Frecuencia: {_safe_str(registro.get('frecuencia',''))}, Modo: {_safe_str(registro.get('modo',''))}, Potencia: {_safe_str(registro.get('potencia',''))}"
+                    try:
+                        db.save_reporte(payload)
+                        guardados += 1
+                    except Exception as e:
+                        st.error(f"❌ Error al guardar {payload['indicativo']}: {e}")
+
+                if guardados > 0:
+                    st.success(f"✅ {guardados} registro(s) guardado(s) correctamente.")
+                    # LIMPIEZA post-guardado:
+                    st.session_state.registros = []                 # limpiar tabla editable
+                    st.session_state.registros_editados = False
+                    st.session_state.expander_abierto = False        # mantener expander cerrado
+                    _clear_current_pre_form_inputs()                 # limpiar inputs actuales
+                    _bump_pre_form_nonce_and_clear()                 # forzar que los inputs aparezcan vacíos
+                    sleep(0.4)
+                    st.rerun()
+                else:
+                    st.warning("⚠️ No se guardó ningún registro.")
+
+        with c2:
+            if st.session_state.get("registros_editados", False):
+                if st.button("↩️ Deshacer Cambios", use_container_width=True):
+                    st.session_state.registros_editados = False
+                    st.rerun()
+
+        with c3:
+            if st.button("🗑️ Limpiar registros", use_container_width=True):
+                st.session_state.registros = []
+                st.session_state.registros_editados = False
+                st.rerun()
+
+    # ==========================
+    # Estadísticas + Tabla del día (si hay parámetros)
+    # Siempre se muestran cuando ya cerraste el expander,
+    # aunque no haya registros en edición.
+    # ==========================
+    if st.session_state.parametros_reporte:
+        st.markdown("---")
+        st.subheader("📊 Estadísticas del Día")
+
+        try:
+            fecha_consulta = _get_fecha_consulta_from_parametros()
+            reportes, estadisticas = db.get_reportes_por_fecha(fecha_consulta)
+        except Exception:
+            reportes, estadisticas = [], {}
+
+        st.caption(f"📅 Mostrando reportes del: {st.session_state.parametros_reporte.get('fecha_reporte','')}")
+
+        # Tarjetas simples
+        if estadisticas:
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("📋 Total", estadisticas.get("total", 0))
+            try:
+                zonas_top = ", ".join([z["zona"] for z in estadisticas.get("zonas_mas_reportadas", [])[:3]])
+            except Exception:
+                zonas_top = ""
+            try:
+                sist_top = ", ".join([s["sistema"] for s in estadisticas.get("sistemas_mas_utilizados", [])[:3]])
+            except Exception:
+                sist_top = ""
+            try:
+                est_top = ", ".join([e["estado"] for e in estadisticas.get("estados_mas_reportados", [])[:3]])
+            except Exception:
+                est_top = ""
+            col2.metric("📍 Zonas", zonas_top or "—")
+            col3.metric("📡 Sistemas", sist_top or "—")
+            col4.metric("🏙️ Estados", est_top or "—")
+        else:
+            st.info("No hay estadísticas disponibles para la fecha seleccionada.")
+
+        # Tabla del día (histórico)
+        st.markdown("#### 📄 Registros del día")
+        if reportes:
+            def _format_time(dt_str):
+                if not dt_str:
+                    return ""
+                for fmt in ('%Y-%m-%d %H:%M:%S','%d/%m/%Y %H:%M:%S'):
+                    try:
+                        return datetime.strptime(dt_str, fmt).strftime('%H:%M')
+                    except ValueError:
+                        continue
+                return ""
+
+            df_day = pd.DataFrame([{
+                'Indicativo': _safe_str(r.get('indicativo')),
+                'Nombre': _safe_str(r.get('nombre')),
+                'Sistema': _safe_str(r.get('sistema')),
+                'Zona': _safe_str(r.get('zona')),
+                'Estado': _safe_str(r.get('estado')),
+                'Ciudad': _safe_str(r.get('ciudad')),
+                'Señal': int(r.get('senal') or 59) if str(r.get('senal','')).isdigit() else _safe_str(r.get('senal')),
+                'Hora': _format_time(r.get('fecha_reporte')),
+            } for r in reportes]).fillna("")
+
+            st.data_editor(
+                df_day,
+                column_config={
+                    'Indicativo': st.column_config.TextColumn("Indicativo"),
+                    'Nombre': st.column_config.TextColumn("Nombre"),
+                    'Sistema': st.column_config.TextColumn("Sistema"),
+                    'Zona': st.column_config.TextColumn("Zona"),
+                    'Estado': st.column_config.TextColumn("Estado"),
+                    'Ciudad': st.column_config.TextColumn("Ciudad"),
+                    'Señal': st.column_config.NumberColumn("Señal"),
+                    'Hora': st.column_config.TextColumn("Hora"),
+                },
                 hide_index=True,
                 use_container_width=True,
-                height=min(400, 35 * len(df) + 40),  # Ajustar altura automáticamente
-                key="editable_table"
+                disabled=True
             )
+        else:
+            st.info("No hay reportes registrados para la fecha seleccionada.")
 
-            # Detectar cambios en la tabla
-            if not edited_df.equals(df):
-                # Actualizar los registros en la sesión con los cambios
-                st.session_state.registros_editados = True
-                #st.success("✅ Tabla editada. Haz clic en '💾 Guardar en Base de Datos' para aplicar los cambios.")
-
-                # Actualizar los registros con los datos editados
-                for i, registro_editado in enumerate(edited_df.to_dict('records')):
-                    if i < len(st.session_state.registros):
-                        # Actualizar el registro existente
-                        st.session_state.registros[i].update(registro_editado)
-
-            # Mostrar resumen y botones de acción
-            st.caption(f"Total de registros: {len(df)}")
-
-            # Mostrar información sobre edición
-            if st.session_state.get('registros_editados', False):
-                st.info("💡 **Nota:** Los cambios se aplicarán cuando guardes en la base de datos.")
-
-            # Sección de depuración
-            with st.expander("🔍 Datos de depuración (solo desarrollo)", expanded=False):
-                st.write("### Datos completos de los indicativos consultados en la base de datos")
-                for idx, registro in enumerate(st.session_state.registros, 1):
-                    st.write(f"#### Indicativo {idx}: {registro.get('indicativo', 'N/A')}")
-
-                    # Mostrar datos básicos del registro
-                    st.write("**Datos del registro:**")
-                    st.json({
-                        'indicativo': registro.get('indicativo', ''),
-                        'sistema': registro.get('sistema', ''),
-                        'fecha': registro.get('fecha', ''),
-                        'tipo_reporte': registro.get('tipo_reporte', ''),
-                        'senal': registro.get('senal', ''),
-                        'frecuencia': registro.get('frecuencia', ''),
-                        'modo': registro.get('modo', ''),
-                        'potencia': registro.get('potencia', '')
-                    })
-
-                    # Mostrar datos del radioexperimentador si se consultaron
-                    if 'radioexperimentador_data' in registro:
-                        st.write("**Datos completos del radioexperimentador desde la base de datos:**")
-                        st.json(registro['radioexperimentador_data'])
-
-                    st.markdown("---")
-            
-            # Botones de acción
-            col1, col2, col3 = st.columns([2, 1, 1])
-
-            with col1:
-                # Botón para guardar en la base de datos
-                if st.button("💾 Guardar en Base de Datos", type="primary", use_container_width=True):
-                    try:
-                        # Verificar que haya registros para guardar
-                        if not st.session_state.registros:
-                            st.error("❌ No hay registros para guardar")
-                            return
-
-                        # Guardar cada registro en la base de datos
-                        registros_guardados = 0
-                        for registro in st.session_state.registros:
-                            # Validar que el registro tenga los campos obligatorios
-                            if not registro.get('indicativo') or not registro.get('tipo_reporte'):
-                                st.error(f"❌ El registro de {registro.get('indicativo', 'desconocido')} no tiene los campos obligatorios")
-                                continue
-
-                            # Obtener la fecha de los parámetros de captura
-                            fecha_reporte = st.session_state.parametros_reporte.get('fecha_reporte', get_current_cdmx_time().strftime('%d/%m/%Y'))
-                            print(f"[DEBUG] Fecha de reporte a guardar: {fecha_reporte}")
-                            
-                            # Preparar los datos del reporte según el esquema de la base de datos
-                            reporte_data = {
-                                'indicativo': registro['indicativo'].upper(),
-                                'nombre': registro.get('nombre_operador', ''),  # Mapear a 'nombre' en la BD
-                                'estado': registro.get('estado', ''),
-                                'ciudad': registro.get('ciudad', ''),
-                                'zona': registro.get('zona', ''),
-                                'sistema': registro.get('sistema', ''),
-                                'senal': int(registro.get('senal', 59)),  # Asegurar que sea entero
-                                'fecha_reporte': fecha_reporte,  # Usar fecha de parámetros de captura
-                                'tipo_reporte': registro.get('tipo_reporte', 'Boletín'),  # Valor por defecto 'Boletín'
-                                'origen': 'Sistema'  # Origen del reporte
-                            }
-                            
-                            # Agregar campos específicos de HF si corresponde
-                            if registro.get('sistema') == 'HF':
-                                reporte_data.update({
-                                    'observaciones': f"Frecuencia: {registro.get('frecuencia', '')}, "
-                                                  f"Modo: {registro.get('modo', '')}, "
-                                                  f"Potencia: {registro.get('potencia', '')}"
-                                })
-                            
-                            # Guardar el reporte en la base de datos
-                            db.save_reporte(reporte_data)
-                            registros_guardados += 1
-
-                        if registros_guardados > 0:
-                            st.success(f"✅ {registros_guardados} registro(s) guardado(s) correctamente en la base de datos")
-                            # Limpiar solo el estado de edición
-                            st.session_state.registros_editados = False
-                            # Forzar recarga de la página para actualizar la vista
-                            st.rerun()
-                        else:
-                            st.error("❌ No se pudo guardar ningún registro. Verifica que tengan los campos obligatorios.")
-
-                    except Exception as e:
-                        st.error(f"❌ Error al guardar en la base de datos: {str(e)}")
-            
-            with col2:
-                # Botón para deshacer cambios
-                if st.session_state.get('registros_editados', False):
-                    if st.button("↩️ Deshacer Cambios", type="secondary", use_container_width=True):
-                        # Recargar los registros originales desde la sesión
-                        st.session_state.registros_editados = False
-                        st.success("✅ Cambios deshechos. Los datos originales han sido restaurados.")
-                        st.rerun()
-            
-            with col3:
-                # Botón para limpiar los registros
-                if st.button("🗑️ Limpiar registros", type="secondary", use_container_width=True):
-                    st.session_state.registros = []
-                    st.session_state.registros_editados = False
-                    st.session_state.expander_abierto = True  # Mostrar el formulario de nuevo
-                    st.rerun()
-            
-            # Mostrar estadísticas y reportes fuera del botón de guardar
-            st.markdown("---")
-            
-            # Obtener la fecha de los parámetros de captura
-            fecha_reporte = st.session_state.parametros_reporte.get('fecha_reporte')
-            
-            # Verificar si la fecha tiene el formato correcto (DD/MM/YYYY)
-            try:
-                # Convertir a datetime para validar el formato
-                from datetime import datetime
-                fecha_dt = datetime.strptime(fecha_reporte, '%d/%m/%Y')
-                # Convertir al formato YYYY-MM-DD para la consulta SQL
-                fecha_consulta = fecha_dt.strftime('%Y-%m-%d')
-                
-                # Obtener reportes del día seleccionado
-                reportes, estadisticas = db.get_reportes_por_fecha(fecha_consulta)
-                
-                # Mostrar la fecha de consulta para referencia
-                st.caption(f"📅 Mostrando reportes del: {fecha_reporte}")
-                
-            except (ValueError, TypeError) as e:
-                st.error("❌ Error en el formato de la fecha. Asegúrate de usar el formato DD/MM/YYYY")
-                reportes, estadisticas = [], {}
-            
-            st.subheader("📊 Estadísticas del Día")
-            
-            if estadisticas:
-                # Crear una fila con 4 columnas iguales
-                col1, col2, col3, col4 = st.columns(4)
-                
-                # Función para crear una tarjeta de estadística
-                def crear_tarjeta(column, titulo, valor=None, subtitulos=None):
-                    with column:
-                        # Crear el contenedor principal con st.container()
-                        with st.container():
-                            # Usar st.markdown para el título
-                            st.markdown(f"""
-                                <div style="
-                                    font-size: 0.9rem;
-                                    color: #2e7d32;
-                                    font-weight: 600;
-                                    margin-bottom: 10px;
-                                    white-space: nowrap;
-                                    overflow: hidden;
-                                    text-overflow: ellipsis;
-                                ">{titulo}</div>
-                            """, unsafe_allow_html=True)
-                            
-                            # Mostrar el valor si existe
-                            if valor is not None and valor != "":
-                                st.markdown(f"""
-                                    <div style="
-                                        font-size: 1.8rem;
-                                        font-weight: 700;
-                                        color: #1b5e20;
-                                        margin-bottom: 10px;
-                                        text-align: center;
-                                        background-color: #e8f5e9;
-                                        border-radius: 4px;
-                                        padding: 10px 0;
-                                        min-height: 60px;
-                                        display: flex;
-                                        align-items: center;
-                                        justify-content: center;
-                                    ">{valor}</div>
-                                """, unsafe_allow_html=True)
-                            
-                            # Mostrar subtítulos si existen
-                            if subtitulos:
-                                for item in subtitulos:
-                                    if isinstance(item, dict):
-                                        nombre = item.get('nombre', '')
-                                        cantidad = item.get('cantidad', '')
-                                    else:
-                                        nombre = item
-                                        cantidad = ''
-                                    
-                                    st.markdown(f"""
-                                        <div style="
-                                            font-size: 0.75rem;
-                                            color: #4caf50;
-                                            margin: 5px 0;
-                                            display: flex;
-                                            justify-content: space-between;
-                                            align-items: center;
-                                        ">
-                                            <span>{nombre}</span>
-                                            {'<span style="background-color: #e8f5e9; border-radius: 10px; padding: 0 6px; font-weight: 600; font-size: 0.7rem;">' + str(cantidad) + '</span>' if cantidad else ''}
-                                        </div>
-                                    """, unsafe_allow_html=True)
-                            
-                            # Estilo del contenedor
-                            st.markdown("""
-                                <style>
-                                    div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column"] > div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"] {
-                                        background-color: #f0f9f0;
-                                        border-radius: 8px;
-                                        padding: 15px;
-                                        border-left: 4px solid #2e7d32;
-                                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                                        height: 100%;
-                                        display: flex;
-                                        flex-direction: column;
-                                    }
-                                </style>
-                            """, unsafe_allow_html=True)
-                
-                # Tarjeta de Total de Reportes
-                crear_tarjeta(
-                    column=col1,
-                    titulo="📋 Total de Reportes",
-                    valor=str(estadisticas.get('total', 0))
-                )
-                
-                # Tarjeta de Zonas más reportadas
-                zonas = [{'nombre': z['zona'], 'cantidad': str(z['cantidad'])} 
-                        for z in estadisticas.get('zonas_mas_reportadas', [])[:3]]
-                crear_tarjeta(
-                    column=col2,
-                    titulo="📍 Zonas más reportadas",
-                    subtitulos=zonas if zonas else [{'nombre': 'Sin datos', 'cantidad': ''}]
-                )
-                
-                # Tarjeta de Sistemas más usados
-                sistemas = [{'nombre': s['sistema'], 'cantidad': str(s['cantidad'])} 
-                          for s in estadisticas.get('sistemas_mas_utilizados', [])[:3]]
-                crear_tarjeta(
-                    column=col3,
-                    titulo="📡 Sistemas más usados",
-                    subtitulos=sistemas if sistemas else [{'nombre': 'Sin datos', 'cantidad': ''}]
-                )
-                
-                # Tarjeta de Estados más reportados
-                estados = [{'nombre': e['estado'], 'cantidad': str(e['cantidad'])} 
-                         for e in estadisticas.get('estados_mas_reportados', [])[:3]]
-                crear_tarjeta(
-                    column=col4,
-                    titulo="🏙️ Estados más reportados",
-                    subtitulos=estados if estados else [{'nombre': 'Sin datos', 'cantidad': ''}]
-                )
-            
-            # Mostrar la tabla de reportes
-            if reportes:
-                import pandas as pd
-                from time_utils import format_datetime
-                
-                # Convertir a DataFrame
-                def format_time(dt_str):
-                    if not dt_str:
-                        return ''
-                    try:
-                        # Intentar con formato YYYY-MM-DD HH:MM:SS
-                        dt = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
-                    except ValueError:
-                        try:
-                            # Si falla, intentar con formato DD/MM/YYYY HH:MM:SS
-                            dt = datetime.strptime(dt_str, '%d/%m/%Y %H:%M:%S')
-                        except ValueError:
-                            return ''  # Si no coincide ningún formato, devolver vacío
-                    return dt.strftime('%H:%M')
-                
-                df_reportes = pd.DataFrame([{
-                    'Indicativo': r.get('indicativo', ''),
-                    'Nombre': r.get('nombre', ''),
-                    'Sistema': r.get('sistema', ''),
-                    'Zona': r.get('zona', ''),
-                    'Estado': r.get('estado', ''),
-                    'Ciudad': r.get('ciudad', ''),
-                    'Señal': r.get('senal', ''),
-                    'Hora': format_time(r.get('fecha_reporte'))
-                } for r in reportes])
-                
-                # Mostrar la tabla
-                st.data_editor(
-                    df_reportes,
-                    column_config={
-                        'Indicativo': st.column_config.TextColumn("Indicativo"),
-                        'Nombre': st.column_config.TextColumn("Nombre"),
-                        'Sistema': st.column_config.TextColumn("Sistema"),
-                        'Zona': st.column_config.TextColumn("Zona"),
-                        'Estado': st.column_config.TextColumn("Estado"),
-                        'Ciudad': st.column_config.TextColumn("Ciudad"),
-                        'Señal': st.column_config.NumberColumn("Señal"),
-                        'Hora': st.column_config.TextColumn("Hora")
-                    },
-                    hide_index=True,
-                    use_container_width=True
-                )
-            else:
-                st.info("No hay reportes registrados para el día de hoy.")
-            
 
 
 def show_registros():

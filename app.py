@@ -1326,46 +1326,66 @@ def show_evento_report():
                 # Generar PDF con información detallada
                 from reportlab.lib import colors
                 from reportlab.lib.pagesizes import letter, A4
-                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image, Frame, PageTemplate
+                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image, Frame, PageTemplate, HRFlowable
                 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
                 from reportlab.lib.units import inch
+                from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
                 import textwrap
                 import os
 
                 # Crear buffer para el PDF
                 buffer = io.BytesIO()
 
-                # Crear el documento PDF
+                # Crear el documento PDF con márgenes estándar
                 doc = SimpleDocTemplate(
                     buffer,
                     pagesize=A4,
                     rightMargin=72,
                     leftMargin=72,
-                    topMargin=72,
-                    bottomMargin=18
+                    topMargin=36,  # Margen superior estándar (1/2 pulgada)
+                    bottomMargin=36
                 )
 
-                # Función para crear el encabezado que se repetirá en todas las páginas
+                # Función para crear el encabezado ultra compacto
                 def create_header(canvas, doc):
                     canvas.saveState()
-
-                    # Logo más pequeño
+                    
+                    # Configuración de márgenes y tamaños
+                    logo_size = 0.2 * inch  # Logo muy pequeño
+                    top_margin = 0  # Sin margen superior
+                    
+                    # Texto del encabezado - todo en una sola línea compacta
+                    canvas.setFont('Helvetica', 4)  # Fuente más pequeña y normal (no negrita)
+                    canvas.setFillColor(colors.HexColor('#333333'))  # Gris oscuro para mejor legibilidad
+                    
+                    # Texto en una sola línea: Evento | Fecha | Página
+                    fecha_formateada = datetime.strptime(datos['fecha'], '%Y-%m-%d').strftime('%d/%m/%y')
+                    # Acortar el nombre del evento a 15 caracteres máximo
+                    evento = (datos['evento'][:12] + '...') if len(datos['evento']) > 15 else datos['evento']
+                    header_text = f"{evento} | {fecha_formateada} | {canvas.getPageNumber()}"
+                    
+                    # Posición del texto (arriba a la izquierda)
+                    text_x = doc.leftMargin
+                    text_y = A4[1] - 0.15 * inch  # Muy pegado al borde superior
+                    
+                    # Logo pequeño en la esquina superior derecha
                     logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'LogoFMRE_small.png')
                     if os.path.exists(logo_path):
-                        logo = Image(logo_path, width=0.8*inch, height=0.8*inch)
-                        logo.drawOn(canvas, doc.leftMargin, A4[1] - 60)
-
-                    # Título más compacto
-                    title_text = "FMRE - Reporte de Evento"
-                    canvas.setFont('Helvetica-Bold', 12)
-                    canvas.setFillColor(colors.HexColor('#1f4e79'))
-                    canvas.drawString(doc.leftMargin + 70, A4[1] - 45, title_text)
-
-                    # Línea divisoria
-                    canvas.setStrokeColor(colors.HexColor('#1f4e79'))
-                    canvas.setLineWidth(1)
-                    canvas.line(doc.leftMargin, A4[1] - 70, A4[0] - doc.rightMargin, A4[1] - 70)
-
+                        logo = Image(logo_path, width=logo_size, height=logo_size)
+                        logo.drawOn(canvas, A4[0] - doc.rightMargin - logo_size, A4[1] - logo_size - top_margin)
+                    
+                    # Dibujar el texto
+                    canvas.drawString(text_x, text_y, header_text)
+                    
+                    # Línea divisoria muy fina
+                    line_y = text_y - 0.1 * inch
+                    canvas.setStrokeColor(colors.HexColor('#CCCCCC'))  # Línea gris claro
+                    canvas.setLineWidth(0.1)
+                    canvas.line(doc.leftMargin, line_y, A4[0] - doc.rightMargin, line_y)
+                    
+                    # Ajustar el margen superior del contenido
+                    doc.topMargin = 0.15 * inch  # Mínimo espacio necesario
+                    
                     canvas.restoreState()
 
                 # Crear el template de página con encabezado
@@ -1414,16 +1434,15 @@ def show_evento_report():
                     alignment=0
                 )
 
-                # Estilo para secciones
+                # Estilo para secciones (sin bordes)
                 section_style = ParagraphStyle(
                     'SectionStyle',
-                    parent=styles['Heading2'],
-                    fontSize=14,
-                    spaceAfter=8,
-                    textColor=colors.HexColor('#1f4e79'),
-                    borderColor=colors.HexColor('#1f4e79'),
-                    borderWidth=1,
-                    borderPadding=3
+                    parent=styles['Normal'],
+                    fontSize=12,
+                    fontName='Helvetica-Bold',
+                    spaceBefore=0,
+                    spaceAfter=4,   # Espacio mínimo después
+                    textColor=colors.HexColor('#1f4e79')
                 )
 
                 normal_style = styles['Normal']
@@ -1571,14 +1590,14 @@ def show_evento_report():
                 # Generar el PDF
                 doc.build(story)
 
-                # Crear el documento PDF
+                # Crear el documento PDF con márgenes estándar
                 doc = SimpleDocTemplate(
                     buffer,
                     pagesize=A4,
                     rightMargin=72,
                     leftMargin=72,
-                    topMargin=72,
-                    bottomMargin=18
+                    topMargin=36,  # Margen superior estándar (1/2 pulgada)
+                    bottomMargin=36
                 )
 
                 # Estilos personalizados
@@ -1604,26 +1623,29 @@ def show_evento_report():
                     alignment=1  # Centrado
                 )
 
-                # Estilo para información general
+                # Estilo para información general (más compacto)
                 info_style = ParagraphStyle(
                     'InfoStyle',
                     parent=styles['Normal'],
-                    fontSize=12,
-                    spaceAfter=10,
+                    fontSize=10,
+                    spaceAfter=4,  # Reducido de 10 a 4 puntos
                     textColor=colors.HexColor('#333333'),
-                    alignment=1  # Centrado
+                    alignment=1,  # Centrado
+                    leading=12    # Interlineado reducido
                 )
 
-                # Estilo para secciones
+                # Estilo para secciones (más compacto)
                 section_style = ParagraphStyle(
                     'SectionStyle',
-                    parent=styles['Heading2'],
-                    fontSize=16,
-                    spaceAfter=12,
+                    parent=styles['Normal'],
+                    fontSize=12,  # Reducido de 16
+                    fontName='Helvetica-Bold',
+                    spaceBefore=0,  # Sin espacio antes
+                    spaceAfter=6,   # Espacio reducido después
                     textColor=colors.HexColor('#1f4e79'),
                     borderColor=colors.HexColor('#1f4e79'),
-                    borderWidth=1,
-                    borderPadding=5
+                    borderWidth=0.5,  # Borde más delgado
+                    borderPadding=2    # Relleno reducido
                 )
 
                 normal_style = styles['Normal']
@@ -1631,40 +1653,82 @@ def show_evento_report():
                 # Contenido del PDF
                 story = []
 
-                # Encabezado con logo y título
-                logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'LogoFMRE_small.png')
+                # Encabezado compacto con logo y título
+                logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'LogoFMRE_medium.png')
+                
+                # Estilo de párrafo para el encabezado
+                header_style = ParagraphStyle(
+                    'HeaderStyle',
+                    fontName='Helvetica-Bold',
+                    fontSize=11,  # Aumentado a 11 puntos
+                    leading=13,   # Interlineado ajustado
+                    spaceBefore=0,
+                    spaceAfter=0,
+                    alignment=TA_CENTER,
+                    textColor=colors.HexColor('#006400'),
+                    leftIndent=0,
+                    rightIndent=0
+                )
 
                 # Verificar si el logo existe
                 if os.path.exists(logo_path):
-                    # Crear tabla para el encabezado: logo a la izquierda, información a la derecha
-                    header_data = [[
-                        Image(logo_path),  # Logo sin especificar tamaño (tamaño original)
-                        Paragraph("FEDERACIÓN MEXICANA DE<br/>RADIOEXPERIMENTADORES<br/><br/>REPORTE DE EVENTO", info_style)
-                    ]]
+                    # Crear tabla para el encabezado con tamaño reducido
+                    # Tabla con logo y texto, manteniendo proporciones
+                    header_data = [
+                        [
+                            Image(logo_path, width=0.8*inch, height=0.8*inch, kind='proportional'),
+                            Paragraph("FEDERACIÓN MEXICANA DE RADIOEXPERIMENTADORES", header_style)
+                        ]
+                    ]
 
-                    header_table = Table(header_data, colWidths=[1.5*inch, 4*inch])
+                    # Crear tabla con borde para el encabezado
+                    header_table = Table(header_data, 
+                                     colWidths=[1.0*inch, 5*inch],  # Anchos de columna fijos
+                                     rowHeights=[0.8*inch])  # Altura fija para el encabezado
                     header_table.setStyle(TableStyle([
-                        ('ALIGN', (0, 0), (0, 0), 'LEFT'),
-                        ('ALIGN', (1, 0), (1, 0), 'LEFT'),
-                        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                        ('BOTTOMPADDING', (0, 0), (-1, -1), 10)
+                        ('ALIGN', (0, 0), (0, 0), 'CENTER'),
+                        ('ALIGN', (1, 0), (1, 0), 'CENTER'),
+                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                        ('TOPPADDING', (0, 0), (-1, -1), 8),
+                        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+                        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+                        ('TEXTCOLOR', (1, 0), (1, 0), colors.HexColor('#2c3e50')),
+                        # Borde sutil alrededor del encabezado
+                        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#DDDDDD')),
+                        # Línea vertical entre el logo y el texto
+                        ('LINEAFTER', (0, 0), (0, 0), 0.5, colors.HexColor('#DDDDDD')),
+                        # Fondo ligeramente coloreado
+                        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8F9FA'))
                     ]))
+                    # Añadir espacio antes del encabezado con borde
+                    story.append(Spacer(1, 6))
+                    # Añadir el encabezado con borde
                     story.append(header_table)
+                    # Espacio después del encabezado
+                    story.append(Spacer(1, 6))
                 else:
                     # Si no hay logo, solo el título centrado
-                    story.append(Paragraph("FEDERACIÓN MEXICANA DE RADIOEXPERIMENTADORES", title_style))
-                    story.append(Paragraph("REPORTE DE EVENTO", subtitle_style))
+                    story.append(Paragraph("FEDERACIÓN MEXICANA DE RADIOEXPERIMENTADORES", 
+                                        style=ParagraphStyle(
+                                            'HeaderNoLogo',
+                                            fontName='Helvetica-Bold',
+                                            fontSize=8,
+                                            alignment=TA_CENTER,
+                                            spaceAfter=2
+                                        )))
+                    story.append(Spacer(1, 2))  # Espacio mínimo después del encabezado sin logo
 
                 # Información del evento
                 story.append(Paragraph(f"<b>Evento:</b> {datos['evento']}", info_style))
                 story.append(Paragraph(f"<b>Fecha del Evento:</b> {datos['fecha']}", info_style))
                 story.append(Paragraph(f"<b>Fecha de Generación:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", info_style))
                 story.append(Paragraph(f"<b>Generado por:</b> {indicativo_usuario} - {nombre_usuario}", info_style))
-                story.append(Spacer(1, 20))
+                story.append(Spacer(1, 2))  # Espacio reducido después de la información
 
-                # Línea divisoria
-                story.append(Paragraph("━" * 50, normal_style))
-                story.append(Spacer(1, 15))
+                # Línea divisoria más delgada
+                story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#CCCCCC')))
+                story.append(Spacer(1, 10))  # Reducir espacio después de la línea divisoria
 
                 # Estadísticas principales con mejor formato
                 story.append(Paragraph("ESTADÍSTICAS DEL EVENTO", section_style))

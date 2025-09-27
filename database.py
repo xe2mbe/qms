@@ -1309,6 +1309,13 @@ class FMREDatabase:
                 ''')
             return [dict(row) for row in cursor.fetchall()]
     
+    def get_eventos_activos(self):
+        """Obtiene todos los eventos activos"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM eventos WHERE activo = 1 ORDER BY tipo')
+            return [dict(row) for row in cursor.fetchall()]
+    
     def update_evento(self, evento_id, tipo=None, descripcion=None, activo=None):
         """Actualiza un evento existente"""
         with self.get_connection() as conn:

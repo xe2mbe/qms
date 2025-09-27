@@ -13,6 +13,7 @@ from email_sender import EmailSender
 import utils
 import re
 import uuid
+import io
 
 # Inicializar la base de datos y autenticación
 db = FMREDatabase()
@@ -603,12 +604,13 @@ def show_reports():
     st.title("📊 Reportes y Análisis")
 
     # Crear pestañas para diferentes tipos de reportes
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📈 Actividad General",
         "🌍 Análisis Geográfico",
         "📡 Sistemas de Radio",
         "📊 Tendencias",
-        "⚖️ Comparativos"
+        "⚖️ Comparativos",
+        "📅 Reportes por Evento"
     ])
 
     with tab1:
@@ -625,6 +627,9 @@ def show_reports():
 
     with tab5:
         show_comparativos_report()
+
+    with tab6:
+        show_evento_report()
 
 def show_actividad_general_report():
     """Muestra reporte de actividad general con filtros"""
@@ -1129,6 +1134,196 @@ def show_comparativos_report():
 
     except Exception as e:
         st.error(f"Error al cargar el análisis comparativo: {str(e)}")
+
+def show_evento_report():
+    """Muestra reportes por evento específico con estadísticas y exportación"""
+    st.subheader("📅 Reportes por Evento")
+
+    # Filtros de selección
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # Obtener eventos activos
+        try:
+            eventos = db.get_eventos_activos()
+            opciones_eventos = [e['tipo'] for e in eventos]
+            if not opciones_eventos:
+                st.error("❌ No hay eventos configurados en el sistema")
+                return
+        except Exception as e:
+            st.error(f"Error al cargar eventos: {str(e)}")
+            return
+
+        evento_seleccionado = st.selectbox(
+            "Tipo de Evento",
+            opciones_eventos,
+            key="evento_seleccionado"
+        )
+
+    with col2:
+        fecha_evento = st.date_input(
+            "Fecha del Evento",
+            value=datetime.now(),
+            key="fecha_evento"
+        )
+
+    # Botón para generar reporte
+    if st.button("🔍 Generar Reporte", type="primary"):
+        try:
+            # Convertir fecha para consulta
+            fecha_str = fecha_evento.strftime('%Y-%m-%d')
+
+            # Obtener reportes para el evento y fecha específicos
+            reportes, estadisticas = db.get_reportes_por_fecha_rango(fecha_str, fecha_str)
+
+            # Filtrar solo los reportes del evento seleccionado
+            reportes_evento = [r for r in reportes if r.get('tipo_reporte') == evento_seleccionado]
+
+            if reportes_evento:
+                # Crear dataframe para análisis
+                import pandas as pd
+                df_evento = pd.DataFrame([{
+                    'Indicativo': r.get('indicativo', ''),
+                    'Nombre': r.get('nombre', ''),
+                    'Zona': r.get('zona', ''),
+                    'Sistema': r.get('sistema', ''),
+                    'Estado': r.get('estado', ''),
+                    'Ciudad': r.get('ciudad', ''),
+                    'Señal': r.get('senal', 0),
+                    'Observaciones': r.get('observaciones', '')
+                } for r in reportes_evento])
+
+                # Estadísticas principales
+                st.subheader("📊 Estadísticas del Evento")
+
+                col1, col2, col3, col4 = st.columns(4)
+
+                with col1:
+                    st.metric("Total de Reportes", len(reportes_evento))
+
+                with col2:
+                    estaciones_unicas = df_evento['Indicativo'].nunique()
+                    st.metric("Estaciones Únicas", estaciones_unicas)
+
+                with col3:
+                    zona_mas_reportada = df_evento['Zona'].mode().iloc[0] if not df_evento['Zona'].mode().empty else "N/A"
+                    st.metric("Zona Más Reportada", zona_mas_reportada)
+
+                with col4:
+                    sistema_mas_usado = df_evento['Sistema'].mode().iloc[0] if not df_evento['Sistema'].mode().empty else "N/A"
+                    st.metric("Sistema Más Usado", sistema_mas_usado)
+
+                # Tabla de distribución por zona
+                st.subheader("📍 Distribución por Zona")
+                zonas_count = df_evento['Zona'].value_counts()
+                df_zonas = pd.DataFrame({
+                    'Zona': zonas_count.index,
+                    'Cantidad': zonas_count.values,
+                    'Porcentaje': (zonas_count.values / len(df_evento) * 100).round(1)
+                })
+
+                # Usar st.dataframe con estilo moderno
+                st.dataframe(
+                    df_zonas,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # Tabla de distribución por sistema
+                st.subheader("📡 Distribución por Sistema")
+                sistemas_count = df_evento['Sistema'].value_counts()
+                df_sistemas = pd.DataFrame({
+                    'Sistema': sistemas_count.index,
+                    'Cantidad': sistemas_count.values,
+                    'Porcentaje': (sistemas_count.values / len(df_evento) * 100).round(1)
+                })
+
+                st.dataframe(
+                    df_sistemas,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # Información del usuario que generó el reporte
+                usuario_actual = st.session_state.get('user', {})
+                indicativo_usuario = usuario_actual.get('username', 'Sistema')
+                nombre_usuario = usuario_actual.get('full_name', 'Sistema')
+
+                # Botones de exportación
+                st.subheader("📤 Exportar Reporte")
+
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    if st.button("📊 Excel", use_container_width=True):
+                        # Crear Excel con información detallada
+                        buffer = io.BytesIO()
+
+                        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                            # Hoja principal con estadísticas
+                            stats_df = pd.DataFrame({
+                                'Métrica': ['Evento', 'Fecha', 'Total Reportes', 'Estaciones Únicas',
+                                          'Zona Más Reportada', 'Sistema Más Usado', 'Generado por'],
+                                'Valor': [evento_seleccionado, fecha_str, len(reportes_evento),
+                                        estaciones_unicas, zona_mas_reportada, sistema_mas_usado,
+                                        f"{indicativo_usuario} - {nombre_usuario}"]
+                            })
+                            stats_df.to_excel(writer, sheet_name='Estadísticas', index=False)
+
+                            # Hoja con datos detallados
+                            df_evento.to_excel(writer, sheet_name='Datos Detallados', index=False)
+
+                            # Hoja con distribución por zona
+                            df_zonas.to_excel(writer, sheet_name='Por Zona', index=False)
+
+                            # Hoja con distribución por sistema
+                            df_sistemas.to_excel(writer, sheet_name='Por Sistema', index=False)
+
+                        buffer.seek(0)
+
+                        st.download_button(
+                            label="⬇️ Descargar Excel",
+                            data=buffer,
+                            file_name=f"reporte_{evento_seleccionado}_{fecha_str}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
+                        )
+
+                with col2:
+                    if st.button("📄 CSV", use_container_width=True):
+                        # Crear CSV con datos principales
+                        csv_data = df_evento.to_csv(index=False, encoding='utf-8')
+                        st.download_button(
+                            label="⬇️ Descargar CSV",
+                            data=csv_data,
+                            file_name=f"reporte_{evento_seleccionado}_{fecha_str}.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+
+                with col3:
+                    if st.button("📋 PDF", use_container_width=True):
+                        st.info("📄 Funcionalidad de PDF próximamente disponible")
+
+                # Información adicional
+                st.subheader("ℹ️ Información del Reporte")
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.write("**Evento:**", evento_seleccionado)
+                    st.write("**Fecha del Evento:**", fecha_str)
+                    st.write("**Fecha de Generación:**", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+
+                with col2:
+                    st.write("**Generado por:**", f"{indicativo_usuario} - {nombre_usuario}")
+                    st.write("**Total de Participantes:**", len(reportes_evento))
+                    st.write("**Cobertura Geográfica:**", f"{df_evento['Estado'].nunique()} estados")
+
+            else:
+                st.info(f"No hay reportes para el evento '{evento_seleccionado}' en la fecha {fecha_str}")
+
+        except Exception as e:
+            st.error(f"Error al generar el reporte: {str(e)}")
 
 def show_settings():
     """Muestra la configuración del sistema"""

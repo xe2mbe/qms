@@ -2224,51 +2224,88 @@ def show_toma_reportes():
                 'potencia': st.column_config.SelectboxColumn('Potencia', options=["QRP (≤5W)","Baja (≤50W)","Media (≤200W)","Alta (≤1kW)","Máxima (>1kW)"], required=False),
             })
 
+        # Crear dataframe para mostrar en la tabla usando los valores actuales de session_state
+        df_para_tabla = []
+        for reg in st.session_state.registros:
+            fila = {}
+            for col in columnas_disponibles:
+                fila[col] = reg.get(col, "")
+            df_para_tabla.append(fila)
+
+        df_para_tabla = pd.DataFrame(df_para_tabla).fillna("")
+
+        # Usar st.data_editor con configuración optimizada
         edited_df = st.data_editor(
-            df[columnas_disponibles].fillna(""),
+            df_para_tabla,
             column_config=column_config,
             hide_index=True,
             use_container_width=True,
             key="editable_table"
         )
 
-        # Detectar cambios de manera más simple y directa
-        # Guardar una copia del estado original antes de mostrar la tabla
-        if not hasattr(st.session_state, 'registros_estado_original'):
-            st.session_state.registros_estado_original = []
-            for reg in st.session_state.registros:
-                st.session_state.registros_estado_original.append(dict(reg))
-
-        # Comparar el estado actual con el original
+        # Detectar cambios de manera más robusta
         cambios_detectados = False
-        if len(st.session_state.registros) == len(st.session_state.registros_estado_original):
-            for i, (registro_actual, registro_original) in enumerate(zip(st.session_state.registros, st.session_state.registros_estado_original)):
-                for col in columnas_disponibles:
-                    valor_actual = str(registro_actual.get(col, "")) if registro_actual.get(col) is not None else ""
-                    valor_original = str(registro_original.get(col, "")) if registro_original.get(col) is not None else ""
+        campos_actualizados = {}
 
-                    # Comparar valores, manejando None/NaN correctamente
-                    if valor_actual != valor_original:
-                        cambios_detectados = True
-                        break
-                if cambios_detectados:
-                    break
-
-        if cambios_detectados:
-            st.session_state.registros_editados = True
-
-            # Actualizar solo los registros que cambiaron
+        # Comparar cada celda individualmente
+        try:
             for i, (_, row_edit) in enumerate(edited_df.iterrows()):
                 if i < len(st.session_state.registros):
-                    for col in columnas_disponibles:
-                        if col in row_edit.index and col in st.session_state.registros[i]:
-                            valor = row_edit[col]
-                            # Solo actualizar si hay un valor válido
-                            if pd.notna(valor) and str(valor).strip():
-                                st.session_state.registros[i][col] = str(valor)
-                            # No sobreescribir con valores vacíos
+                    registro_actual = st.session_state.registros[i]
 
-        st.caption(f"Total de registros: {len(df)}")
+                    for col in columnas_disponibles:
+                        if col in row_edit.index:
+                            valor_editado = row_edit[col]
+                            valor_actual = registro_actual.get(col, "")
+
+                            # Convertir a string para comparación confiable
+                            valor_editado_str = str(valor_editado) if pd.notna(valor_editado) else ""
+                            valor_actual_str = str(valor_actual) if valor_actual is not None else ""
+
+                            if valor_editado_str != valor_actual_str:
+                                print(f"[DEBUG] Diferencia detectada en fila {i}, columna {col}")
+                                print(f"[DEBUG] Valor editado: '{valor_editado_str}', valor actual: '{valor_actual_str}'")
+
+                                # Actualizar inmediatamente el session_state
+                                if pd.notna(valor_editado) and valor_editado_str.strip():
+                                    st.session_state.registros[i][col] = valor_editado_str
+                                    campos_actualizados[f"{i}_{col}"] = valor_editado_str
+                                    print(f"[DEBUG] ✅ session_state actualizado para {col}")
+                                    cambios_detectados = True
+                                break
+                    if cambios_detectados:
+                        break
+        except Exception as e:
+            print(f"[DEBUG] Error en detección de cambios: {e}")
+            cambios_detectados = True
+
+        # Marcar que la tabla ha sido editada
+        if cambios_detectados or campos_actualizados:
+            st.session_state.tabla_editada = True
+            st.session_state.registros_editados = True
+
+            # Mostrar resumen de cambios
+            if campos_actualizados:
+                print(f"[DEBUG] 📝 Campos actualizados: {len(campos_actualizados)}")
+                for campo, valor in campos_actualizados.items():
+                    print(f"[DEBUG]   {campo}: '{valor}'")
+
+            # Verificación detallada después de la actualización
+            print("[DEBUG] === VERIFICACIÓN POST-ACTUALIZACIÓN ===")
+            for i, reg in enumerate(st.session_state.registros[:3]):  # Solo primeros 3 para no saturar logs
+                print(f"[DEBUG] Registro {i}:")
+                for col in columnas_disponibles:
+                    valor = reg.get(col, 'N/A')
+                    print(f"[DEBUG]   {col}: '{valor}'")
+                print("[DEBUG] -------------------")
+
+            # Forzar rerun para actualizar la interfaz visual
+            st.rerun()
+
+        print(f"[DEBUG] Estado final - tabla_editada: {st.session_state.get('tabla_editada', False)}, registros_editados: {st.session_state.get('registros_editados', False)}")
+
+        # Mostrar información de debug
+        st.caption(f"Total de registros: {len(df)} | Tabla editada: {st.session_state.get('tabla_editada', False)}")
         if st.session_state.get("registros_editados", False):
             st.info("💡 Los cambios se aplicarán cuando guardes en la base de datos.")
 
@@ -2282,6 +2319,11 @@ def show_toma_reportes():
                 for registro in st.session_state.registros:
                     if not registro.get("indicativo") or not pr.get("tipo_reporte"):
                         continue
+
+                    # Debug: mostrar qué se va a guardar
+                    print(f"[DEBUG] Guardando registro: {registro.get('indicativo', 'N/A')}")
+                    print(f"[DEBUG] Valores: nombre_operador='{registro.get('nombre_operador', 'N/A')}', estado='{registro.get('estado', 'N/A')}', ciudad='{registro.get('ciudad', 'N/A')}'")
+
                     # Ensamble payload
                     payload = {
                         'indicativo': _safe_str(registro.get('indicativo')).upper(),
@@ -2295,6 +2337,8 @@ def show_toma_reportes():
                         'tipo_reporte': pr.get('tipo_reporte','Boletín'),
                         'origen': 'Sistema'
                     }
+
+                    print(f"[DEBUG] Payload: nombre='{payload['nombre']}', estado='{payload['estado']}', ciudad='{payload['ciudad']}'")
                     if payload['sistema'] == 'HF':
                         payload['observaciones'] = f"Frecuencia: {_safe_str(registro.get('frecuencia',''))}, Modo: {_safe_str(registro.get('modo',''))}, Potencia: {_safe_str(registro.get('potencia',''))}"
                     try:
@@ -2308,6 +2352,7 @@ def show_toma_reportes():
                     # LIMPIEZA post-guardado:
                     st.session_state.registros = []                 # limpiar tabla editable
                     st.session_state.registros_editados = False
+                    st.session_state.tabla_editada = False
                     st.session_state.expander_abierto = False        # mantener expander cerrado
                     # Limpiar también el estado original
                     if hasattr(st.session_state, 'registros_estado_original'):
@@ -2323,6 +2368,7 @@ def show_toma_reportes():
             if st.session_state.get("registros_editados", False):
                 if st.button("↩️ Deshacer Cambios", use_container_width=True):
                     st.session_state.registros_editados = False
+                    st.session_state.tabla_editada = False
                     # Restaurar el estado original
                     if hasattr(st.session_state, 'registros_estado_original'):
                         st.session_state.registros = []
@@ -2336,6 +2382,7 @@ def show_toma_reportes():
             if st.button("🗑️ Limpiar registros", use_container_width=True):
                 st.session_state.registros = []
                 st.session_state.registros_editados = False
+                st.session_state.tabla_editada = False
                 # Limpiar también el estado original
                 if hasattr(st.session_state, 'registros_estado_original'):
                     delattr(st.session_state, 'registros_estado_original')

@@ -1908,11 +1908,29 @@ def show_toma_reportes():
             except Exception:
                 opciones_estados = [""]
 
+            # Cargar valores guardados del usuario para SWL
+            swl_estado_guardado = ""
+            swl_ciudad_guardada = ""
+            try:
+                if "user" in st.session_state and st.session_state.user and "id" in st.session_state.user:
+                    u = db.get_user_by_id(st.session_state.user["id"])
+                    if u:
+                        if u.get("swl_estado"):
+                            swl_estado_guardado = str(u["swl_estado"])
+                        if u.get("swl_ciudad"):
+                            swl_ciudad_guardada = str(u["swl_ciudad"])
+            except Exception:
+                pass
+
             col_swl1, col_swl2 = st.columns(2)
             with col_swl1:
-                swl_estado = st.selectbox("SWL Estado", options=opciones_estados)
+                # Encontrar el índice del estado guardado
+                estado_index = 0
+                if swl_estado_guardado and swl_estado_guardado in opciones_estados:
+                    estado_index = opciones_estados.index(swl_estado_guardado)
+                swl_estado = st.selectbox("SWL Estado", options=opciones_estados, index=estado_index)
             with col_swl2:
-                swl_ciudad = st.text_input("SWL Ciudad", "")
+                swl_ciudad = st.text_input("SWL Ciudad", value=swl_ciudad_guardada)
 
             # Pre-registros
             # Si el usuario ya tiene uno guardado, proponlo
@@ -1928,16 +1946,32 @@ def show_toma_reportes():
             pre_registro = st.slider("Pre-Registros", min_value=1, max_value=10, value=pre_registro_guardado)
 
             # HF si aplica
+            # Cargar valores guardados del usuario para HF
             frecuencia = modo = potencia = ""
+            try:
+                if "user" in st.session_state and st.session_state.user and "id" in st.session_state.user:
+                    u = db.get_user_by_id(st.session_state.user["id"])
+                    if u:
+                        if u.get("frecuencia"):
+                            frecuencia = str(u["frecuencia"])
+                        if u.get("modo"):
+                            modo = str(u["modo"])
+                        if u.get("potencia"):
+                            potencia = str(u["potencia"])
+            except Exception:
+                pass
+
             if sistema_preferido == "HF":
                 st.markdown("**📻 Configuración HF**")
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    frecuencia = st.text_input("Frecuencia (MHz)", "")
+                    frecuencia = st.text_input("Frecuencia (MHz)", value=frecuencia)
                 with c2:
-                    modo = st.selectbox("Modo", ["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"])
+                    modo = st.selectbox("Modo", ["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"],
+                                      index=["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"].index(modo) if modo in ["SSB", "CW", "FT8", "RTTY", "PSK31", "Otro"] else 0)
                 with c3:
-                    potencia = st.selectbox("Potencia", ["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"])
+                    potencia = st.selectbox("Potencia", ["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"],
+                                          index=["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"].index(potencia) if potencia in ["QRP (≤5W)", "Baja (≤50W)", "Media (≤200W)", "Alta (≤1kW)", "Máxima (>1kW)"] else 1)
 
             # Botones
             cb1, cb2 = st.columns(2)

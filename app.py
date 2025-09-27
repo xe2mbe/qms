@@ -2232,12 +2232,41 @@ def show_toma_reportes():
             key="editable_table"
         )
 
-        # Detectar cambios
-        if not edited_df.equals(df[columnas_disponibles].fillna("")):
+        # Detectar cambios de manera más simple y directa
+        # Guardar una copia del estado original antes de mostrar la tabla
+        if not hasattr(st.session_state, 'registros_estado_original'):
+            st.session_state.registros_estado_original = []
+            for reg in st.session_state.registros:
+                st.session_state.registros_estado_original.append(dict(reg))
+
+        # Comparar el estado actual con el original
+        cambios_detectados = False
+        if len(st.session_state.registros) == len(st.session_state.registros_estado_original):
+            for i, (registro_actual, registro_original) in enumerate(zip(st.session_state.registros, st.session_state.registros_estado_original)):
+                for col in columnas_disponibles:
+                    valor_actual = str(registro_actual.get(col, "")) if registro_actual.get(col) is not None else ""
+                    valor_original = str(registro_original.get(col, "")) if registro_original.get(col) is not None else ""
+
+                    # Comparar valores, manejando None/NaN correctamente
+                    if valor_actual != valor_original:
+                        cambios_detectados = True
+                        break
+                if cambios_detectados:
+                    break
+
+        if cambios_detectados:
             st.session_state.registros_editados = True
-            for i, r_edit in enumerate(edited_df.to_dict("records")):
+
+            # Actualizar solo los registros que cambiaron
+            for i, (_, row_edit) in enumerate(edited_df.iterrows()):
                 if i < len(st.session_state.registros):
-                    st.session_state.registros[i].update(r_edit)
+                    for col in columnas_disponibles:
+                        if col in row_edit.index and col in st.session_state.registros[i]:
+                            valor = row_edit[col]
+                            # Solo actualizar si hay un valor válido
+                            if pd.notna(valor) and str(valor).strip():
+                                st.session_state.registros[i][col] = str(valor)
+                            # No sobreescribir con valores vacíos
 
         st.caption(f"Total de registros: {len(df)}")
         if st.session_state.get("registros_editados", False):
@@ -2280,6 +2309,9 @@ def show_toma_reportes():
                     st.session_state.registros = []                 # limpiar tabla editable
                     st.session_state.registros_editados = False
                     st.session_state.expander_abierto = False        # mantener expander cerrado
+                    # Limpiar también el estado original
+                    if hasattr(st.session_state, 'registros_estado_original'):
+                        delattr(st.session_state, 'registros_estado_original')
                     _clear_current_pre_form_inputs()                 # limpiar inputs actuales
                     _bump_pre_form_nonce_and_clear()                 # forzar que los inputs aparezcan vacíos
                     sleep(0.4)
@@ -2291,12 +2323,22 @@ def show_toma_reportes():
             if st.session_state.get("registros_editados", False):
                 if st.button("↩️ Deshacer Cambios", use_container_width=True):
                     st.session_state.registros_editados = False
+                    # Restaurar el estado original
+                    if hasattr(st.session_state, 'registros_estado_original'):
+                        st.session_state.registros = []
+                        for reg in st.session_state.registros_estado_original:
+                            st.session_state.registros.append(dict(reg))
+                        # Limpiar el estado original después de restaurar
+                        delattr(st.session_state, 'registros_estado_original')
                     st.rerun()
 
         with c3:
             if st.button("🗑️ Limpiar registros", use_container_width=True):
                 st.session_state.registros = []
                 st.session_state.registros_editados = False
+                # Limpiar también el estado original
+                if hasattr(st.session_state, 'registros_estado_original'):
+                    delattr(st.session_state, 'registros_estado_original')
                 st.rerun()
 
     # ==========================

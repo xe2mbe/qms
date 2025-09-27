@@ -1448,7 +1448,83 @@ class FMREDatabase:
         except Exception as e:
             print(f"Error al obtener reportes por fecha: {str(e)}")
             return [], {}
-            
+
+    def get_reportes_por_fecha_rango(self, fecha_inicio, fecha_fin):
+        """
+        Obtiene reportes en un rango de fechas con estadísticas
+
+        Args:
+            fecha_inicio (str): Fecha de inicio en formato 'YYYY-MM-DD'
+            fecha_fin (str): Fecha de fin en formato 'YYYY-MM-DD'
+
+        Returns:
+            tuple: (reportes, estadisticas)
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Obtener reportes en el rango de fechas
+                cursor.execute('''
+                    SELECT * FROM reportes
+                    WHERE date(fecha_reporte) BETWEEN date(?) AND date(?)
+                    ORDER BY fecha_reporte DESC
+                ''', (fecha_inicio, fecha_fin))
+
+                reportes = [dict(row) for row in cursor.fetchall()]
+
+                # Calcular estadísticas
+                estadisticas = {}
+
+                # Total de reportes
+                estadisticas['total_reportes'] = len(reportes)
+
+                # Estaciones únicas
+                indicativos_unicos = set(r.get('indicativo', '') for r in reportes)
+                estadisticas['estaciones_unicas'] = len(indicativos_unicos)
+
+                # Zonas más reportadas
+                zonas_data = {}
+                for reporte in reportes:
+                    zona = reporte.get('zona', '')
+                    if zona:
+                        zonas_data[zona] = zonas_data.get(zona, 0) + 1
+
+                estadisticas['zonas_mas_reportadas'] = [
+                    {'zona': zona, 'cantidad': count}
+                    for zona, count in sorted(zonas_data.items(), key=lambda x: x[1], reverse=True)[:5]
+                ]
+
+                # Sistemas más utilizados
+                sistemas_data = {}
+                for reporte in reportes:
+                    sistema = reporte.get('sistema', '')
+                    if sistema:
+                        sistemas_data[sistema] = sistemas_data.get(sistema, 0) + 1
+
+                estadisticas['sistemas_mas_utilizados'] = [
+                    {'sistema': sistema, 'cantidad': count}
+                    for sistema, count in sorted(sistemas_data.items(), key=lambda x: x[1], reverse=True)[:5]
+                ]
+
+                # Estados más reportados
+                estados_data = {}
+                for reporte in reportes:
+                    estado = reporte.get('estado', '')
+                    if estado:
+                        estados_data[estado] = estados_data.get(estado, 0) + 1
+
+                estadisticas['estados_mas_reportados'] = [
+                    {'estado': estado, 'cantidad': count}
+                    for estado, count in sorted(estados_data.items(), key=lambda x: x[1], reverse=True)[:5]
+                ]
+
+                return reportes, estadisticas
+
+        except Exception as e:
+            print(f"Error al obtener reportes por rango de fechas: {str(e)}")
+            return [], {}
+
     def get_reportes_filtrados(self, fecha_inicio=None, fecha_fin=None, busqueda='', estado='', zona='', sistema=''):
         """
         Obtiene reportes filtrados por fecha, búsqueda y otros criterios

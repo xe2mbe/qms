@@ -5,7 +5,7 @@ import secrets
 import string
 from time_utils import format_datetime, get_current_cdmx_time
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from database import FMREDatabase
 from auth import AuthManager
@@ -599,9 +599,536 @@ def show_crear_evento():
                 st.rerun()
 
 def show_reports():
-    """Muestra la sección de reportes"""
-    st.title("📊 Reportes")
-    st.write("Aquí se mostrarán los reportes de QSOs")
+    """Muestra la sección de reportes con análisis completo"""
+    st.title("📊 Reportes y Análisis")
+
+    # Crear pestañas para diferentes tipos de reportes
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📈 Actividad General",
+        "🌍 Análisis Geográfico",
+        "📡 Sistemas de Radio",
+        "📊 Tendencias",
+        "⚖️ Comparativos"
+    ])
+
+    with tab1:
+        show_actividad_general_report()
+
+    with tab2:
+        show_geografico_report()
+
+    with tab3:
+        show_sistemas_report()
+
+    with tab4:
+        show_tendencias_report()
+
+    with tab5:
+        show_comparativos_report()
+
+def show_actividad_general_report():
+    """Muestra reporte de actividad general con filtros"""
+    st.subheader("📈 Reporte de Actividad General")
+
+    # Filtros de fecha
+    col1, col2 = st.columns(2)
+
+    with col1:
+        fecha_inicio = st.date_input(
+            "Fecha inicio",
+            value=datetime.now().replace(day=1),  # Primer día del mes actual
+            key="actividad_fecha_inicio"
+        )
+
+    with col2:
+        fecha_fin = st.date_input(
+            "Fecha fin",
+            value=datetime.now(),  # Fecha actual
+            key="actividad_fecha_fin"
+        )
+
+    if fecha_inicio > fecha_fin:
+        st.error("❌ La fecha de inicio debe ser anterior a la fecha de fin")
+        return
+
+    try:
+        # Convertir fechas para consulta
+        fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d')
+        fecha_fin_str = fecha_fin.strftime('%Y-%m-%d')
+
+        # Obtener estadísticas generales
+        reportes, estadisticas = db.get_reportes_por_fecha_rango(fecha_inicio_str, fecha_fin_str)
+
+        # Mostrar métricas principales
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric("Total de Reportes", estadisticas.get('total_reportes', 0))
+
+        with col2:
+            st.metric("Estaciones Únicas", estadisticas.get('estaciones_unicas', 0))
+
+        with col3:
+            dias_con_actividad = (fecha_fin - fecha_inicio).days + 1
+            st.metric("Días de Período", dias_con_actividad)
+
+        with col4:
+            promedio_diario = estadisticas.get('total_reportes', 0) / max(dias_con_actividad, 1)
+            st.metric("Promedio Diario", f"{promedio_diario:.1f}")
+
+        # Gráfico de actividad por día
+        if reportes:
+            st.subheader("📅 Actividad por Día")
+
+            # Crear dataframe para el gráfico
+            import pandas as pd
+            df_actividad = pd.DataFrame([{
+                'Fecha': r.get('fecha_reporte', ''),
+                'Indicativo': r.get('indicativo', ''),
+                'Sistema': r.get('sistema', ''),
+                'Zona': r.get('zona', ''),
+                'Estado': r.get('estado', '')
+            } for r in reportes])
+
+            # Agrupar por fecha
+            actividad_por_fecha = df_actividad.groupby('Fecha').size().reset_index(name='Reportes')
+
+            # Gráfico de barras
+            st.bar_chart(actividad_por_fecha.set_index('Fecha'))
+
+            # Tabla de resumen
+            st.subheader("📋 Resumen por Sistema")
+            resumen_sistemas = df_actividad['Sistema'].value_counts()
+            st.dataframe(resumen_sistemas)
+
+    except Exception as e:
+        st.error(f"Error al cargar el reporte: {str(e)}")
+
+def show_geografico_report():
+    """Muestra análisis geográfico por zonas y estados"""
+    st.subheader("🌍 Análisis Geográfico")
+
+    # Filtros de fecha
+    col1, col2 = st.columns(2)
+
+    with col1:
+        fecha_inicio = st.date_input(
+            "Fecha inicio",
+            value=datetime.now().replace(day=1),
+            key="geo_fecha_inicio"
+        )
+
+    with col2:
+        fecha_fin = st.date_input(
+            "Fecha fin",
+            value=datetime.now(),
+            key="geo_fecha_fin"
+        )
+
+    if fecha_inicio > fecha_fin:
+        st.error("❌ La fecha de inicio debe ser anterior a la fecha de fin")
+        return
+
+    try:
+        # Convertir fechas para consulta
+        fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d')
+        fecha_fin_str = fecha_fin.strftime('%Y-%m-%d')
+
+        # Obtener datos geográficos
+        reportes, estadisticas = db.get_reportes_por_fecha_rango(fecha_inicio_str, fecha_fin_str)
+
+        if reportes:
+            import pandas as pd
+            df_geografico = pd.DataFrame([{
+                'Indicativo': r.get('indicativo', ''),
+                'Estado': r.get('estado', ''),
+                'Ciudad': r.get('ciudad', ''),
+                'Zona': r.get('zona', ''),
+                'Sistema': r.get('sistema', '')
+            } for r in reportes])
+
+            # Análisis por zona
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.subheader("📍 Reportes por Zona")
+                zonas_count = df_geografico['Zona'].value_counts()
+                st.bar_chart(zonas_count)
+
+            with col2:
+                st.subheader("🏙️ Reportes por Estado")
+                estados_count = df_geografico['Estado'].value_counts()
+                st.bar_chart(estados_count)
+
+            # Tabla detallada
+            st.subheader("📋 Distribución Detallada")
+
+            # Crear tabla pivote
+            tabla_zona_estado = pd.crosstab(df_geografico['Zona'], df_geografico['Estado'])
+            st.dataframe(tabla_zona_estado)
+
+            # Top 5 zonas más activas
+            st.subheader("🏆 Zonas Más Activas")
+            top_zonas = zonas_count.head(5)
+            for zona, count in top_zonas.items():
+                st.write(f"**{zona}:** {count} reportes")
+
+        else:
+            st.info("No hay datos para el período seleccionado")
+
+    except Exception as e:
+        st.error(f"Error al cargar el análisis geográfico: {str(e)}")
+
+def show_sistemas_report():
+    """Muestra análisis por sistemas de radio"""
+    st.subheader("📡 Análisis por Sistemas de Radio")
+
+    # Filtros de fecha
+    col1, col2 = st.columns(2)
+
+    with col1:
+        fecha_inicio = st.date_input(
+            "Fecha inicio",
+            value=datetime.now().replace(day=1),
+            key="sistemas_fecha_inicio"
+        )
+
+    with col2:
+        fecha_fin = st.date_input(
+            "Fecha fin",
+            value=datetime.now(),
+            key="sistemas_fecha_fin"
+        )
+
+    if fecha_inicio > fecha_fin:
+        st.error("❌ La fecha de inicio debe ser anterior a la fecha de fin")
+        return
+
+    try:
+        # Convertir fechas para consulta
+        fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d')
+        fecha_fin_str = fecha_fin.strftime('%Y-%m-%d')
+
+        # Obtener datos de sistemas
+        reportes, estadisticas = db.get_reportes_por_fecha_rango(fecha_inicio_str, fecha_fin_str)
+
+        if reportes:
+            import pandas as pd
+            df_sistemas = pd.DataFrame([{
+                'Indicativo': r.get('indicativo', ''),
+                'Sistema': r.get('sistema', ''),
+                'Zona': r.get('zona', ''),
+                'Estado': r.get('estado', ''),
+                'Señal': r.get('senal', 0)
+            } for r in reportes])
+
+            # Análisis por sistema
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.subheader("📊 Uso de Sistemas")
+                sistemas_count = df_sistemas['Sistema'].value_counts()
+                st.bar_chart(sistemas_count)
+
+                # Porcentaje de uso
+                total = len(df_sistemas)
+                st.subheader("📈 Porcentaje de Uso")
+                for sistema, count in sistemas_count.items():
+                    porcentaje = (count / total) * 100
+                    st.write(f"**{sistema}:** {count} ({porcentaje:.1f}%)")
+
+            with col2:
+                st.subheader("📡 Calidad de Señal por Sistema")
+                # Calcular promedio de señal por sistema
+                senal_por_sistema = df_sistemas.groupby('Sistema')['Señal'].mean().sort_values(ascending=False)
+                st.bar_chart(senal_por_sistema)
+
+                # Mostrar promedios
+                st.subheader("📊 Promedio de Señal")
+                for sistema, promedio in senal_por_sistema.items():
+                    st.write(f"**{sistema}:** {promedio:.1f}")
+
+            # Análisis HF específico
+            if 'HF' in df_sistemas['Sistema'].values:
+                st.subheader("📻 Análisis HF Detallado")
+                df_hf = df_sistemas[df_sistemas['Sistema'] == 'HF']
+
+                if not df_hf.empty:
+                    col_hf1, col_hf2 = st.columns(2)
+
+                    with col_hf1:
+                        st.write("**Modos HF más usados:**")
+                        modos_hf = df_hf['Modo'].value_counts() if 'Modo' in df_hf.columns else {}
+                        if not modos_hf.empty:
+                            st.bar_chart(modos_hf)
+                        else:
+                            st.info("No hay datos de modos HF")
+
+                    with col_hf2:
+                        st.write("**Potencias HF más usadas:**")
+                        potencias_hf = df_hf['Potencia'].value_counts() if 'Potencia' in df_hf.columns else {}
+                        if not potencias_hf.empty:
+                            st.bar_chart(potencias_hf)
+                        else:
+                            st.info("No hay datos de potencias HF")
+
+        else:
+            st.info("No hay datos para el período seleccionado")
+
+    except Exception as e:
+        st.error(f"Error al cargar el análisis de sistemas: {str(e)}")
+
+def show_tendencias_report():
+    """Muestra análisis de tendencias a lo largo del tiempo"""
+    st.subheader("📊 Análisis de Tendencias")
+
+    # Opciones de período
+    col1, col2 = st.columns(2)
+
+    with col1:
+        periodo = st.selectbox(
+            "Período de análisis",
+            ["Últimos 30 días", "Últimos 90 días", "Último año", "Personalizado"],
+            key="tendencias_periodo"
+        )
+
+    with col2:
+        if periodo == "Personalizado":
+            fecha_inicio = st.date_input("Fecha inicio", key="tendencias_fecha_inicio")
+            fecha_fin = st.date_input("Fecha fin", key="tendencias_fecha_fin")
+        else:
+            # Calcular fechas automáticamente
+            fecha_fin = datetime.now()
+            if periodo == "Últimos 30 días":
+                fecha_inicio = fecha_fin - timedelta(days=30)
+            elif periodo == "Últimos 90 días":
+                fecha_inicio = fecha_fin - timedelta(days=90)
+            else:  # Último año
+                fecha_inicio = fecha_fin - timedelta(days=365)
+
+    if periodo == "Personalizado" and fecha_inicio > fecha_fin:
+        st.error("❌ La fecha de inicio debe ser anterior a la fecha de fin")
+        return
+
+    try:
+        # Convertir fechas para consulta
+        fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d')
+        fecha_fin_str = fecha_fin.strftime('%Y-%m-%d')
+
+        # Obtener datos para tendencias
+        reportes, estadisticas = db.get_reportes_por_fecha_rango(fecha_inicio_str, fecha_fin_str)
+
+        if reportes:
+            import pandas as pd
+            df_tendencias = pd.DataFrame([{
+                'Fecha': r.get('fecha_reporte', ''),
+                'Indicativo': r.get('indicativo', ''),
+                'Sistema': r.get('sistema', ''),
+                'Zona': r.get('zona', '')
+            } for r in reportes])
+
+            # Convertir fecha a datetime correctamente
+            # Las fechas vienen de la BD en formato datetime completo, no dd/mm/yyyy
+            df_tendencias['Fecha'] = pd.to_datetime(df_tendencias['Fecha'], format='mixed', dayfirst=True)
+
+            # Agrupar por semana
+            df_tendencias['Semana'] = df_tendencias['Fecha'].dt.to_period('W').astype(str)
+            tendencia_semanal = df_tendencias.groupby('Semana').size().reset_index(name='Reportes')
+
+            # Gráfico de tendencia
+            st.subheader("📈 Tendencia de Actividad (por semana)")
+            st.line_chart(tendencia_semanal.set_index('Semana'))
+
+            # Análisis de crecimiento
+            st.subheader("📊 Análisis de Crecimiento")
+
+            # Calcular crecimiento semanal
+            if len(tendencia_semanal) > 1:
+                crecimiento = tendencia_semanal['Reportes'].pct_change() * 100
+                crecimiento_promedio = crecimiento.mean()
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.metric("Crecimiento Promedio Semanal", f"{crecimiento_promedio:.1f}%")
+
+                with col2:
+                    total_crecimiento = (tendencia_semanal['Reportes'].iloc[-1] / tendencia_semanal['Reportes'].iloc[0] - 1) * 100
+                    st.metric("Crecimiento Total del Período", f"{total_crecimiento:.1f}%")
+
+            # Top estaciones más activas
+            st.subheader("🏆 Estaciones Más Activas")
+            top_estaciones = df_tendencias['Indicativo'].value_counts().head(10)
+
+            # Crear columnas para mostrar
+            cols = st.columns(min(2, len(top_estaciones)))
+
+            for i, (estacion, count) in enumerate(top_estaciones.items()):
+                col_idx = i % 2
+                with cols[col_idx]:
+                    st.write(f"**{estacion}:** {count} reportes")
+
+        else:
+            st.info("No hay datos para el período seleccionado")
+
+    except Exception as e:
+        st.error(f"Error al cargar el análisis de tendencias: {str(e)}")
+
+def show_comparativos_report():
+    """Muestra análisis comparativos entre diferentes períodos"""
+    st.subheader("⚖️ Análisis Comparativos")
+
+    # Selección de períodos para comparar
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Período 1")
+        p1_tipo = st.selectbox(
+            "Tipo de período",
+            ["Mes actual", "Mes anterior", "Últimos 30 días", "Personalizado"],
+            key="p1_tipo"
+        )
+
+        if p1_tipo == "Personalizado":
+            p1_fecha_inicio = st.date_input("Fecha inicio P1", key="p1_fecha_inicio")
+            p1_fecha_fin = st.date_input("Fecha fin P1", key="p1_fecha_fin")
+        else:
+            # Calcular automáticamente
+            hoy = datetime.now()
+            if p1_tipo == "Mes actual":
+                p1_fecha_inicio = hoy.replace(day=1)
+                p1_fecha_fin = hoy
+            elif p1_tipo == "Mes anterior":
+                mes_anterior = hoy.replace(day=1) - timedelta(days=1)
+                p1_fecha_inicio = mes_anterior.replace(day=1)
+                p1_fecha_fin = mes_anterior
+            else:  # Últimos 30 días
+                p1_fecha_inicio = hoy - timedelta(days=30)
+                p1_fecha_fin = hoy
+
+    with col2:
+        st.subheader("Período 2")
+        p2_tipo = st.selectbox(
+            "Tipo de período",
+            ["Mes anterior", "Últimos 30 días", "Personalizado"],
+            key="p2_tipo"
+        )
+
+        if p2_tipo == "Personalizado":
+            p2_fecha_inicio = st.date_input("Fecha inicio P2", key="p2_fecha_inicio")
+            p2_fecha_fin = st.date_input("Fecha fin P2", key="p2_fecha_fin")
+        else:
+            # Calcular automáticamente
+            hoy = datetime.now()
+            if p2_tipo == "Mes anterior":
+                mes_anterior = hoy.replace(day=1) - timedelta(days=1)
+                p2_fecha_inicio = mes_anterior.replace(day=1)
+                p2_fecha_fin = mes_anterior
+            else:  # Últimos 30 días
+                p2_fecha_inicio = hoy - timedelta(days=30)
+                p2_fecha_fin = hoy
+
+    # Validar fechas
+    if p1_tipo == "Personalizado" and p1_fecha_inicio > p1_fecha_fin:
+        st.error("❌ Período 1: La fecha de inicio debe ser anterior a la fecha de fin")
+        return
+
+    if p2_tipo == "Personalizado" and p2_fecha_inicio > p2_fecha_fin:
+        st.error("❌ Período 2: La fecha de inicio debe ser anterior a la fecha de fin")
+        return
+
+    try:
+        # Obtener datos para ambos períodos
+        p1_inicio_str = p1_fecha_inicio.strftime('%Y-%m-%d')
+        p1_fin_str = p1_fecha_fin.strftime('%Y-%m-%d')
+        p1_reportes, p1_estadisticas = db.get_reportes_por_fecha_rango(p1_inicio_str, p1_fin_str)
+
+        p2_inicio_str = p2_fecha_inicio.strftime('%Y-%m-%d')
+        p2_fin_str = p2_fecha_fin.strftime('%Y-%m-%d')
+        p2_reportes, p2_estadisticas = db.get_reportes_por_fecha_rango(p2_inicio_str, p2_fin_str)
+
+        # Crear dataframes para comparación
+        import pandas as pd
+
+        if p1_reportes and p2_reportes:
+            df_p1 = pd.DataFrame([{
+                'Indicativo': r.get('indicativo', ''),
+                'Sistema': r.get('sistema', ''),
+                'Zona': r.get('zona', ''),
+                'Estado': r.get('estado', '')
+            } for r in p1_reportes])
+
+            df_p2 = pd.DataFrame([{
+                'Indicativo': r.get('indicativo', ''),
+                'Sistema': r.get('sistema', ''),
+                'Zona': r.get('zona', ''),
+                'Estado': r.get('estado', '')
+            } for r in p2_reportes])
+
+            # Comparación de métricas
+            st.subheader("📊 Comparación de Métricas")
+
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                p1_total = p1_estadisticas.get('total_reportes', 0)
+                p2_total = p2_estadisticas.get('total_reportes', 0)
+                st.metric("Total Reportes", f"{p1_total} vs {p2_total}")
+
+            with col2:
+                p1_estaciones = p1_estadisticas.get('estaciones_unicas', 0)
+                p2_estaciones = p2_estadisticas.get('estaciones_unicas', 0)
+                st.metric("Estaciones Únicas", f"{p1_estaciones} vs {p2_estaciones}")
+
+            with col3:
+                variacion_reportes = ((p2_total - p1_total) / max(p1_total, 1)) * 100
+                st.metric("Variación Reportes", f"{variacion_reportes:.1f}%")
+
+            with col4:
+                variacion_estaciones = ((p2_estaciones - p1_estaciones) / max(p1_estaciones, 1)) * 100
+                st.metric("Variación Estaciones", f"{variacion_estaciones:.1f}%")
+
+            # Comparación por sistemas
+            st.subheader("📡 Comparación por Sistemas")
+
+            p1_sistemas = df_p1['Sistema'].value_counts()
+            p2_sistemas = df_p2['Sistema'].value_counts()
+
+            # Crear dataframe comparativo
+            df_comparativo = pd.DataFrame({
+                'Período 1': p1_sistemas,
+                'Período 2': p2_sistemas
+            }).fillna(0)
+
+            st.bar_chart(df_comparativo)
+
+            # Nuevas estaciones
+            st.subheader("🆕 Nuevas Estaciones")
+            estaciones_p1 = set(df_p1['Indicativo'])
+            estaciones_p2 = set(df_p2['Indicativo'])
+
+            nuevas = estaciones_p2 - estaciones_p1
+            perdidas = estaciones_p1 - estaciones_p2
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.write(f"**Nuevas estaciones:** {len(nuevas)}")
+                if nuevas:
+                    for estacion in sorted(nuevas)[:10]:  # Mostrar primeras 10
+                        st.write(f"• {estacion}")
+
+            with col2:
+                st.write(f"**Estaciones no activas:** {len(perdidas)}")
+                if perdidas:
+                    for estacion in sorted(perdidas)[:10]:  # Mostrar primeras 10
+                        st.write(f"• {estacion}")
+
+        else:
+            st.info("No hay datos suficientes para la comparación")
+
+    except Exception as e:
+        st.error(f"Error al cargar el análisis comparativo: {str(e)}")
 
 def show_settings():
     """Muestra la configuración del sistema"""

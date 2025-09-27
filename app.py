@@ -1193,137 +1193,653 @@ def show_evento_report():
                     'Observaciones': r.get('observaciones', '')
                 } for r in reportes_evento])
 
-                # Estadísticas principales
-                st.subheader("📊 Estadísticas del Evento")
+                # Guardar datos en session_state para mantener el estado
+                st.session_state.reporte_generado = True
+                st.session_state.datos_evento = {
+                    'evento': evento_seleccionado,
+                    'fecha': fecha_str,
+                    'reportes': reportes_evento,
+                    'df_evento': df_evento,
+                    'usuario': st.session_state.get('user', {})
+                }
 
-                col1, col2, col3, col4 = st.columns(4)
-
-                with col1:
-                    st.metric("Total de Reportes", len(reportes_evento))
-
-                with col2:
-                    estaciones_unicas = df_evento['Indicativo'].nunique()
-                    st.metric("Estaciones Únicas", estaciones_unicas)
-
-                with col3:
-                    zona_mas_reportada = df_evento['Zona'].mode().iloc[0] if not df_evento['Zona'].mode().empty else "N/A"
-                    st.metric("Zona Más Reportada", zona_mas_reportada)
-
-                with col4:
-                    sistema_mas_usado = df_evento['Sistema'].mode().iloc[0] if not df_evento['Sistema'].mode().empty else "N/A"
-                    st.metric("Sistema Más Usado", sistema_mas_usado)
-
-                # Tabla de distribución por zona
-                st.subheader("📍 Distribución por Zona")
-                zonas_count = df_evento['Zona'].value_counts()
-                df_zonas = pd.DataFrame({
-                    'Zona': zonas_count.index,
-                    'Cantidad': zonas_count.values,
-                    'Porcentaje': (zonas_count.values / len(df_evento) * 100).round(1)
-                })
-
-                # Usar st.dataframe con estilo moderno
-                st.dataframe(
-                    df_zonas,
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-                # Tabla de distribución por sistema
-                st.subheader("📡 Distribución por Sistema")
-                sistemas_count = df_evento['Sistema'].value_counts()
-                df_sistemas = pd.DataFrame({
-                    'Sistema': sistemas_count.index,
-                    'Cantidad': sistemas_count.values,
-                    'Porcentaje': (sistemas_count.values / len(df_evento) * 100).round(1)
-                })
-
-                st.dataframe(
-                    df_sistemas,
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-                # Información del usuario que generó el reporte
-                usuario_actual = st.session_state.get('user', {})
-                indicativo_usuario = usuario_actual.get('username', 'Sistema')
-                nombre_usuario = usuario_actual.get('full_name', 'Sistema')
-
-                # Botones de exportación
-                st.subheader("📤 Exportar Reporte")
-
-                col1, col2, col3 = st.columns(3)
-
-                with col1:
-                    if st.button("📊 Excel", use_container_width=True):
-                        # Crear Excel con información detallada
-                        buffer = io.BytesIO()
-
-                        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                            # Hoja principal con estadísticas
-                            stats_df = pd.DataFrame({
-                                'Métrica': ['Evento', 'Fecha', 'Total Reportes', 'Estaciones Únicas',
-                                          'Zona Más Reportada', 'Sistema Más Usado', 'Generado por'],
-                                'Valor': [evento_seleccionado, fecha_str, len(reportes_evento),
-                                        estaciones_unicas, zona_mas_reportada, sistema_mas_usado,
-                                        f"{indicativo_usuario} - {nombre_usuario}"]
-                            })
-                            stats_df.to_excel(writer, sheet_name='Estadísticas', index=False)
-
-                            # Hoja con datos detallados
-                            df_evento.to_excel(writer, sheet_name='Datos Detallados', index=False)
-
-                            # Hoja con distribución por zona
-                            df_zonas.to_excel(writer, sheet_name='Por Zona', index=False)
-
-                            # Hoja con distribución por sistema
-                            df_sistemas.to_excel(writer, sheet_name='Por Sistema', index=False)
-
-                        buffer.seek(0)
-
-                        st.download_button(
-                            label="⬇️ Descargar Excel",
-                            data=buffer,
-                            file_name=f"reporte_{evento_seleccionado}_{fecha_str}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            use_container_width=True
-                        )
-
-                with col2:
-                    if st.button("📄 CSV", use_container_width=True):
-                        # Crear CSV con datos principales
-                        csv_data = df_evento.to_csv(index=False, encoding='utf-8')
-                        st.download_button(
-                            label="⬇️ Descargar CSV",
-                            data=csv_data,
-                            file_name=f"reporte_{evento_seleccionado}_{fecha_str}.csv",
-                            mime="text/csv",
-                            use_container_width=True
-                        )
-
-                with col3:
-                    if st.button("📋 PDF", use_container_width=True):
-                        st.info("📄 Funcionalidad de PDF próximamente disponible")
-
-                # Información adicional
-                st.subheader("ℹ️ Información del Reporte")
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    st.write("**Evento:**", evento_seleccionado)
-                    st.write("**Fecha del Evento:**", fecha_str)
-                    st.write("**Fecha de Generación:**", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-
-                with col2:
-                    st.write("**Generado por:**", f"{indicativo_usuario} - {nombre_usuario}")
-                    st.write("**Total de Participantes:**", len(reportes_evento))
-                    st.write("**Cobertura Geográfica:**", f"{df_evento['Estado'].nunique()} estados")
-
-            else:
-                st.info(f"No hay reportes para el evento '{evento_seleccionado}' en la fecha {fecha_str}")
+                # Forzar rerun para actualizar la interfaz
+                st.rerun()
 
         except Exception as e:
             st.error(f"Error al generar el reporte: {str(e)}")
+
+    # Si hay un reporte generado, mostrar los datos y opciones de exportación
+    if st.session_state.get('reporte_generado', False):
+        import pandas as pd
+        datos = st.session_state.datos_evento
+
+        # Estadísticas principales
+        st.subheader("📊 Estadísticas del Evento")
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric("Total de Reportes", len(datos['reportes']))
+
+        with col2:
+            estaciones_unicas = datos['df_evento']['Indicativo'].nunique()
+            st.metric("Estaciones Únicas", estaciones_unicas)
+
+        with col3:
+            zona_mas_reportada = datos['df_evento']['Zona'].mode().iloc[0] if not datos['df_evento']['Zona'].mode().empty else "N/A"
+            st.metric("Zona Más Reportada", zona_mas_reportada)
+
+        with col4:
+            sistema_mas_usado = datos['df_evento']['Sistema'].mode().iloc[0] if not datos['df_evento']['Sistema'].mode().empty else "N/A"
+            st.metric("Sistema Más Usado", sistema_mas_usado)
+
+        # Tabla de distribución por zona
+        st.subheader("📍 Distribución por Zona")
+        zonas_count = datos['df_evento']['Zona'].value_counts()
+        df_zonas = pd.DataFrame({
+            'Zona': zonas_count.index,
+            'Cantidad': zonas_count.values,
+            'Porcentaje': (zonas_count.values / len(datos['df_evento']) * 100).round(1)
+        })
+
+        st.dataframe(
+            df_zonas,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # Tabla de distribución por sistema
+        st.subheader("📡 Distribución por Sistema")
+        sistemas_count = datos['df_evento']['Sistema'].value_counts()
+        df_sistemas = pd.DataFrame({
+            'Sistema': sistemas_count.index,
+            'Cantidad': sistemas_count.values,
+            'Porcentaje': (sistemas_count.values / len(datos['df_evento']) * 100).round(1)
+        })
+
+        st.dataframe(
+            df_sistemas,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # Información del usuario que generó el reporte
+        usuario_actual = datos['usuario']
+        indicativo_usuario = usuario_actual.get('username', 'Sistema')
+        nombre_usuario = usuario_actual.get('full_name', 'Sistema')
+
+        # Botones de exportación
+        st.subheader("📤 Exportar Reporte")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            if st.button("📊 Excel", use_container_width=True):
+                # Crear Excel con información detallada
+                buffer = io.BytesIO()
+
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    # Hoja principal con estadísticas
+                    stats_df = pd.DataFrame({
+                        'Métrica': ['Evento', 'Fecha', 'Total Reportes', 'Estaciones Únicas',
+                                  'Zona Más Reportada', 'Sistema Más Usado', 'Generado por'],
+                        'Valor': [datos['evento'], datos['fecha'], len(datos['reportes']),
+                                estaciones_unicas, zona_mas_reportada, sistema_mas_usado,
+                                f"{indicativo_usuario} - {nombre_usuario}"]
+                    })
+                    stats_df.to_excel(writer, sheet_name='Estadísticas', index=False)
+
+                    # Hoja con datos detallados
+                    datos['df_evento'].to_excel(writer, sheet_name='Datos Detallados', index=False)
+
+                    # Hoja con distribución por zona
+                    df_zonas.to_excel(writer, sheet_name='Por Zona', index=False)
+
+                    # Hoja con distribución por sistema
+                    df_sistemas.to_excel(writer, sheet_name='Por Sistema', index=False)
+
+                buffer.seek(0)
+
+                st.download_button(
+                    label="⬇️ Descargar Excel",
+                    data=buffer,
+                    file_name=f"reporte_{datos['evento']}_{datos['fecha']}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+
+        with col2:
+            if st.button("📄 CSV", use_container_width=True):
+                # Crear CSV con datos principales
+                csv_data = datos['df_evento'].to_csv(index=False, encoding='utf-8')
+                st.download_button(
+                    label="⬇️ Descargar CSV",
+                    data=csv_data,
+                    file_name=f"reporte_{datos['evento']}_{datos['fecha']}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+
+        with col3:
+            if st.button("📋 PDF", use_container_width=True):
+                # Generar PDF con información detallada
+                from reportlab.lib import colors
+                from reportlab.lib.pagesizes import letter, A4
+                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image, Frame, PageTemplate
+                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                from reportlab.lib.units import inch
+                import textwrap
+                import os
+
+                # Crear buffer para el PDF
+                buffer = io.BytesIO()
+
+                # Crear el documento PDF
+                doc = SimpleDocTemplate(
+                    buffer,
+                    pagesize=A4,
+                    rightMargin=72,
+                    leftMargin=72,
+                    topMargin=72,
+                    bottomMargin=18
+                )
+
+                # Función para crear el encabezado que se repetirá en todas las páginas
+                def create_header(canvas, doc):
+                    canvas.saveState()
+
+                    # Logo más pequeño
+                    logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'LogoFMRE_small.png')
+                    if os.path.exists(logo_path):
+                        logo = Image(logo_path, width=0.8*inch, height=0.8*inch)
+                        logo.drawOn(canvas, doc.leftMargin, A4[1] - 60)
+
+                    # Título más compacto
+                    title_text = "FMRE - Reporte de Evento"
+                    canvas.setFont('Helvetica-Bold', 12)
+                    canvas.setFillColor(colors.HexColor('#1f4e79'))
+                    canvas.drawString(doc.leftMargin + 70, A4[1] - 45, title_text)
+
+                    # Línea divisoria
+                    canvas.setStrokeColor(colors.HexColor('#1f4e79'))
+                    canvas.setLineWidth(1)
+                    canvas.line(doc.leftMargin, A4[1] - 70, A4[0] - doc.rightMargin, A4[1] - 70)
+
+                    canvas.restoreState()
+
+                # Crear el template de página con encabezado
+                header_template = PageTemplate(
+                    id='header',
+                    frames=[
+                        Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height - 80,
+                              id='normal')
+                    ],
+                    onPage=create_header
+                )
+
+                # Agregar el template al documento
+                doc.addPageTemplates([header_template])
+
+                # Estilos compactos
+                styles = getSampleStyleSheet()
+
+                # Estilo para el título principal (más compacto)
+                title_style = ParagraphStyle(
+                    'CustomTitle',
+                    parent=styles['Heading1'],
+                    fontSize=16,
+                    spaceAfter=8,
+                    textColor=colors.HexColor('#1f4e79'),
+                    alignment=1
+                )
+
+                # Estilo para el subtítulo (más compacto)
+                subtitle_style = ParagraphStyle(
+                    'CustomSubtitle',
+                    parent=styles['Heading2'],
+                    fontSize=12,
+                    spaceAfter=5,
+                    textColor=colors.HexColor('#2c5f2d'),
+                    alignment=1
+                )
+
+                # Estilo para información general (más compacto)
+                info_style = ParagraphStyle(
+                    'InfoStyle',
+                    parent=styles['Normal'],
+                    fontSize=10,
+                    spaceAfter=3,
+                    textColor=colors.HexColor('#333333'),
+                    alignment=0
+                )
+
+                # Estilo para secciones
+                section_style = ParagraphStyle(
+                    'SectionStyle',
+                    parent=styles['Heading2'],
+                    fontSize=14,
+                    spaceAfter=8,
+                    textColor=colors.HexColor('#1f4e79'),
+                    borderColor=colors.HexColor('#1f4e79'),
+                    borderWidth=1,
+                    borderPadding=3
+                )
+
+                normal_style = styles['Normal']
+
+                # Contenido del PDF
+                story = []
+
+                # Información del evento (más compacta)
+                event_info = [
+                    f"<b>Evento:</b> {datos['evento']} | <b>Fecha:</b> {datos['fecha']}",
+                    f"<b>Generado por:</b> {indicativo_usuario} - {nombre_usuario} | <b>Fecha de generación:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                ]
+
+                for info in event_info:
+                    story.append(Paragraph(info, info_style))
+
+                story.append(Spacer(1, 10))
+
+                # Estadísticas principales con mejor formato
+                story.append(Paragraph("ESTADÍSTICAS DEL EVENTO", section_style))
+
+                stats_data = [
+                    ['Métrica', 'Valor', 'Detalles'],
+                    ['Total de Reportes', str(len(datos['reportes'])), f"Participantes activos: {len(datos['reportes'])}"],
+                    ['Estaciones Únicas', str(estaciones_unicas), f"Diferentes estaciones que reportaron"],
+                    ['Zona Más Reportada', zona_mas_reportada, f"Concentración geográfica principal"],
+                    ['Sistema Más Usado', sistema_mas_usado, f"Tecnología de radio predominante"],
+                    ['Cobertura Geográfica', f"{datos['df_evento']['Estado'].nunique()} estados", f"Alcance territorial del evento"]
+                ]
+
+                stats_table = Table(stats_data)
+                stats_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4e79')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8f9fa')),
+                    ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#333333')),
+                    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                    ('FONTSIZE', (0, 1), (-1, -1), 8),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6')),
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 4)
+                ]))
+                story.append(stats_table)
+                story.append(Spacer(1, 15))
+
+                # Distribución por Zona con mejor formato
+                story.append(Paragraph("DISTRIBUCIÓN POR ZONA GEOGRÁFICA", section_style))
+
+                zonas_data = [['Zona', 'Cantidad', 'Porcentaje', 'Participación']]
+                for _, row in df_zonas.iterrows():
+                    zonas_data.append([
+                        str(row['Zona']),
+                        str(int(row['Cantidad'])),
+                        f"{row['Porcentaje']:.1f}%",
+                        "●" * min(int(row['Cantidad']), 10)
+                    ])
+
+                zonas_table = Table(zonas_data)
+                zonas_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c5f2d')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f0f8f0')),
+                    ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#2c5f2d')),
+                    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                    ('FONTSIZE', (0, 1), (-1, -1), 8),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#90EE90')),
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 4)
+                ]))
+                story.append(zonas_table)
+                story.append(Spacer(1, 15))
+
+                # Principales Estados de México
+                story.append(Paragraph("PRINCIPALES ESTADOS PARTICIPANTES", section_style))
+
+                # Calcular los 3 estados con más reportes
+                estados_count = datos['df_evento']['Estado'].value_counts()
+                top_estados = estados_count.head(3)
+
+                estados_data = [['Estado', 'Reportes', 'Porcentaje', 'Participación']]
+                for estado, cantidad in top_estados.items():
+                    if estado and estado.strip():
+                        porcentaje = (cantidad / len(datos['df_evento']) * 100)
+                        estados_data.append([
+                            str(estado),
+                            str(int(cantidad)),
+                            f"{porcentaje:.1f}%",
+                            "●" * min(int(cantidad), 12)
+                        ])
+
+                if len(estados_data) > 1:
+                    estados_table = Table(estados_data)
+                    estados_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#DC143C')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0, 0), (-1, 0), 10),
+                        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#FFF0F0')),
+                        ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#DC143C')),
+                        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                        ('FONTSIZE', (0, 1), (-1, -1), 8),
+                        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#FFB6C1')),
+                        ('BOTTOMPADDING', (0, 1), (-1, -1), 4)
+                    ]))
+                    story.append(estados_table)
+                    story.append(Spacer(1, 15))
+
+                # Distribución por Sistema con mejor formato
+                story.append(Paragraph("DISTRIBUCIÓN POR SISTEMA DE RADIO", section_style))
+
+                sistemas_data = [['Sistema', 'Cantidad', 'Porcentaje', 'Uso']]
+                for _, row in df_sistemas.iterrows():
+                    sistemas_data.append([
+                        str(row['Sistema']),
+                        str(int(row['Cantidad'])),
+                        f"{row['Porcentaje']:.1f}%",
+                        "●" * min(int(row['Cantidad']), 8)
+                    ])
+
+                sistemas_table = Table(sistemas_data)
+                sistemas_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#8B4513')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#FFF8DC')),
+                    ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#8B4513')),
+                    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                    ('FONTSIZE', (0, 1), (-1, -1), 8),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#DEB887')),
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 4)
+                ]))
+                story.append(sistemas_table)
+
+                # Generar el PDF
+                doc.build(story)
+
+                # Crear el documento PDF
+                doc = SimpleDocTemplate(
+                    buffer,
+                    pagesize=A4,
+                    rightMargin=72,
+                    leftMargin=72,
+                    topMargin=72,
+                    bottomMargin=18
+                )
+
+                # Estilos personalizados
+                styles = getSampleStyleSheet()
+
+                # Estilo para el título principal
+                title_style = ParagraphStyle(
+                    'CustomTitle',
+                    parent=styles['Heading1'],
+                    fontSize=20,  # Reducido de 28
+                    spaceAfter=15,  # Reducido de 20
+                    textColor=colors.HexColor('#1f4e79'),  # Azul FMRE
+                    alignment=1  # Centrado
+                )
+
+                # Estilo para el subtítulo
+                subtitle_style = ParagraphStyle(
+                    'CustomSubtitle',
+                    parent=styles['Heading2'],
+                    fontSize=14,  # Reducido de 18
+                    spaceAfter=10,  # Reducido de 15
+                    textColor=colors.HexColor('#2c5f2d'),  # Verde FMRE
+                    alignment=1  # Centrado
+                )
+
+                # Estilo para información general
+                info_style = ParagraphStyle(
+                    'InfoStyle',
+                    parent=styles['Normal'],
+                    fontSize=12,
+                    spaceAfter=10,
+                    textColor=colors.HexColor('#333333'),
+                    alignment=1  # Centrado
+                )
+
+                # Estilo para secciones
+                section_style = ParagraphStyle(
+                    'SectionStyle',
+                    parent=styles['Heading2'],
+                    fontSize=16,
+                    spaceAfter=12,
+                    textColor=colors.HexColor('#1f4e79'),
+                    borderColor=colors.HexColor('#1f4e79'),
+                    borderWidth=1,
+                    borderPadding=5
+                )
+
+                normal_style = styles['Normal']
+
+                # Contenido del PDF
+                story = []
+
+                # Encabezado con logo y título
+                logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'LogoFMRE_small.png')
+
+                # Verificar si el logo existe
+                if os.path.exists(logo_path):
+                    # Crear tabla para el encabezado: logo a la izquierda, información a la derecha
+                    header_data = [[
+                        Image(logo_path),  # Logo sin especificar tamaño (tamaño original)
+                        Paragraph("FEDERACIÓN MEXICANA DE<br/>RADIOEXPERIMENTADORES<br/><br/>REPORTE DE EVENTO", info_style)
+                    ]]
+
+                    header_table = Table(header_data, colWidths=[1.5*inch, 4*inch])
+                    header_table.setStyle(TableStyle([
+                        ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+                        ('ALIGN', (1, 0), (1, 0), 'LEFT'),
+                        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 10)
+                    ]))
+                    story.append(header_table)
+                else:
+                    # Si no hay logo, solo el título centrado
+                    story.append(Paragraph("FEDERACIÓN MEXICANA DE RADIOEXPERIMENTADORES", title_style))
+                    story.append(Paragraph("REPORTE DE EVENTO", subtitle_style))
+
+                # Información del evento
+                story.append(Paragraph(f"<b>Evento:</b> {datos['evento']}", info_style))
+                story.append(Paragraph(f"<b>Fecha del Evento:</b> {datos['fecha']}", info_style))
+                story.append(Paragraph(f"<b>Fecha de Generación:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", info_style))
+                story.append(Paragraph(f"<b>Generado por:</b> {indicativo_usuario} - {nombre_usuario}", info_style))
+                story.append(Spacer(1, 20))
+
+                # Línea divisoria
+                story.append(Paragraph("━" * 50, normal_style))
+                story.append(Spacer(1, 15))
+
+                # Estadísticas principales con mejor formato
+                story.append(Paragraph("ESTADÍSTICAS DEL EVENTO", section_style))
+
+                stats_data = [
+                    ['Métrica', 'Valor', 'Detalles'],
+                    ['Total de Reportes', str(len(datos['reportes'])), f"Participantes activos: {len(datos['reportes'])}"],
+                    ['Estaciones Únicas', str(estaciones_unicas), f"Diferentes estaciones que reportaron"],
+                    ['Zona Más Reportada', zona_mas_reportada, f"Concentración geográfica principal"],
+                    ['Sistema Más Usado', sistema_mas_usado, f"Tecnología de radio predominante"],
+                    ['Cobertura Geográfica', f"{datos['df_evento']['Estado'].nunique()} estados", f"Alcance territorial del evento"]
+                ]
+
+                stats_table = Table(stats_data)
+                stats_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4e79')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 14),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8f9fa')),
+                    ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#333333')),
+                    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                    ('FONTSIZE', (0, 1), (-1, -1), 10),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6')),
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 8)
+                ]))
+                story.append(stats_table)
+                story.append(Spacer(1, 25))
+
+                # Distribución por Zona con mejor formato
+                story.append(Paragraph("DISTRIBUCIÓN POR ZONA GEOGRÁFICA", section_style))
+
+                zonas_data = [['Zona', 'Cantidad', 'Porcentaje', 'Participación']]
+                for _, row in df_zonas.iterrows():
+                    zonas_data.append([
+                        str(row['Zona']),
+                        str(int(row['Cantidad'])),
+                        f"{row['Porcentaje']:.1f}%",
+                        "●" * min(int(row['Cantidad']), 10)  # Indicador visual
+                    ])
+
+                zonas_table = Table(zonas_data)
+                zonas_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c5f2d')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 12),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f0f8f0')),
+                    ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#2c5f2d')),
+                    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                    ('FONTSIZE', (0, 1), (-1, -1), 9),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#90EE90')),
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 6)
+                ]))
+                story.append(zonas_table)
+                story.append(Spacer(1, 20))
+
+                # Principales Estados de México
+                story.append(Paragraph("PRINCIPALES ESTADOS PARTICIPANTES", section_style))
+
+                # Calcular los 3 estados con más reportes
+                estados_count = datos['df_evento']['Estado'].value_counts()
+                top_estados = estados_count.head(3)
+
+                estados_data = [['Estado', 'Reportes', 'Porcentaje', 'Participación']]
+                for estado, cantidad in top_estados.items():
+                    if estado and estado.strip():  # Solo incluir estados no vacíos
+                        porcentaje = (cantidad / len(datos['df_evento']) * 100)
+                        estados_data.append([
+                            str(estado),
+                            str(int(cantidad)),
+                            f"{porcentaje:.1f}%",
+                            "●" * min(int(cantidad), 12)  # Indicador visual
+                        ])
+
+                # Solo agregar la tabla si hay estados
+                if len(estados_data) > 1:
+                    estados_table = Table(estados_data)
+                    estados_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#DC143C')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0, 0), (-1, 0), 12),
+                        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#FFF0F0')),
+                        ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#DC143C')),
+                        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                        ('FONTSIZE', (0, 1), (-1, -1), 9),
+                        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#FFB6C1')),
+                        ('BOTTOMPADDING', (0, 1), (-1, -1), 6)
+                    ]))
+                    story.append(estados_table)
+                    story.append(Spacer(1, 20))
+
+                # Distribución por Sistema con mejor formato
+                story.append(Paragraph("DISTRIBUCIÓN POR SISTEMA DE RADIO", section_style))
+
+                sistemas_data = [['Sistema', 'Cantidad', 'Porcentaje', 'Uso']]
+                for _, row in df_sistemas.iterrows():
+                    sistemas_data.append([
+                        str(row['Sistema']),
+                        str(int(row['Cantidad'])),
+                        f"{row['Porcentaje']:.1f}%",
+                        "●" * min(int(row['Cantidad']), 8)  # Indicador visual
+                    ])
+
+                sistemas_table = Table(sistemas_data)
+                sistemas_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#8B4513')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 12),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#FFF8DC')),
+                    ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#8B4513')),
+                    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                    ('FONTSIZE', (0, 1), (-1, -1), 9),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#DEB887')),
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 6)
+                ]))
+                story.append(sistemas_table)
+
+                # Pie de página
+                story.append(Spacer(1, 30))
+                story.append(Paragraph("━" * 50, normal_style))
+                story.append(Paragraph("Federación Mexicana de Radioexperimentadores, A.C.", info_style))
+                story.append(Paragraph("Reporte generado automáticamente por el Sistema QMS", info_style))
+                story.append(Paragraph(f"© {datetime.now().year} FMRE - Todos los derechos reservados", info_style))
+
+                # Generar el PDF
+                doc.build(story)
+
+                # Posicionar el buffer al inicio
+                buffer.seek(0)
+
+                # Botón de descarga
+                st.download_button(
+                    label="⬇️ Descargar PDF",
+                    data=buffer,
+                    file_name=f"reporte_{datos['evento']}_{datos['fecha']}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+
+        # Información adicional
+        st.subheader("ℹ️ Información del Reporte")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.write("**Evento:**", datos['evento'])
+            st.write("**Fecha del Evento:**", datos['fecha'])
+            st.write("**Fecha de Generación:**", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+
+        with col2:
+            st.write("**Generado por:**", f"{indicativo_usuario} - {nombre_usuario}")
+            st.write("**Total de Participantes:**", len(datos['reportes']))
+            st.write("**Cobertura Geográfica:**", f"{datos['df_evento']['Estado'].nunique()} estados")
+
+        # Botón para generar nuevo reporte
+        if st.button("🔄 Generar Nuevo Reporte"):
+            # Limpiar el estado
+            if 'reporte_generado' in st.session_state:
+                del st.session_state['reporte_generado']
+            if 'datos_evento' in st.session_state:
+                del st.session_state['datos_evento']
+            st.rerun()
+
+    else:
+        st.info(f"No hay reportes para el evento '{evento_seleccionado}' en la fecha {fecha_evento.strftime('%Y-%m-%d')}")
 
 def show_settings():
     """Muestra la configuración del sistema"""

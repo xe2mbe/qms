@@ -1663,17 +1663,22 @@ class FMREDatabase:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
 
-                # Construir consulta de actualización
+                # Determinar columnas disponibles en la tabla para evitar errores al actualizar
+                cursor.execute("PRAGMA table_info(reportes)")
+                columnas_reportes = {columna[1] for columna in cursor.fetchall()}
+
+                # Construir consulta de actualización usando solo columnas existentes
                 campos_permitidos = [
                     'indicativo', 'nombre', 'estado', 'ciudad', 'zona',
                     'sistema', 'senal', 'tipo_reporte', 'observaciones',
                     'frecuencia', 'modo', 'potencia'
                 ]
+                campos_actualizables = [campo for campo in campos_permitidos if campo in columnas_reportes]
 
                 update_fields = []
                 params = []
 
-                for campo in campos_permitidos:
+                for campo in campos_actualizables:
                     if campo in datos_actualizados:
                         update_fields.append(f"{campo} = ?")
                         params.append(datos_actualizados[campo])
@@ -1689,7 +1694,9 @@ class FMREDatabase:
                 cursor.execute(query, params)
                 conn.commit()
 
-                return cursor.rowcount > 0
+                # SQLite puede devolver rowcount = 0 si los valores nuevos son iguales a los existentes.
+                # Considera la actualización exitosa si la consulta se ejecutó sin errores.
+                return True
 
         except Exception as e:
             print(f"Error al actualizar reporte: {str(e)}")

@@ -1434,15 +1434,19 @@ def show_evento_report():
                     alignment=0
                 )
 
-                # Estilo para secciones (sin bordes)
+                # Estilo para secciones con formato de oración
                 section_style = ParagraphStyle(
                     'SectionStyle',
                     parent=styles['Normal'],
                     fontSize=12,
                     fontName='Helvetica-Bold',
                     spaceBefore=0,
-                    spaceAfter=4,   # Espacio mínimo después
-                    textColor=colors.HexColor('#1f4e79')
+                    spaceAfter=0,   # Controlamos el espacio con Spacer
+                    leading=12,     # Mismo que el tamaño de fuente
+                    textColor=colors.HexColor('#1f4e79'),
+                    leftIndent=0,
+                    rightIndent=0,
+                    textTransform='none'  # Asegura que no se aplique mayúsculas
                 )
 
                 normal_style = styles['Normal']
@@ -1462,7 +1466,8 @@ def show_evento_report():
                 story.append(Spacer(1, 10))
 
                 # Estadísticas principales con mejor formato
-                story.append(Paragraph("ESTADÍSTICAS DEL EVENTO", section_style))
+                story.append(Paragraph("Estadísticas del evento", section_style))
+                story.append(Spacer(1, 8))  # Espacio después del título
 
                 stats_data = [
                     ['Métrica', 'Valor', 'Detalles'],
@@ -1473,26 +1478,27 @@ def show_evento_report():
                     ['Cobertura Geográfica', f"{datos['df_evento']['Estado'].nunique()} estados", f"Alcance territorial del evento"]
                 ]
 
+                # Crear la tabla directamente con los datos
                 stats_table = Table(stats_data)
                 stats_table.setStyle(TableStyle([
                     ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4e79')),
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0, 0), (-1, 0), 10),
-                    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),  # Tamaño de fuente 10pt
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),  # Espaciado reducido
+                    ('TOPPADDING', (0, 0), (-1, 0), 4),  # Espaciado superior añadido
                     ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8f9fa')),
                     ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#333333')),
                     ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                    ('FONTSIZE', (0, 1), (-1, -1), 8),
+                    ('FONTSIZE', (0, 1), (-1, -1), 8),  # Tamaño de fuente reducido
                     ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6')),
-                    ('BOTTOMPADDING', (0, 1), (-1, -1), 4)
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 3)  # Espaciado reducido
                 ]))
                 story.append(stats_table)
-                story.append(Spacer(1, 15))
-
-                # Distribución por Zona con mejor formato
-                story.append(Paragraph("DISTRIBUCIÓN POR ZONA GEOGRÁFICA", section_style))
+                # Título con formato de oración
+                story.append(Paragraph("Distribución por zona geográfica", section_style))
+                story.append(Spacer(1, 8))  # Espacio después del título
 
                 zonas_data = [['Zona', 'Cantidad', 'Porcentaje', 'Participación']]
                 for _, row in df_zonas.iterrows():
@@ -1509,20 +1515,20 @@ def show_evento_report():
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0, 0), (-1, 0), 10),
-                    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),  # Tamaño de fuente 10pt
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),  # Espaciado reducido
+                    ('TOPPADDING', (0, 0), (-1, 0), 4),  # Espaciado superior añadido
                     ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f0f8f0')),
                     ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#2c5f2d')),
                     ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                    ('FONTSIZE', (0, 1), (-1, -1), 8),
+                    ('FONTSIZE', (0, 1), (-1, -1), 8),  # Tamaño de fuente reducido
                     ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#90EE90')),
-                    ('BOTTOMPADDING', (0, 1), (-1, -1), 4)
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 3)  # Espaciado reducido
                 ]))
                 story.append(zonas_table)
-                story.append(Spacer(1, 15))
-
-                # Principales Estados de México
-                story.append(Paragraph("PRINCIPALES ESTADOS PARTICIPANTES", section_style))
+# Título con formato de oración
+                story.append(Paragraph("Principales estados participantes", section_style))
+                story.append(Spacer(1, 8))  # Espacio después del título
 
                 # Calcular los 3 estados con más reportes
                 estados_count = datos['df_evento']['Estado'].value_counts()
@@ -1546,20 +1552,20 @@ def show_evento_report():
                         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                        ('FONTSIZE', (0, 0), (-1, 0), 10),
-                        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                        ('FONTSIZE', (0, 0), (-1, 0), 10),  # Tamaño de fuente reducido
+                        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),  # Espaciado reducido
+                        ('TOPPADDING', (0, 0), (-1, 0), 4),  # Espaciado superior añadido
                         ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#FFF0F0')),
                         ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#DC143C')),
                         ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                        ('FONTSIZE', (0, 1), (-1, -1), 8),
+                        ('FONTSIZE', (0, 1), (-1, -1), 8),  # Tamaño de fuente reducido
                         ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#FFB6C1')),
-                        ('BOTTOMPADDING', (0, 1), (-1, -1), 4)
+                        ('BOTTOMPADDING', (0, 1), (-1, -1), 3)  # Espaciado reducido
                     ]))
                     story.append(estados_table)
-                    story.append(Spacer(1, 15))
-
-                # Distribución por Sistema con mejor formato
-                story.append(Paragraph("DISTRIBUCIÓN POR SISTEMA DE RADIO", section_style))
+    # Título con formato de oración
+                story.append(Paragraph("Distribución por sistema de radio", section_style))
+                story.append(Spacer(1, 8))  # Espacio después del título
 
                 sistemas_data = [['Sistema', 'Cantidad', 'Porcentaje', 'Uso']]
                 for _, row in df_sistemas.iterrows():
@@ -1576,14 +1582,15 @@ def show_evento_report():
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0, 0), (-1, 0), 10),
-                    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                    ('FONTSIZE', (0, 0), (-1, 0), 9),  # Tamaño de fuente reducido a 9pt
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),  # Espaciado reducido
+                    ('TOPPADDING', (0, 0), (-1, 0), 4),  # Espaciado superior añadido
                     ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#FFF8DC')),
                     ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#8B4513')),
                     ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                    ('FONTSIZE', (0, 1), (-1, -1), 8),
+                    ('FONTSIZE', (0, 1), (-1, -1), 8),  # Tamaño de fuente reducido
                     ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#DEB887')),
-                    ('BOTTOMPADDING', (0, 1), (-1, -1), 4)
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 3)  # Espaciado reducido
                 ]))
                 story.append(sistemas_table)
 
@@ -1634,18 +1641,19 @@ def show_evento_report():
                     leading=12    # Interlineado reducido
                 )
 
-                # Estilo para secciones (más compacto)
+                # Estilo para secciones con formato de oración
                 section_style = ParagraphStyle(
                     'SectionStyle',
                     parent=styles['Normal'],
-                    fontSize=12,  # Reducido de 16
+                    fontSize=12,
                     fontName='Helvetica-Bold',
-                    spaceBefore=0,  # Sin espacio antes
-                    spaceAfter=6,   # Espacio reducido después
+                    spaceBefore=0,
+                    spaceAfter=0,   # Controlamos el espacio con Spacer
+                    leading=12,     # Mismo que el tamaño de fuente
                     textColor=colors.HexColor('#1f4e79'),
-                    borderColor=colors.HexColor('#1f4e79'),
-                    borderWidth=0.5,  # Borde más delgado
-                    borderPadding=2    # Relleno reducido
+                    leftIndent=0,
+                    rightIndent=0,
+                    textTransform='none'  # Asegura que no se aplique mayúsculas
                 )
 
                 normal_style = styles['Normal']
@@ -1684,16 +1692,17 @@ def show_evento_report():
                     # Crear tabla con borde para el encabezado
                     header_table = Table(header_data, 
                                      colWidths=[1.0*inch, 5*inch],  # Anchos de columna fijos
-                                     rowHeights=[0.8*inch])  # Altura fija para el encabezado
+                                     rowHeights=[0.7*inch])  # Altura reducida para el encabezado
                     header_table.setStyle(TableStyle([
                         ('ALIGN', (0, 0), (0, 0), 'CENTER'),
                         ('ALIGN', (1, 0), (1, 0), 'CENTER'),
                         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-                        ('TOPPADDING', (0, 0), (-1, -1), 8),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),  # Reducido de 8 a 6
+                        ('TOPPADDING', (0, 0), (-1, -1), 6),     # Reducido de 8 a 6
                         ('LEFTPADDING', (0, 0), (-1, -1), 4),
                         ('RIGHTPADDING', (0, 0), (-1, -1), 4),
                         ('TEXTCOLOR', (1, 0), (1, 0), colors.HexColor('#2c3e50')),
+                        ('FONTSIZE', (0, 0), (-1, -1), 10),  # Tamaño de fuente reducido
                         # Borde sutil alrededor del encabezado
                         ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#DDDDDD')),
                         # Línea vertical entre el logo y el texto
@@ -1728,10 +1737,9 @@ def show_evento_report():
 
                 # Línea divisoria más delgada
                 story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#CCCCCC')))
-                story.append(Spacer(1, 10))  # Reducir espacio después de la línea divisoria
-
-                # Estadísticas principales con mejor formato
-                story.append(Paragraph("ESTADÍSTICAS DEL EVENTO", section_style))
+                # Título con formato de oración
+                story.append(Paragraph("Estadísticas del evento", section_style))
+                story.append(Spacer(1, 8))  # Espacio después del título
 
                 stats_data = [
                     ['Métrica', 'Valor', 'Detalles'],
@@ -1748,20 +1756,22 @@ def show_evento_report():
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0, 0), (-1, 0), 14),
-                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),  # Reducido de 14 a 10
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),  # Reducido de 12 a 6
+                    ('TOPPADDING', (0, 0), (-1, 0), 4),  # Añadido padding superior
                     ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8f9fa')),
                     ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#333333')),
                     ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                    ('FONTSIZE', (0, 1), (-1, -1), 10),
+                    ('FONTSIZE', (0, 1), (-1, -1), 8),  # Reducido de 10 a 8
                     ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6')),
-                    ('BOTTOMPADDING', (0, 1), (-1, -1), 8)
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 3)  # Reducido de 8 a 3
                 ]))
                 story.append(stats_table)
                 story.append(Spacer(1, 25))
 
                 # Distribución por Zona con mejor formato
-                story.append(Paragraph("DISTRIBUCIÓN POR ZONA GEOGRÁFICA", section_style))
+                story.append(Paragraph("Distribución por zona geográfica", section_style))
+                story.append(Spacer(1, 8))  # Espacio después del título
 
                 zonas_data = [['Zona', 'Cantidad', 'Porcentaje', 'Participación']]
                 for _, row in df_zonas.iterrows():
@@ -1778,20 +1788,22 @@ def show_evento_report():
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0, 0), (-1, 0), 12),
-                    ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),  # Tamaño de fuente 10pt
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),  # Espaciado reducido
+                    ('TOPPADDING', (0, 0), (-1, 0), 4),  # Espaciado superior añadido
                     ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f0f8f0')),
                     ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#2c5f2d')),
                     ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                    ('FONTSIZE', (0, 1), (-1, -1), 9),
+                    ('FONTSIZE', (0, 1), (-1, -1), 8),  # Tamaño de fuente reducido
                     ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#90EE90')),
-                    ('BOTTOMPADDING', (0, 1), (-1, -1), 6)
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 3)  # Espaciado reducido
                 ]))
                 story.append(zonas_table)
                 story.append(Spacer(1, 20))
 
                 # Principales Estados de México
-                story.append(Paragraph("PRINCIPALES ESTADOS PARTICIPANTES", section_style))
+                story.append(Paragraph("Principales estados participantes", section_style))
+                story.append(Spacer(1, 8))  # Espacio después del título
 
                 # Calcular los 3 estados con más reportes
                 estados_count = datos['df_evento']['Estado'].value_counts()
@@ -1816,20 +1828,22 @@ def show_evento_report():
                         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                        ('FONTSIZE', (0, 0), (-1, 0), 12),
-                        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                        ('FONTSIZE', (0, 0), (-1, 0), 10),  # Tamaño de fuente 10pt
+                        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),  # Reducido de 10 a 6
+                        ('TOPPADDING', (0, 0), (-1, 0), 4),  # Añadido padding superior
                         ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#FFF0F0')),
                         ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#DC143C')),
                         ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                        ('FONTSIZE', (0, 1), (-1, -1), 9),
+                        ('FONTSIZE', (0, 1), (-1, -1), 9),  # Mantenido en 9
                         ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#FFB6C1')),
-                        ('BOTTOMPADDING', (0, 1), (-1, -1), 6)
+                        ('BOTTOMPADDING', (0, 1), (-1, -1), 4)  # Reducido de 6 a 4
                     ]))
                     story.append(estados_table)
                     story.append(Spacer(1, 20))
 
                 # Distribución por Sistema con mejor formato
-                story.append(Paragraph("DISTRIBUCIÓN POR SISTEMA DE RADIO", section_style))
+                story.append(Paragraph("Distribución por sistema de radio", section_style))
+                story.append(Spacer(1, 8))  # Espacio después del título
 
                 sistemas_data = [['Sistema', 'Cantidad', 'Porcentaje', 'Uso']]
                 for _, row in df_sistemas.iterrows():
@@ -1846,23 +1860,50 @@ def show_evento_report():
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0, 0), (-1, 0), 12),
-                    ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),  # Reducido de 12 a 10
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),  # Reducido de 10 a 6
+                    ('TOPPADDING', (0, 0), (-1, 0), 4),  # Añadido padding superior
                     ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#FFF8DC')),
                     ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#8B4513')),
                     ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                    ('FONTSIZE', (0, 1), (-1, -1), 9),
+                    ('FONTSIZE', (0, 1), (-1, -1), 9),  # Mantenido en 9
                     ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#DEB887')),
-                    ('BOTTOMPADDING', (0, 1), (-1, -1), 6)
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 4)  # Reducido de 6 a 4
                 ]))
                 story.append(sistemas_table)
 
-                # Pie de página
+                # Pie de página más elegante
                 story.append(Spacer(1, 30))
-                story.append(Paragraph("━" * 50, normal_style))
-                story.append(Paragraph("Federación Mexicana de Radioexperimentadores, A.C.", info_style))
-                story.append(Paragraph("Reporte generado automáticamente por el Sistema QMS", info_style))
-                story.append(Paragraph(f"© {datetime.now().year} FMRE - Todos los derechos reservados", info_style))
+                
+                # Crear una tabla de una celda para la línea divisoria que ocupe todo el ancho
+                from reportlab.platypus import Table
+                
+                # Calcular el ancho disponible (ancho de página - márgenes)
+                page_width = A4[0]  # Ancho de la hoja A4 en puntos (595.2755905511812)
+                available_width = page_width - doc.leftMargin - doc.rightMargin
+                
+                # Crear una tabla de una celda con borde inferior
+                line_table = Table([[None]], colWidths=[available_width])
+                line_table.setStyle(TableStyle([
+                    ('LINEBELOW', (0, 0), (0, 0), 0.5, colors.HexColor('#CCCCCC')),
+                    ('BOTTOMPADDING', (0, 0), (0, 0), 10)
+                ]))
+                
+                story.append(line_table)
+                story.append(Spacer(1, 5))
+                
+                # Texto del pie de página centrado
+                footer_style = ParagraphStyle(
+                    'FooterStyle',
+                    parent=info_style,
+                    alignment=TA_CENTER,
+                    spaceAfter=0,
+                    spaceBefore=0
+                )
+                
+                story.append(Paragraph("Federación Mexicana de Radioexperimentadores, A.C.", footer_style))
+                story.append(Paragraph("Reporte generado automáticamente por el Sistema QMS", footer_style))
+                story.append(Paragraph(f"© {datetime.now().year} FMRE - Todos los derechos reservados", footer_style))
 
                 # Generar el PDF
                 doc.build(story)

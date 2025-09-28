@@ -4314,7 +4314,7 @@ def show_editar_registros():
             if st.session_state.eliminando_masivo and st.session_state.show_delete_modal:
                 total_eliminar = len(st.session_state.registros_seleccionados)
 
-                with st.modal("Confirmar eliminación"):
+                with st.container(border=True):
                     st.warning(
                         f"¿Estás seguro de que quieres eliminar {total_eliminar} registro"
                         f"{'s' if total_eliminar != 1 else ''}? Esta acción no se puede deshacer."
@@ -4324,7 +4324,7 @@ def show_editar_registros():
                         st.dataframe(
                             seleccionados_df.drop(columns=["Seleccionar"], errors="ignore"),
                             hide_index=True,
-                            use_container_width=True
+                            use_container_width=True,
                         )
 
                     col_conf1, col_conf2 = st.columns(2)

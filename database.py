@@ -1150,20 +1150,20 @@ class FMREDatabase:
                 zonas.append(zona)
             return zonas
 
-    def get_estados(self, incluir_extranjero=True):
-        """Obtiene todos los estados de la tabla qth"""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            query = 'SELECT estado, abreviatura FROM qth'
-            params = []
+    # def get_estados(self, incluir_extranjero=True):
+    #     """Obtiene todos los estados de la tabla qth"""
+    #     with self.get_connection() as conn:
+    #         cursor = conn.cursor()
+    #         query = 'SELECT estado, abreviatura FROM qth'
+    #         params = []
 
-            if not incluir_extranjero:
-                query += ' WHERE estado != "Extranjero"'
+    #         if not incluir_extranjero:
+    #             query += ' WHERE estado != "Extranjero"'
 
-            query += ' ORDER BY estado'
-            cursor.execute(query, params)
+    #         query += ' ORDER BY estado'
+    #         cursor.execute(query, params)
 
-            return [dict(row) for row in cursor.fetchall()]
+    #         return [dict(row) for row in cursor.fetchall()]
     
     def create_zona(self, zona=None, nombre=None, codigo=None):
         """Crea una nueva zona

@@ -4016,26 +4016,37 @@ def show_lista_registros():
         key="busqueda_lista"
     )
 
-    # Botones de acción - disposición directa
-    col_buscar, col_limpiar, _ = st.columns([1, 1, 6])
+    # Botones de acción alineados al nivel de los filtros
+    col_offset, col_buscar, col_limpiar, col_spacer = st.columns([1.2, 2.2, 2.2, 3.4])
 
-    with col_buscar:
-        if st.button("🔍 Buscar Registros", type="primary", key="buscar_lista"):
-            st.session_state.registros_filtros.update({
-                'fecha_inicio': fecha_inicio,
-                'fecha_fin': fecha_fin,
-                'busqueda': busqueda
-            })
-            st.rerun()
+    buscar_clicked = col_buscar.button(
+        "🔍 Buscar Registros",
+        type="primary",
+        key="buscar_lista",
+        width="stretch"
+    )
 
-    with col_limpiar:
-        if st.button("🧹 Limpiar Filtros", key="limpiar_lista"):
-            st.session_state.registros_filtros = {
-                'fecha_inicio': None,
-                'fecha_fin': None,
-                'busqueda': ''
-            }
-            st.rerun()
+    limpiar_clicked = col_limpiar.button(
+        "🧹 Limpiar Filtros",
+        key="limpiar_lista",
+        width="stretch"
+    )
+
+    if buscar_clicked:
+        st.session_state.registros_filtros.update({
+            'fecha_inicio': fecha_inicio,
+            'fecha_fin': fecha_fin,
+            'busqueda': busqueda
+        })
+        st.rerun()
+
+    if limpiar_clicked:
+        st.session_state.registros_filtros = {
+            'fecha_inicio': None,
+            'fecha_fin': None,
+            'busqueda': ''
+        }
+        st.rerun()
 
     # Obtener registros con filtros aplicados
     try:

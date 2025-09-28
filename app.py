@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 import sqlite3
 import time
 import secrets
@@ -3469,9 +3469,16 @@ def show_toma_reportes():
                         sist_opc = sorted(list(sist_dict.keys())) or ["ASL"]
                     except Exception:
                         sist_opc = ["ASL"]
+
+                    # Usar el sistema preferido como selección por defecto
+                    sistema_default = pr.get("sistema_preferido")
+                    if sistema_default not in sist_opc:
+                        sistema_default = sist_opc[0] if sist_opc else "ASL"
+
                     st.selectbox(
                         f"Sistema {i+1}",
                         sist_opc,
+                        index=(sist_opc.index(sistema_default) if sistema_default in sist_opc else 0),
                         key=_pre_form_key(f"sistema_{i}"),
                     )
 
@@ -3752,7 +3759,7 @@ def show_toma_reportes():
                         'estado': _safe_str(registro.get('estado')),
                         'ciudad': _safe_str(registro.get('ciudad')),
                         'zona': _safe_str(registro.get('zona')),
-                        'sistema': _safe_str(registro.get('sistema')),
+                        'sistema': _safe_str(registro.get('sistema') or pr.get('sistema_preferido') or 'ASL'),
                         'senal': int(registro.get('senal') or 59),
                         'fecha_reporte': pr.get('fecha_reporte', get_current_cdmx_time().strftime('%d/%m/%Y')),
                         'tipo_reporte': pr.get('tipo_reporte','Boletín'),

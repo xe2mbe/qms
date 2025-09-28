@@ -1399,14 +1399,7 @@ def show_evento_report():
                     fecha_formateada = datetime.strptime(datos['fecha'], '%Y-%m-%d').strftime('%d/%m/%y')
                     evento = (datos['evento'][:12] + '...') if len(datos['evento']) > 15 else datos['evento']
                     
-                    # Logo pequeño en la esquina superior derecha
-                    logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'LogoFMRE_small.png')
-                    if os.path.exists(logo_path):
-                        logo = Image(logo_path, width=logo_size, height=logo_size)
-                        logo.drawOn(canvas, doc.width + doc.leftMargin - logo_size + 20, 
-                                  doc.height + doc.bottomMargin + 10)
-                    
-                    # Texto del encabezado
+                    # Texto del encabezado (sin logo)
                     header_text = f"{evento} | {fecha_formateada} | Página {canvas.getPageNumber()}"
                     canvas.drawString(doc.leftMargin, doc.height + doc.bottomMargin + 5, header_text)
                     
@@ -1691,15 +1684,8 @@ def show_evento_report():
 
                 normal_style = styles['Normal']
 
-                # Contenido del PDF
+                # Inicializar la historia
                 story = []
-                
-                # Especificar la plantilla inicial
-                story.append(NextPageTemplate('Portrait'))
-                story.append(PageBreak())
-                
-                # Agregar el encabezado manualmente
-                story.append(NextPageTemplate('Portrait'))
 
                 # Encabezado compacto con logo y título
                 logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'LogoFMRE_medium.png')

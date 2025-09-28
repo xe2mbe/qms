@@ -3755,9 +3755,9 @@ def show_toma_reportes():
                     # Ensamble payload
                     payload = {
                         'indicativo': _safe_str(registro.get('indicativo')).upper(),
-                        'nombre': _safe_str(registro.get('nombre_operador')),
+                        'nombre': _formatear_oracion(_safe_str(registro.get('nombre_operador'))),
                         'estado': _safe_str(registro.get('estado')),
-                        'ciudad': _safe_str(registro.get('ciudad')),
+                        'ciudad': _formatear_oracion(_safe_str(registro.get('ciudad'))),
                         'zona': _safe_str(registro.get('zona')),
                         'sistema': _safe_str(registro.get('sistema') or pr.get('sistema_preferido') or 'ASL'),
                         'senal': int(registro.get('senal') or 59),

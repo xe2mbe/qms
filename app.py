@@ -1325,29 +1325,20 @@ def show_evento_report():
             if st.button("📋 PDF", use_container_width=True):
                 # Generar PDF con información detallada
                 from reportlab.lib import colors
-                from reportlab.lib.pagesizes import letter, A4
-                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image, Frame, PageTemplate, HRFlowable
+                from reportlab.lib.pagesizes import letter, A4, landscape
+                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image, Frame, PageTemplate, HRFlowable, NextPageTemplate, BaseDocTemplate
                 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
                 from reportlab.lib.units import inch
                 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
+                from reportlab.pdfgen.canvas import Canvas
                 import textwrap
                 import os
 
                 # Crear buffer para el PDF
                 buffer = io.BytesIO()
 
-                # Crear el documento PDF con márgenes estándar
-                doc = SimpleDocTemplate(
-                    buffer,
-                    pagesize=A4,
-                    rightMargin=72,
-                    leftMargin=72,
-                    topMargin=36,  # Margen superior estándar (1/2 pulgada)
-                    bottomMargin=36
-                )
-
                 # Función para crear el encabezado ultra compacto
-                def create_header(canvas, doc):
+                def create_header(canvas, doc, **kwargs):
                     canvas.saveState()
                     
                     # Configuración de márgenes y tamaños
@@ -1387,19 +1378,65 @@ def show_evento_report():
                     doc.topMargin = 0.15 * inch  # Mínimo espacio necesario
                     
                     canvas.restoreState()
+                    
+                    # Llamar al método onPage de la plantilla si existe
+                    if hasattr(doc, 'onPage'):
+                        doc.onPage(canvas, doc)
 
-                # Crear el template de página con encabezado
-                header_template = PageTemplate(
-                    id='header',
-                    frames=[
-                        Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height - 80,
-                              id='normal')
-                    ],
-                    onPage=create_header
+                # Función para agregar el encabezado a cada página
+                def add_header_footer(canvas, doc):
+                    # Guardar el estado del canvas
+                    canvas.saveState()
+                    
+                    # Configuración de márgenes y tamaños
+                    logo_size = 0.2 * inch
+                    
+                    # Texto del encabezado
+                    canvas.setFont('Helvetica', 4)
+                    canvas.setFillColor(colors.HexColor('#333333'))
+                    
+                    # Texto en una sola línea: Evento | Fecha | Página
+                    fecha_formateada = datetime.strptime(datos['fecha'], '%Y-%m-%d').strftime('%d/%m/%y')
+                    evento = (datos['evento'][:12] + '...') if len(datos['evento']) > 15 else datos['evento']
+                    
+                    # Logo pequeño en la esquina superior derecha
+                    logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'LogoFMRE_small.png')
+                    if os.path.exists(logo_path):
+                        logo = Image(logo_path, width=logo_size, height=logo_size)
+                        logo.drawOn(canvas, doc.width + doc.leftMargin - logo_size + 20, 
+                                  doc.height + doc.bottomMargin + 10)
+                    
+                    # Texto del encabezado
+                    header_text = f"{evento} | {fecha_formateada} | Página {canvas.getPageNumber()}"
+                    canvas.drawString(doc.leftMargin, doc.height + doc.bottomMargin + 5, header_text)
+                    
+                    # Línea divisoria
+                    canvas.setStrokeColor(colors.HexColor('#CCCCCC'))
+                    canvas.setLineWidth(0.1)
+                    canvas.line(doc.leftMargin, doc.bottomMargin + 2, 
+                              doc.width + doc.leftMargin, doc.bottomMargin + 2)
+                    
+                    # Restaurar el estado del canvas
+                    canvas.restoreState()
+                
+                # Crear una clase de documento personalizada que ignora los cambios de plantilla
+                class SimpleDocTemplateNoTemplates(SimpleDocTemplate):
+                    def handle_nextPageTemplate(self, *args, **kwargs):
+                        # Ignorar cualquier intento de cambiar la plantilla
+                        pass
+                
+                # Crear el documento PDF con nuestra clase personalizada
+                doc = SimpleDocTemplateNoTemplates(
+                    buffer,
+                    pagesize=letter,
+                    rightMargin=72,
+                    leftMargin=72,
+                    topMargin=36,  # Espacio para el encabezado
+                    bottomMargin=36
                 )
-
-                # Agregar el template al documento
-                doc.addPageTemplates([header_template])
+                
+                # Inicializar la historia como una lista normal
+                story = []
 
                 # Estilos compactos
                 styles = getSampleStyleSheet()
@@ -1453,6 +1490,9 @@ def show_evento_report():
 
                 # Contenido del PDF
                 story = []
+                
+                # Primera página en retrato
+                story.append(NextPageTemplate('Portrait'))
 
                 # Información del evento (más compacta)
                 event_info = [
@@ -1594,18 +1634,11 @@ def show_evento_report():
                 ]))
                 story.append(sistemas_table)
 
-                # Generar el PDF
-                doc.build(story)
-
-                # Crear el documento PDF con márgenes estándar
-                doc = SimpleDocTemplate(
-                    buffer,
-                    pagesize=A4,
-                    rightMargin=72,
-                    leftMargin=72,
-                    topMargin=36,  # Margen superior estándar (1/2 pulgada)
-                    bottomMargin=36
-                )
+                # Generar el PDF con la historia
+                try:
+                    doc.build(story, onFirstPage=add_header_footer, onLaterPages=add_header_footer)
+                except Exception as e:
+                    st.error(f"Error al generar el PDF: {str(e)}")
 
                 # Estilos personalizados
                 styles = getSampleStyleSheet()
@@ -1660,6 +1693,13 @@ def show_evento_report():
 
                 # Contenido del PDF
                 story = []
+                
+                # Especificar la plantilla inicial
+                story.append(NextPageTemplate('Portrait'))
+                story.append(PageBreak())
+                
+                # Agregar el encabezado manualmente
+                story.append(NextPageTemplate('Portrait'))
 
                 # Encabezado compacto con logo y título
                 logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'LogoFMRE_medium.png')
@@ -1905,8 +1945,60 @@ def show_evento_report():
                 story.append(Paragraph("Reporte generado automáticamente por el Sistema QMS", footer_style))
                 story.append(Paragraph(f"© {datetime.now().year} FMRE - Todos los derechos reservados", footer_style))
 
+                # Agregar página de reporte de actividad en horizontal
+                story.append(PageBreak())
+                story.append(NextPageTemplate('Landscape'))
+                
+                # Título de la segunda página
+                story.append(Paragraph("Reporte de Actividad", section_style))
+                story.append(Spacer(1, 12))
+                
+                # Aquí puedes agregar el contenido de la segunda página
+                # Por ejemplo, una tabla con los reportes
+                if len(datos['reportes']) > 0:
+                    # Crear tabla con los reportes
+                    reportes_data = [['Indicativo', 'Estado', 'Ciudad', 'Zona', 'Sistema', 'Frecuencia', 'Modo']]
+                    for reporte in datos['reportes']:
+                        reportes_data.append([
+                            reporte.get('indicativo', ''),
+                            reporte.get('estado', ''),
+                            reporte.get('ciudad', ''),
+                            reporte.get('zona', ''),
+                            reporte.get('sistema', ''),
+                            reporte.get('frecuencia', ''),
+                            reporte.get('modo', '')
+                        ])
+                    
+                    # Crear tabla con los reportes
+                    reportes_table = Table(reportes_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch, 0.8*inch, 1.2*inch, 0.8*inch, 0.8*inch])
+                    reportes_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4e79')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0, 0), (-1, 0), 8),
+                        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8f9fa')),
+                        ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#333333')),
+                        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                        ('FONTSIZE', (0, 1), (-1, -1), 7),
+                        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6')),
+                        ('BOTTOMPADDING', (0, 1), (-1, -1), 3)
+                    ]))
+                    story.append(reportes_table)
+                
+                # Pie de página para la segunda página
+                story.append(Spacer(1, 10))
+                story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#CCCCCC')))
+                story.append(Spacer(1, 5))
+                story.append(Paragraph("Federación Mexicana de Radioexperimentadores, A.C. - Reporte de Actividad", footer_style))
+
                 # Generar el PDF
-                doc.build(story)
+                try:
+                    doc.build(story, onFirstPage=create_header, onLaterPages=create_header)
+                except Exception as e:
+                    st.error(f"Error al generar el PDF: {str(e)}")
+                    return None
 
                 # Posicionar el buffer al inicio
                 buffer.seek(0)

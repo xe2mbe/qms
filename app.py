@@ -12,12 +12,94 @@ from auth import AuthManager
 from email_sender import EmailSender
 import utils
 import re
-import uuid
 import io
+import unicodedata
+import json
+from pathlib import Path
 
-# Inicializar la base de datos y autenticación
+try:
+    import plotly.express as px
+except ImportError:
+    px = None
+
+try:
+    import plotly.graph_objects as go
+except ImportError:
+    go = None
+
 db = FMREDatabase()
 auth = AuthManager(db)
+
+MEXICO_STATE_COORDS = {
+    "aguascalientes": (21.8853, -102.2916),
+    "baja california": (30.8406, -115.2838),
+    "baja california sur": (24.1426, -110.3128),
+    "campeche": (19.8301, -90.5349),
+    "chiapas": (16.7520, -93.1167),
+    "chihuahua": (28.6320, -106.0691),
+    "ciudad de mexico": (19.4326, -99.1332),
+    "coahuila": (27.0587, -101.7068),
+    "colima": (19.1223, -104.0072),
+    "durango": (24.0277, -104.6532),
+    "guanajuato": (21.0190, -101.2574),
+    "guerrero": (17.4392, -99.5451),
+    "hidalgo": (20.1011, -98.7624),
+    "jalisco": (20.6597, -103.3496),
+    "mexico": (19.2832, -99.6557),
+    "estado de mexico": (19.2832, -99.6557),
+    "michoacan": (19.5665, -101.7068),
+    "morelos": (18.6813, -99.1013),
+    "nayarit": (21.7514, -104.8455),
+    "nuevo leon": (25.5922, -99.9962),
+    "oaxaca": (17.0732, -96.7266),
+    "puebla": (19.0413, -98.2062),
+    "queretaro": (20.5888, -100.3899),
+    "quintana roo": (19.1817, -88.4791),
+    "san luis potosi": (22.1565, -100.9855),
+    "sinaloa": (24.8091, -107.3940),
+    "sonora": (29.0729, -110.9559),
+    "tabasco": (17.8409, -92.6189),
+    "tamaulipas": (24.2669, -98.8363),
+    "tlaxcala": (19.3182, -98.2374),
+    "veracruz": (19.1738, -96.1342),
+    "yucatan": (20.7099, -89.0943),
+    "zacatecas": (22.7709, -102.5833),
+    "extranjero": (21.0, -89.0),
+}
+
+GEOJSON_STATE_ALIASES = {
+    "cdmx": "distrito federal",
+    "ciudad de mexico": "distrito federal",
+    "distrito federal": "distrito federal",
+    "coahuila": "coahuila de zaragoza",
+    "coahuila de zaragoza": "coahuila de zaragoza",
+    "estado de mexico": "mexico",
+    "mexico": "mexico",
+    "michoacan": "michoacan de ocampo",
+    "michoacan de ocampo": "michoacan de ocampo",
+    "veracruz": "veracruz de ignacio de la llave",
+    "veracruz de ignacio de la llave": "veracruz de ignacio de la llave",
+}
+
+def _normalizar_estado_nombre(nombre_estado: str) -> str:
+    if not nombre_estado:
+        return ""
+
+    texto = unicodedata.normalize('NFKD', str(nombre_estado))
+    texto = "".join(c for c in texto if not unicodedata.combining(c))
+    return texto.strip().lower()
+
+@st.cache_resource
+def _load_mexico_states_geojson() -> dict | None:
+    geojson_path = Path("data/mexico_states.geojson")
+    if not geojson_path.exists():
+        return None
+
+    try:
+        return json.loads(geojson_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        st.warning(f"No se pudo cargar el archivo GeoJSON de estados: {exc}")
+        return None
 
 def show_sidebar():
     """Muestra la barra lateral solo cuando el usuario está autenticado"""
@@ -25,7 +107,7 @@ def show_sidebar():
         # Si no está autenticado, no mostrar barra lateral
         st.sidebar.empty()
         return
-    
+
     with st.sidebar:
         # Usar una versión más grande del logo con un ancho máximo
         st.image(
@@ -751,6 +833,8 @@ def show_geografico_report():
                 'Zona': r.get('zona', ''),
                 'Sistema': r.get('sistema', '')
             } for r in reportes])
+            df_geografico['Estado'] = df_geografico['Estado'].fillna('Desconocido')
+            df_geografico['estado_norm'] = df_geografico['Estado'].apply(_normalizar_estado_nombre)
 
             # Análisis por zona
             col1, col2 = st.columns(2)
@@ -764,6 +848,199 @@ def show_geografico_report():
                 st.subheader("🏙️ Reportes por Estado")
                 estados_count = df_geografico['Estado'].value_counts()
                 st.bar_chart(estados_count)
+
+            st.subheader("🗺️ Mapa de Reportes por Estado")
+
+            if px is None:
+                st.info("Instala la librería `plotly` para visualizar el mapa interactivo (pip install plotly).")
+            else:
+                estado_label_map = {}
+                for norm, original in zip(df_geografico['estado_norm'], df_geografico['Estado']):
+                    if norm and norm not in estado_label_map:
+                        estado_label_map[norm] = original
+
+                df_estados_validos = df_geografico[df_geografico['estado_norm'] != '']
+
+                conteo_por_estado = (
+                    df_estados_validos
+                    .groupby('estado_norm')
+                    .size()
+                    .reset_index(name='reportes')
+                )
+
+                if conteo_por_estado.empty:
+                    st.info("No hay estados válidos para graficar en el mapa.")
+                else:
+                    conteo_por_estado['Estado'] = conteo_por_estado['estado_norm'].apply(
+                        lambda s: estado_label_map.get(s, 'Desconocido')
+                    )
+                    conteo_por_estado['lat'] = conteo_por_estado['estado_norm'].map(
+                        lambda s: MEXICO_STATE_COORDS.get(s, (None, None))[0]
+                    )
+                    conteo_por_estado['lon'] = conteo_por_estado['estado_norm'].map(
+                        lambda s: MEXICO_STATE_COORDS.get(s, (None, None))[1]
+                    )
+
+                    conteo_valido = conteo_por_estado.dropna(subset=['lat', 'lon'])
+
+                    geojson_data = _load_mexico_states_geojson() if go is not None else None
+                    render_fallback_scatter = True
+
+                    if geojson_data and go is not None:
+                        geojson_name_map = {}
+                        for feature in geojson_data.get('features', []):
+                            nombre_estado = feature.get('properties', {}).get('state_name')
+                            if not nombre_estado:
+                                continue
+                            geo_norm = _normalizar_estado_nombre(nombre_estado)
+                            geojson_name_map[geo_norm] = nombre_estado
+
+                        if not geojson_name_map:
+                            st.warning("El archivo GeoJSON no contiene estados válidos para graficar.")
+                        else:
+                            conteo_por_estado = conteo_por_estado.copy()
+                            conteo_por_estado['geo_norm'] = conteo_por_estado['estado_norm'].map(
+                                lambda s: GEOJSON_STATE_ALIASES.get(s, s)
+                            )
+
+                            conteo_por_estado['geo_norm'] = conteo_por_estado['geo_norm'].where(
+                                conteo_por_estado['geo_norm'].isin(geojson_name_map.keys())
+                            )
+
+                            unmatched_states = (
+                                conteo_por_estado[conteo_por_estado['geo_norm'].isna()][['Estado']]
+                                .drop_duplicates()
+                            )
+
+                            geo_df = (
+                                pd.DataFrame(
+                                    [
+                                        {
+                                            'geo_norm': norm,
+                                            'feature_name': original,
+                                        }
+                                        for norm, original in geojson_name_map.items()
+                                    ]
+                                )
+                                .drop_duplicates(subset='geo_norm')
+                            )
+
+                            choropleth_df = geo_df.merge(
+                                conteo_por_estado[['geo_norm', 'Estado', 'reportes']],
+                                on='geo_norm',
+                                how='left'
+                            )
+                            choropleth_df['reportes'] = choropleth_df['reportes'].fillna(0)
+                            choropleth_df['Estado'] = choropleth_df['Estado'].fillna(choropleth_df['feature_name'])
+
+                            render_fallback_scatter = False
+                            fig = go.Figure()
+
+                            fig.add_trace(go.Choropleth(
+                                geojson=geojson_data,
+                                featureidkey="properties.state_name",
+                                locations=choropleth_df['feature_name'],
+                                z=choropleth_df['reportes'],
+                                zmin=0,
+                                colorscale="YlOrRd",
+                                colorbar_title="Reportes",
+                                marker_line_color="rgb(120, 120, 120)",
+                                marker_line_width=0.8,
+                                hovertext=[
+                                    f"{row.Estado}<br>Reportes: {int(row.reportes)}"
+                                    for row in choropleth_df.itertuples()
+                                ],
+                                hoverinfo="text"
+                            ))
+
+                            if not conteo_valido.empty:
+                                tamaño_base = 12
+                                fig.add_trace(go.Scattergeo(
+                                    lat=conteo_valido['lat'],
+                                    lon=conteo_valido['lon'],
+                                    text=[
+                                        f"{row.Estado}<br>Reportes: {row.reportes}"
+                                        for row in conteo_valido.itertuples()
+                                    ],
+                                    hoverinfo="text",
+                                    mode="markers",
+                                    marker=dict(
+                                        size=conteo_valido['reportes'].clip(lower=1) * 2 + tamaño_base,
+                                        color="rgba(33, 76, 229, 0.65)",
+                                        line=dict(color="rgba(15, 40, 160, 0.8)", width=1.5)
+                                    ),
+                                    name="Reportes"
+                                ))
+
+                            fig.update_geos(
+                                fitbounds="locations",
+                                visible=False,
+                                showcountries=True,
+                                countrycolor="rgb(90, 90, 90)",
+                                showland=True,
+                                landcolor="rgb(235, 235, 235)",
+                                showsubunits=True,
+                                subunitcolor="rgb(150, 150, 150)",
+                                subunitwidth=0.8,
+                                showcoastlines=True,
+                                coastlinecolor="rgb(120, 120, 120)"
+                            )
+                            fig.update_layout(
+                                margin=dict(l=0, r=0, t=0, b=0),
+                                height=600
+                            )
+
+                            st.plotly_chart(fig, use_container_width=True)
+
+                            if not unmatched_states.empty:
+                                st.caption(
+                                    "⚠️ Estados sin coincidencia en el GeoJSON: "
+                                    + ", ".join(sorted(unmatched_states['Estado'].unique()))
+                                )
+
+                    if render_fallback_scatter:
+                        if conteo_valido.empty:
+                            st.warning("No se pudieron ubicar coordenadas para los estados reportados.")
+                        else:
+                            fig = px.scatter_geo(
+                                conteo_valido,
+                                lat='lat',
+                                lon='lon',
+                                size='reportes',
+                                size_max=40,
+                                color='reportes',
+                                hover_name='Estado',
+                                hover_data={'reportes': True, 'lat': False, 'lon': False},
+                                projection='natural earth'
+                            )
+
+                            fig.update_geos(
+                                scope='north america',
+                                center=dict(lat=23.0, lon=-102.0),
+                                projection_scale=5.0,
+                                showland=True,
+                                landcolor='rgb(235, 235, 235)',
+                                showcountries=True,
+                                countrycolor='rgb(204, 204, 204)',
+                                showsubunits=True,
+                                subunitcolor='rgb(160, 160, 160)',
+                                subunitwidth=1,
+                                showcoastlines=True,
+                                coastlinecolor='rgb(150, 150, 150)'
+                            )
+                            fig.update_layout(
+                                coloraxis_colorbar=dict(title='Reportes'),
+                                margin=dict(l=0, r=0, t=0, b=0)
+                            )
+
+                            st.plotly_chart(fig, use_container_width=True)
+
+                estados_sin_coordenadas = conteo_por_estado[conteo_por_estado[['lat', 'lon']].isna().any(axis=1)]
+                if not estados_sin_coordenadas.empty:
+                    st.caption(
+                        "⚠️ Estados sin coordenadas mapeadas: "
+                        + ", ".join(sorted(estados_sin_coordenadas['Estado'].unique()))
+                    )
 
             # Tabla detallada
             st.subheader("📋 Distribución Detallada")
@@ -2230,7 +2507,6 @@ def show_settings():
 #                 help="Selecciona un sistema de la lista"
 #             )
 
-
 #         # Obtener la lista de Estados para SWL
 #             try:
 #                 # Obtener la lista de estados como diccionarios
@@ -2293,7 +2569,6 @@ def show_settings():
 #                     value=swl_ciudad_guardada if swl_ciudad_guardada else "",
 #                     help="Ingresa la ciudad donde se realiza la escucha (solo el nombre de la ciudad)"
 #             )
-
 
 #             # Campo Pre-registro con slider
 #             # Obtener el valor guardado del usuario o usar 1 como predeterminado
@@ -3958,7 +4233,6 @@ def show_toma_reportes():
         else:
             st.info("No hay reportes registrados para el día de hoy.")
 
-
 def show_registros():
     """Muestra la sección de registros con pestañas para listar y editar"""
     st.title("📋 Registros")
@@ -3971,7 +4245,6 @@ def show_registros():
 
     with tab2:
         show_editar_registros()
-
 
 def show_lista_registros():
     """Muestra la lista de registros con filtros y búsqueda"""
@@ -4101,36 +4374,56 @@ def show_lista_registros():
             )
 
             # Botón para exportar a Excel
-            if st.button("📥 Exportar a Excel", key="exportar_excel"):
-                # Crear buffer para el archivo Excel
-                from io import BytesIO
-                output = BytesIO()
+            fecha_inicio_str = fecha_inicio.strftime('%Y%m%d') if fecha_inicio else "inicio"
+            fecha_fin_str = fecha_fin.strftime('%Y%m%d') if fecha_fin else "fin"
 
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            from io import BytesIO
+            output = BytesIO()
+
+            engine = None
+            try:
+                import importlib
+
+                if importlib.util.find_spec("xlsxwriter"):
+                    engine = "xlsxwriter"
+            except Exception:
+                engine = None
+
+            try:
+                with pd.ExcelWriter(output, engine=engine) as writer:
                     df_registros.to_excel(writer, index=False, sheet_name='Registros')
 
-                    # Formato de la hoja
-                    workbook = writer.book
-                    worksheet = writer.sheets['Registros']
+                    if engine == "xlsxwriter":
+                        workbook = writer.book
+                        worksheet = writer.sheets['Registros']
 
-                    # Ajustar el ancho de las columnas
-                    for i, col in enumerate(df_registros.columns):
-                        max_length = max(df_registros[col].astype(str).apply(len).max(), len(col)) + 2
-                        worksheet.set_column(i, i, max_length)
+                        for i, col in enumerate(df_registros.columns):
+                            max_length = max(df_registros[col].astype(str).apply(len).max(), len(col)) + 2
+                            worksheet.set_column(i, i, max_length)
 
-                st.download_button(
-                    label="📥 Descargar Excel",
-                    data=output.getvalue(),
-                    file_name=f"registros_{fecha_inicio.strftime('%Y%m%d')}_{fecha_fin.strftime('%Y%m%d')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+                data_bytes = output.getvalue()
+                mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                file_name = f"registros_{fecha_inicio_str}_{fecha_fin_str}.xlsx"
+            except Exception:
+                csv_output = df_registros.to_csv(index=False).encode('utf-8-sig')
+                data_bytes = csv_output
+                mime_type = "text/csv"
+                file_name = f"registros_{fecha_inicio_str}_{fecha_fin_str}.csv"
+
+            st.download_button(
+                label="📥 Exportar",
+                data=data_bytes,
+                file_name=file_name,
+                mime=mime_type,
+                key="descargar_excel_lista",
+                use_container_width=True
+            )
 
         else:
             st.info("No se encontraron registros con los filtros aplicados")
 
     except Exception as e:
         st.error(f"Error al cargar los registros: {str(e)}")
-
 
 def show_editar_registros():
     """Muestra la sección para editar registros con funcionalidades CRUD"""
@@ -4375,7 +4668,6 @@ def show_editar_registros():
     except Exception as e:
         st.error(f"Error al cargar los registros: {str(e)}")
 
-
 def _mostrar_formulario_edicion_registro(registro_id):
     """Muestra el formulario para editar un registro existente"""
     st.header("✏️ Editar Registro")
@@ -4574,7 +4866,6 @@ def _mostrar_formulario_edicion_registro(registro_id):
                 del st.session_state.editando_registro_id
             st.rerun()
 
-
 @st.cache_data(ttl=300)  # Cache por 5 minutos
 def _get_estados_options():
     """Obtiene las opciones de Estado con caché"""
@@ -4583,7 +4874,6 @@ def _get_estados_options():
     except Exception as e:
         st.error(f"Error al cargar estados: {str(e)}")
         return []
-
 
 @st.cache_data(ttl=300)
 def _get_sistemas_options():
@@ -4602,7 +4892,6 @@ def _get_sistemas_options():
     except Exception as e:
         st.error(f"Error al cargar sistemas: {str(e)}")
         return []
-
 
 @st.cache_data(ttl=300)  # Cache por 5 minutos
 def _get_zonas_options():

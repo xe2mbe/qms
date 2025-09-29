@@ -75,8 +75,8 @@ GEOJSON_STATE_ALIASES = {
     "coahuila de zaragoza": "coahuila de zaragoza",
     "estado de mexico": "mexico",
     "mexico": "mexico",
-    "michoacan": "michoacan de ocampo",
-    "michoacan de ocampo": "michoacan de ocampo",
+    "michoacan": "michoacan",
+    "michoacan de ocampo": "michoacan",
     "veracruz": "veracruz de ignacio de la llave",
     "veracruz de ignacio de la llave": "veracruz de ignacio de la llave",
 }
@@ -746,8 +746,69 @@ def show_actividad_general_report():
         # Obtener estadísticas generales
         reportes, estadisticas = db.get_reportes_por_fecha_rango(fecha_inicio_str, fecha_fin_str)
 
+        actividad_por_fecha = None
+        df_actividad = None
+        dia_mas_activo_label = "Sin datos"
+        dia_mas_activo_delta = None
+        dia_menos_activo_label = "Sin datos"
+        dia_menos_activo_delta = None
+
+        # Preparar datos de actividad diaria
+        if reportes:
+            import pandas as pd
+            df_actividad = pd.DataFrame([{
+                'Fecha': r.get('fecha_reporte', ''),
+                'Indicativo': r.get('indicativo', ''),
+                'Sistema': r.get('sistema', ''),
+                'Zona': r.get('zona', ''),
+                'Estado': r.get('estado', '')
+            } for r in reportes])
+
+            def _parse_fecha(valor: str | None) -> pd.Timestamp | None:
+                if not valor:
+                    return None
+
+                valor = str(valor).strip()
+
+                formatos = [
+                    '%d/%m/%Y %H:%M:%S',
+                    '%d/%m/%Y',
+                    '%Y-%m-%d %H:%M:%S',
+                    '%Y-%m-%d',
+                ]
+
+                for fmt in formatos:
+                    try:
+                        return datetime.strptime(valor, fmt)
+                    except ValueError:
+                        continue
+
+                return None
+
+            df_actividad['Fecha'] = df_actividad['Fecha'].apply(_parse_fecha)
+            df_actividad = df_actividad.dropna(subset=['Fecha'])
+            df_actividad['Dia'] = df_actividad['Fecha'].dt.strftime('%Y-%m-%d')
+
+            # Agrupar por día usando fecha_reporte
+            actividad_por_fecha = (
+                df_actividad
+                .groupby('Dia')
+                .size()
+                .reset_index(name='Reportes')
+                .sort_values('Dia')
+            )
+
+            if not actividad_por_fecha.empty:
+                dia_mas_activo = actividad_por_fecha.loc[actividad_por_fecha['Reportes'].idxmax()]
+                dia_mas_activo_label = dia_mas_activo['Dia']
+                dia_mas_activo_delta = f"{int(dia_mas_activo['Reportes'])} reportes"
+
+                dia_menos_activo = actividad_por_fecha.loc[actividad_por_fecha['Reportes'].idxmin()]
+                dia_menos_activo_label = dia_menos_activo['Dia']
+                dia_menos_activo_delta = f"{int(dia_menos_activo['Reportes'])} reportes"
+
         # Mostrar métricas principales
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
 
         with col1:
             st.metric("Total de Reportes", estadisticas.get('total_reportes', 0))
@@ -760,28 +821,20 @@ def show_actividad_general_report():
             st.metric("Días de Período", dias_con_actividad)
 
         with col4:
-            promedio_diario = estadisticas.get('total_reportes', 0) / max(dias_con_actividad, 1)
-            st.metric("Promedio Diario", f"{promedio_diario:.1f}")
+            st.metric("Día con más reportes", dia_mas_activo_label, dia_mas_activo_delta)
+
+        with col5:
+            st.metric("Día con menos reportes", dia_menos_activo_label, dia_menos_activo_delta)
 
         # Gráfico de actividad por día
         if reportes:
             st.subheader("📅 Actividad por Día")
 
-            # Crear dataframe para el gráfico
-            import pandas as pd
-            df_actividad = pd.DataFrame([{
-                'Fecha': r.get('fecha_reporte', ''),
-                'Indicativo': r.get('indicativo', ''),
-                'Sistema': r.get('sistema', ''),
-                'Zona': r.get('zona', ''),
-                'Estado': r.get('estado', '')
-            } for r in reportes])
-
-            # Agrupar por fecha
-            actividad_por_fecha = df_actividad.groupby('Fecha').size().reset_index(name='Reportes')
-
             # Gráfico de barras
-            st.bar_chart(actividad_por_fecha.set_index('Fecha'))
+            st.bar_chart(actividad_por_fecha.set_index('Dia'))
+
+            # Tabla detallada por día
+            st.dataframe(actividad_por_fecha.rename(columns={'Dia': 'Día'}))
 
             # Tabla de resumen
             st.subheader("📋 Resumen por Sistema")

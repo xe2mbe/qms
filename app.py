@@ -1102,12 +1102,58 @@ def show_geografico_report():
                         + ", ".join(sorted(estados_sin_coordenadas['Estado'].unique()))
                     )
 
-            # Tabla detallada
+            # Tabla detallada agrupada por zona y estado
             st.subheader("📋 Distribución Detallada")
 
-            # Crear tabla pivote
-            tabla_zona_estado = pd.crosstab(df_geografico['Zona'], df_geografico['Estado'])
-            st.dataframe(tabla_zona_estado)
+            # Obtener el mapeo de estados a zonas desde la base de datos
+            estados_zonas = db.get_estados_zonas()
+            
+            # Agregar la zona a cada reporte basado en el estado
+            df_geografico['Zona'] = df_geografico['Estado'].map(
+                lambda x: estados_zonas.get(x, 'DESCONOCIDA')
+            )
+            
+            # Mostrar tablas en 4 columnas
+            cols = st.columns(4)
+            
+            # Definir las zonas en el orden deseado
+            zonas_orden = ['XE1', 'XE2', 'XE3', 'EXT']
+            
+            # Mostrar cada zona en su propia columna
+            for idx, zona in enumerate(zonas_orden):
+                with cols[idx % 4]:
+                    # Filtrar reportes de esta zona
+                    if zona == 'EXT':
+                        # Para EXT, incluir también 'Extranjero' si existe
+                        df_zona = df_geografico[df_geografico['Zona'].isin(['EXT', 'Extranjero'])]
+                        titulo = 'Zona Extranjera'
+                    else:
+                        df_zona = df_geografico[df_geografico['Zona'] == zona]
+                        titulo = f'Zona {zona}'
+                    
+                    if not df_zona.empty:
+                        # Contar reportes totales para esta zona
+                        total_reportes = len(df_zona)
+                        
+                        # Mostrar encabezado de zona con el total
+                        st.subheader(f"{titulo} - {total_reportes} reportes", divider='rainbow')
+                        
+                        # Contar reportes por estado en esta zona
+                        if zona != 'EXT':  # Para zonas que no son EXT, mostrar el desglose
+                            # Filtrar solo los estados que pertenecen a esta zona según la tabla qth
+                            estados_en_zona = [estado for estado, z in estados_zonas.items() if z == zona]
+                            df_zona_filtrado = df_geografico[df_geografico['Estado'].isin(estados_en_zona)]
+                            
+                            if not df_zona_filtrado.empty:
+                                conteo_estados = df_zona_filtrado['Estado'].value_counts()
+                                st.dataframe(
+                                    conteo_estados.rename('Reportes'),
+                                    use_container_width=True,
+                                    height=min(400, 50 + len(conteo_estados) * 35)
+                                )
+                    else:
+                        st.subheader(f"{titulo} - 0 reportes", divider='rainbow')
+                        st.write("Sin reportes")
 
             # Top 5 zonas más activas
             st.subheader("🏆 Zonas Más Activas")

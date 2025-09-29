@@ -8,6 +8,7 @@ class FMREDatabase:
     def __init__(self, db_path="qms.db"):
         self.db_path = db_path
         self.init_database()
+        self.ensure_zona_column_exists()
         
     def _check_password(self, password, hashed_password):
         """
@@ -1244,6 +1245,59 @@ class FMREDatabase:
             cursor.execute('SELECT estado FROM qth WHERE abreviatura = ?', (abreviatura,))
             result = cursor.fetchone()
             return result['estado'] if result else None
+            
+    def ensure_zona_column_exists(self):
+        """Asegura que la columna 'zona' exista en la tabla 'qth'.
+        Si no existe, la crea y la inicializa con los valores predeterminados.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Verificar si la columna 'zona' ya existe
+            cursor.execute("PRAGMA table_info(qth)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'zona' not in columns:
+                # Agregar la columna 'zona' si no existe
+                cursor.execute('ALTER TABLE qth ADD COLUMN zona TEXT')
+                
+                # Definir el mapeo de zonas
+                zone_mapping = {
+                    'XE1': [
+                        'Colima', 'Ciudad De México', 'Guanajuato', 'Hidalgo', 'Jalisco', 
+                        'Estado De México', 'Michoacán', 'Morelos', 'Nayarit', 'Puebla', 
+                        'Querétaro', 'Tlaxcala', 'Veracruz'
+                    ],
+                    'XE2': [
+                        'Aguascalientes', 'Baja California', 'Baja California Sur', 
+                        'Chihuahua', 'Coahuila', 'Durango', 'Nuevo León', 
+                        'San Luis Potosí', 'Sinaloa', 'Sonora', 'Tamaulipas', 'Zacatecas'
+                    ],
+                    'XE3': [
+                        'Campeche', 'Chiapas', 'Guerrero', 'Oaxaca', 'Quintana Roo', 
+                        'Tabasco', 'Yucatán'
+                    ],
+                    'EXT': ['Extranjero']
+                }
+                
+                # Actualizar las zonas según el mapeo
+                for zona, estados in zone_mapping.items():
+                    placeholders = ','.join(['?'] * len(estados))
+                    query = f"UPDATE qth SET zona = ? WHERE estado IN ({placeholders})"
+                    cursor.execute(query, [zona] + estados)
+                
+                conn.commit()
+    
+    def get_estados_zonas(self):
+        """Obtiene un diccionario que mapea cada estado a su zona correspondiente
+        
+        Returns:
+            dict: Diccionario con los estados como claves y las zonas como valores
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT estado, zona FROM qth WHERE zona IS NOT NULL')
+            return {row['estado']: row['zona'] for row in cursor.fetchall()}
     
     def get_nombre_zona(self, zona):
         """Obtiene el nombre de una zona por su código"""

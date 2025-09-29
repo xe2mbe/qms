@@ -68,9 +68,9 @@ MEXICO_STATE_COORDS = {
 }
 
 GEOJSON_STATE_ALIASES = {
-    "cdmx": "distrito federal",
-    "ciudad de mexico": "distrito federal",
-    "distrito federal": "distrito federal",
+    "cdmx": "ciudad de mexico",
+    "ciudad de mexico": "ciudad de mexico",
+    "distrito federal": "ciudad de mexico",
     "coahuila": "coahuila de zaragoza",
     "coahuila de zaragoza": "coahuila de zaragoza",
     "estado de mexico": "mexico",

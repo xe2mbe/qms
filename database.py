@@ -1859,6 +1859,20 @@ class FMREDatabase:
 
                 # Obtener la hora actual en UTC
                 created_at_utc = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+                
+                # Normalizar el nombre del estado si es necesario
+                estado = reporte_data.get('estado', '')
+                if estado:
+                    # Mapeo de nombres de estados a su versión normalizada
+                    mapeo_estados = {
+                        'México': 'Estado de México',
+                        'MEXICO': 'Estado de México',
+                        'MEX': 'Estado de México',
+                        'mexico': 'Estado de México',
+                        'mex': 'Estado de México'
+                    }
+                    # Aplicar el mapeo si el estado está en el diccionario
+                    reporte_data['estado'] = mapeo_estados.get(estado, estado)
 
                 # Insertar el reporte en la base de datos
                 cursor.execute('''

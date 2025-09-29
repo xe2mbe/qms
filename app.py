@@ -16,16 +16,8 @@ import io
 import unicodedata
 import json
 from pathlib import Path
-
-try:
-    import plotly.express as px
-except ImportError:
-    px = None
-
-try:
-    import plotly.graph_objects as go
-except ImportError:
-    go = None
+import plotly.express as px
+import plotly.graph_objects as go
 
 db = FMREDatabase()
 auth = AuthManager(db)
@@ -879,6 +871,16 @@ def show_geografico_report():
 
         if reportes:
             import pandas as pd
+            
+            # Mapeo de nombres alternativos de estados
+            MAPEO_ESTADOS = {
+                'México': 'Estado de México',
+                'MEXICO': 'Estado de México',
+                'MEX': 'Estado de México',
+                'mexico': 'Estado de México',
+                'mex': 'Estado de México'
+            }
+            
             df_geografico = pd.DataFrame([{
                 'Indicativo': r.get('indicativo', ''),
                 'Estado': r.get('estado', ''),
@@ -886,21 +888,15 @@ def show_geografico_report():
                 'Zona': r.get('zona', ''),
                 'Sistema': r.get('sistema', '')
             } for r in reportes])
-            df_geografico['Estado'] = df_geografico['Estado'].fillna('Desconocido')
+            
+            # Estandarizar los nombres de los estados antes de cualquier procesamiento
+            df_geografico['Estado'] = df_geografico['Estado'].fillna('Desconocido').str.strip()
+            df_geografico['Estado'] = df_geografico['Estado'].apply(
+                lambda x: MAPEO_ESTADOS.get(x, x) if x in MAPEO_ESTADOS else x
+            )
+            
+            # Normalizar los nombres de los estados para comparación
             df_geografico['estado_norm'] = df_geografico['Estado'].apply(_normalizar_estado_nombre)
-
-            # Análisis por zona
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.subheader("📍 Reportes por Zona")
-                zonas_count = df_geografico['Zona'].value_counts()
-                st.bar_chart(zonas_count)
-
-            with col2:
-                st.subheader("🏙️ Reportes por Estado")
-                estados_count = df_geografico['Estado'].value_counts()
-                st.bar_chart(estados_count)
 
             st.subheader("🗺️ Mapa de Reportes por Estado")
 
@@ -1102,16 +1098,37 @@ def show_geografico_report():
                         + ", ".join(sorted(estados_sin_coordenadas['Estado'].unique()))
                     )
 
-            # Tabla detallada agrupada por zona y estado
-            st.subheader("📋 Distribución Detallada")
-
+            # Estandarizar los nombres de los estados antes de buscar la zona
+            df_geografico['Estado'] = df_geografico['Estado'].apply(
+                lambda x: MAPEO_ESTADOS.get(x, x) if pd.notna(x) and x != '' else x
+            )
+            
             # Obtener el mapeo de estados a zonas desde la base de datos
             estados_zonas = db.get_estados_zonas()
             
+            # Mostrar estados que no tienen zona asignada (solo para depuración)
+            estados_unicos = df_geografico['Estado'].unique()
+            estados_sin_zona = [e for e in estados_unicos if e not in estados_zonas and pd.notna(e) and e != '']
+            
+            if estados_sin_zona:
+                st.warning(f"⚠️ Los siguientes estados no tienen zona asignada y aparecerán como 'DESCONOCIDA': {', '.join(estados_sin_zona)}")
+                
+                # Mostrar registros problemáticos para depuración
+                registros_problematicos = df_geografico[df_geografico['Estado'].isin(estados_sin_zona)]
+                with st.expander("Ver registros problemáticos"):
+                    st.write("Registros con estados sin zona asignada (se mostrarán como 'DESCONOCIDA'):")
+                    st.dataframe(registros_problematicos[['Indicativo', 'Estado', 'Ciudad']])
+            
             # Agregar la zona a cada reporte basado en el estado
             df_geografico['Zona'] = df_geografico['Estado'].map(
-                lambda x: estados_zonas.get(x, 'DESCONOCIDA')
+                lambda x: estados_zonas.get(x, 'DESCONOCIDA') if pd.notna(x) and x != '' else 'DESCONOCIDA'
             )
+            
+            # Calcular conteo de zonas para la sección de zonas más activas
+            zonas_count = df_geografico['Zona'].value_counts()
+            
+            # Sección de Distribución Detallada
+            st.subheader("📋 Distribución Detallada", divider='rainbow')
             
             # Mostrar tablas en 4 columnas
             cols = st.columns(4)
@@ -1136,7 +1153,7 @@ def show_geografico_report():
                         total_reportes = len(df_zona)
                         
                         # Mostrar encabezado de zona con el total
-                        st.subheader(f"{titulo} - {total_reportes} reportes", divider='rainbow')
+                        st.markdown(f"**{titulo}**  \n*{total_reportes} reportes*")
                         
                         # Contar reportes por estado en esta zona
                         if zona != 'EXT':  # Para zonas que no son EXT, mostrar el desglose
@@ -1149,17 +1166,117 @@ def show_geografico_report():
                                 st.dataframe(
                                     conteo_estados.rename('Reportes'),
                                     use_container_width=True,
-                                    height=min(400, 50 + len(conteo_estados) * 35)
+                                    height=min(300, 50 + len(conteo_estados) * 35)
                                 )
                     else:
-                        st.subheader(f"{titulo} - 0 reportes", divider='rainbow')
+                        st.markdown(f"**{titulo}**  \n*0 reportes*")
                         st.write("Sin reportes")
 
-            # Top 5 zonas más activas
-            st.subheader("🏆 Zonas Más Activas")
+            # Sección de Zonas Más Activas
+            st.subheader("🏆 Zonas Más Activas", divider='rainbow')
             top_zonas = zonas_count.head(5)
-            for zona, count in top_zonas.items():
-                st.write(f"**{zona}:** {count} reportes")
+            
+            # Crear un DataFrame para mostrar la tabla
+            df_top_zonas = pd.DataFrame({
+                'Zona': top_zonas.index,
+                'Reportes': top_zonas.values,
+                'Porcentaje': (top_zonas.values / len(df_geografico) * 100).round(1).astype(str) + '%'
+            })
+            
+            # Mostrar la tabla con estilos
+            st.dataframe(
+                df_top_zonas,
+                column_config={
+                    'Zona': 'Zona',
+                    'Reportes': st.column_config.NumberColumn('Reportes'),
+                    'Porcentaje': 'Porcentaje'
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+            
+            # Sección de Gráficos de Barras
+            st.subheader("📊 Reportes por Zona y Estado", divider='rainbow')
+            
+            # Gráficos en columnas
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### 📍 Reportes por Zona")
+                if not zonas_count.empty:
+                    # Crear un DataFrame con los datos
+                    df_zonas = zonas_count.reset_index()
+                    df_zonas.columns = ['Zona', 'Cantidad']
+                    
+                    # Generar colores únicos para cada barra
+                    n_colors = len(df_zonas)
+                    colors = px.colors.qualitative.Plotly[:n_colors]
+                    
+                    # Crear el gráfico con colores personalizados
+                    fig = px.bar(
+                        df_zonas, 
+                        x='Zona', 
+                        y='Cantidad',
+                        color='Zona',
+                        color_discrete_sequence=colors,
+                        title='Reportes por Zona'
+                    )
+                    
+                    # Mejorar el diseño
+                    fig.update_layout(
+                        showlegend=False,
+                        xaxis_title='Zona',
+                        yaxis_title='Cantidad de Reportes',
+                        xaxis_tickangle=-45
+                    )
+                    
+                    # Mostrar el gráfico
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No hay datos de zonas para mostrar")
+            
+            with col2:
+                st.markdown("#### 🏙️ Reportes por Estado")
+                estados_count = df_geografico['Estado'].value_counts().head(10)  # Tomar solo los 10 primeros
+                if not estados_count.empty:
+                    # Crear un DataFrame con los datos
+                    df_estados = estados_count.reset_index()
+                    df_estados.columns = ['Estado', 'Cantidad']
+                    
+                    # Generar colores únicos para cada barra
+                    n_colors = len(df_estados)
+                    colors = px.colors.qualitative.Dark24[:n_colors]  # Usar una paleta diferente
+                    
+                    # Crear el gráfico con colores personalizados
+                    fig = px.bar(
+                        df_estados, 
+                        x='Estado', 
+                        y='Cantidad',
+                        color='Estado',
+                        color_discrete_sequence=colors,
+                        title='Top 10 Estados con más Reportes',
+                        text='Cantidad'
+                    )
+                    
+                    # Mejorar el diseño
+                    fig.update_layout(
+                        showlegend=False,
+                        xaxis_title='Estado',
+                        yaxis_title='Cantidad de Reportes',
+                        xaxis_tickangle=-45,
+                        height=500  # Altura fija para mejor visualización
+                    )
+                    
+                    # Mostrar los valores en las barras
+                    fig.update_traces(
+                        textposition='outside',
+                        textfont_size=12
+                    )
+                    
+                    # Mostrar el gráfico
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No hay datos de estados para mostrar")
 
         else:
             st.info("No hay datos para el período seleccionado")

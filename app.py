@@ -995,7 +995,14 @@ def show_geografico_report():
                                 locations=choropleth_df['feature_name'],
                                 z=choropleth_df['reportes'],
                                 zmin=0,
-                                colorscale="YlOrRd",
+                                colorscale=[
+                                    [0.0, "#f2f2f2"],   # very low -> light gray
+                                    [0.15, "#e0e0e0"],
+                                    [0.35, "#c8e6c9"],  # light green tint
+                                    [0.6, "#81c784"],   # medium green
+                                    [0.8, "#43a047"],   # darker green
+                                    [1.0, "#1b5e20"]    # highest -> deep green
+                                ],
                                 colorbar_title="Reportes",
                                 marker_line_color="rgb(120, 120, 120)",
                                 marker_line_width=0.8,

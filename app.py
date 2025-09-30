@@ -3737,6 +3737,7 @@ def show_settings():
 #                     'Ciudad': r.get('ciudad', ''),
 #                     'Señal': r.get('senal', ''),
 #                     'Hora': format_time(r.get('fecha_reporte'))
+#                      'Operando': r.get('qrz_station', ''),
 #                 } for r in reportes])
                 
 #                 # Mostrar la tabla
@@ -4578,7 +4579,9 @@ def show_toma_reportes():
                 'Estado': r.get('estado',''),
                 'Ciudad': r.get('ciudad',''),
                 'Señal': r.get('senal',''),
-                'Hora': format_time(r.get('fecha_reporte'))
+                'Hora': format_time(r.get('fecha_reporte')),
+                'Operando': r.get('qrz_station',''),
+                'Capturado Por': r.get('qrz_captured_by','')
             } for r in reportes])
 
             st.data_editor(
@@ -4715,7 +4718,9 @@ def show_lista_registros():
                 'Señal': r.get('senal', ''),
                 'Tipo': r.get('tipo_reporte', ''),
                 'Fecha': r.get('fecha_reporte', ''),
-                'Observaciones': r.get('observaciones', '')[:50] + '...' if len(r.get('observaciones', '')) > 50 else r.get('observaciones', '')
+                'Observaciones': r.get('observaciones', '')[:50] + '...' if len(r.get('observaciones', '')) > 50 else r.get('observaciones', ''),
+                'Operando': r.get('qrz_station', ''),
+                'Capturado Por': r.get('qrz_captured_by', '')
             } for r in registros])
 
             # Mostrar la tabla
@@ -4894,8 +4899,10 @@ def show_editar_registros():
                     "Observaciones": (
                         registro.get('observaciones', '')[:50] + '...'
                         if registro.get('observaciones') and len(registro.get('observaciones', '')) > 50
-                        else registro.get('observaciones', '')
-                    )
+                        else registro.get('observaciones', ''),
+                    ),
+                    "Operando": registro.get('qrz_station', ''),
+                    "Capturado Por": registro.get('qrz_captured_by', '')
                 }
                 for registro in registros
             ])

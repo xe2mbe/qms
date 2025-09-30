@@ -297,6 +297,25 @@ class FMREDatabase:
             
             if 'qrz_station' not in columns:
                 cursor.execute('ALTER TABLE reportes ADD COLUMN qrz_station TEXT')
+                
+            # Add medio_origen column to reportes table if it doesn't exist
+            if 'medio_origen' not in columns:
+                cursor.execute('ALTER TABLE reportes ADD COLUMN medio_origen TEXT')
+                
+            # Create RS table if it doesn't exist
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS rs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plataforma TEXT NOT NULL,
+                    nombre TEXT NOT NULL,
+                    descripcion TEXT,
+                    url TEXT,
+                    administrador TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT 1
+                )
+            ''')
             
             # Crear índices para búsquedas frecuentes en reportes
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_reportes_indicativo ON reportes(indicativo)')
@@ -1958,6 +1977,246 @@ class FMREDatabase:
                 conn.rollback()
             print(f"Error al guardar el reporte: {str(e)}")
             raise
+    # =============================================
+    # MÉTODOS PARA GESTIÓN DE REDES SOCIALES (RS)
+    # =============================================
+    
+    def rs_entry_exists(self, plataforma, nombre, exclude_id=None):
+        """Verifica si ya existe una entrada con la misma plataforma y nombre
+        
+        Args:
+            plataforma (str): Nombre de la plataforma
+            nombre (str): Nombre del grupo o cuenta
+            exclude_id (int, optional): ID a excluir de la búsqueda (para actualizaciones)
+            
+        Returns:
+            bool: True si ya existe, False si no existe
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                query = '''
+                    SELECT COUNT(*) 
+                    FROM rs 
+                    WHERE LOWER(TRIM(plataforma)) = LOWER(TRIM(?)) 
+                    AND LOWER(TRIM(nombre)) = LOWER(TRIM(?))
+                '''
+                params = [plataforma, nombre]
+                
+                if exclude_id is not None:
+                    query += ' AND id != ?'
+                    params.append(exclude_id)
+                
+                cursor.execute(query, params)
+                return cursor.fetchone()[0] > 0
+                
+        except sqlite3.Error as e:
+            print(f"Error al verificar entrada RS: {e}")
+            return False
+    
+    def add_rs_entry(self, plataforma, nombre, descripcion=None, url=None, administrador=None):
+        """Agrega una nueva entrada de red social
+        
+        Args:
+            plataforma (str): Nombre de la plataforma (ej: Facebook, Twitter)
+            nombre (str): Nombre del grupo o cuenta
+            descripcion (str, optional): Descripción de la red social
+            url (str, optional): URL del perfil/grupo
+            administrador (str, optional): Responsable de la cuenta/grupo
+            
+        Returns:
+            int/None: ID de la entrada creada o None en caso de error o si ya existe
+        """
+        # Verificar si ya existe una entrada idéntica
+        if self.rs_entry_exists(plataforma, nombre):
+            print(f"Error: Ya existe una entrada para {plataforma} - {nombre}")
+            return None
+            
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    INSERT INTO rs (plataforma, nombre, descripcion, url, administrador, is_active)
+                    VALUES (?, ?, ?, ?, ?, 1)
+                ''', (plataforma, nombre, descripcion, url, administrador))
+                
+                conn.commit()
+                return cursor.lastrowid
+                
+        except sqlite3.Error as e:
+            print(f"Error al agregar entrada RS: {e}")
+            return None
+    
+    def get_rs_entries(self, active_only=True):
+        """Obtiene todas las entradas de redes sociales
+        
+        Args:
+            active_only (bool): Si es True, solo devuelve las entradas activas
+            
+        Returns:
+            list: Lista de diccionarios con las entradas RS
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                if active_only:
+                    cursor.execute('SELECT * FROM rs WHERE is_active = 1 ORDER BY plataforma, nombre')
+                else:
+                    cursor.execute('SELECT * FROM rs ORDER BY plataforma, nombre')
+                
+                return [dict(row) for row in cursor.fetchall()]
+        except sqlite3.Error as e:
+            print(f"Error al obtener entradas RS: {e}")
+            return []
+    
+    def update_rs_entry(self, rs_id, **kwargs):
+        """Actualiza una entrada de red social
+        
+        Args:
+            rs_id (int): ID de la entrada a actualizar
+            **kwargs: Campos a actualizar (plataforma, nombre, descripcion, url, administrador, is_active)
+            
+        Returns:
+            bool: True si la actualización fue exitosa
+        """
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Primero obtenemos la entrada actual
+            cursor.execute('SELECT * FROM rs WHERE id = ?', (rs_id,))
+            current = cursor.fetchone()
+            if not current:
+                print(f"No se encontró la entrada con ID {rs_id}")
+                return False
+            
+            current = dict(current)  # Convertir a diccionario para facilitar el acceso
+            
+            # Si se está actualizando plataforma o nombre, verificar duplicados
+            if 'plataforma' in kwargs or 'nombre' in kwargs:
+                plataforma = kwargs.get('plataforma', current['plataforma'])
+                nombre = kwargs.get('nombre', current['nombre'])
+                
+                # Verificar si ya existe otra entrada con la misma combinación
+                cursor.execute('''
+                    SELECT COUNT(*) 
+                    FROM rs 
+                    WHERE LOWER(TRIM(plataforma)) = LOWER(TRIM(?)) 
+                    AND LOWER(TRIM(nombre)) = LOWER(TRIM(?))
+                    AND id != ?
+                ''', (plataforma, nombre, rs_id))
+                
+                if cursor.fetchone()[0] > 0:
+                    print(f"Error: Ya existe otra entrada para {plataforma} - {nombre}")
+                    return False
+            
+            # Construir la consulta dinámicamente
+            update_fields = []
+            params = []
+            
+            allowed_fields = ['plataforma', 'nombre', 'descripcion', 'url', 'administrador', 'is_active']
+            for field, value in kwargs.items():
+                if field in allowed_fields:
+                    update_fields.append(f"{field} = ?")
+                    params.append(value)
+            
+            if not update_fields:
+                return False
+                
+            params.append(rs_id)
+            query = f"UPDATE rs SET {', '.join(update_fields)}, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+            
+            cursor.execute(query, params)
+            conn.commit()
+            return cursor.rowcount > 0
+            
+        except sqlite3.Error as e:
+            print(f"Error al actualizar entrada RS: {e}")
+            if conn:
+                conn.rollback()
+            return False
+        finally:
+            if conn:
+                conn.close()
+    
+    def get_rs_entry(self, rs_id):
+        """Obtiene una entrada de red social por su ID
+        
+        Args:
+            rs_id (int): ID de la entrada a obtener
+            
+        Returns:
+            dict: Diccionario con los datos de la entrada o None si no se encuentra
+        """
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM rs WHERE id = ?', (rs_id,))
+            result = cursor.fetchone()
+            return dict(result) if result else None
+        except sqlite3.Error as e:
+            print(f"Error al obtener entrada RS: {e}")
+            return None
+        finally:
+            if conn:
+                conn.close()
+    
+    def delete_rs_entry(self, rs_id):
+        """Elimina una entrada de red social
+        
+        Args:
+            rs_id (int): ID de la entrada a eliminar
+            
+        Returns:
+            bool: True si la operación fue exitosa
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Primero obtenemos los datos de la entrada para poder restablecerla si hay un error
+                cursor.execute('SELECT * FROM rs WHERE id = ?', (rs_id,))
+                entry = cursor.fetchone()
+                
+                if not entry:
+                    print(f"No se encontró la entrada con ID {rs_id}")
+                    return False
+                
+                # Primero actualizamos la entrada con un identificador único para evitar conflictos
+                # con la restricción única al marcar como inactivo
+                temp_id = f"DELETED_{int(datetime.now().timestamp())}_{rs_id}"
+                
+                # Actualizamos la entrada con un identificador único
+                cursor.execute(
+                    'UPDATE rs SET plataforma = ?, nombre = ?, is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                    (f"{entry['plataforma']}_{temp_id}", f"{entry['nombre']}_{temp_id}", rs_id)
+                )
+                
+                # Luego la eliminamos físicamente
+                cursor.execute('DELETE FROM rs WHERE id = ?', (rs_id,))
+                
+                conn.commit()
+                return cursor.rowcount > 0
+                
+        except sqlite3.Error as e:
+            print(f"Error al eliminar entrada RS: {e}")
+            # Si hay un error, intentamos restaurar el estado original
+            if 'entry' in locals() and entry:
+                try:
+                    cursor.execute(
+                        'UPDATE rs SET plataforma = ?, nombre = ?, is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                        (entry['plataforma'], entry['nombre'], rs_id)
+                    )
+                    conn.commit()
+                except:
+                    pass  # Si falla la restauración, no hay mucho que podamos hacer
+            return False
 
 if __name__ == "__main__":
     # Crear la base de datos y tablas si no existen

@@ -19,6 +19,7 @@ from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
 from utils import show_gestion_estaciones
+from rs_management import show_rs_management
 
 db = FMREDatabase()
 auth = AuthManager(db)
@@ -412,7 +413,7 @@ def show_gestion():
     st.title("🔧 Gestión")
     
     # Crear pestañas
-    tabs = ["👥 Usuarios", "📅 Eventos", "📍 Zonas", "📻 Radioexperimentadores", "🏢 Estaciones"]
+    tabs = ["👥 Usuarios", "📅 Eventos", "📍 Zonas", "📻 Radioexperimentadores", "🏢 Estaciones", "📱 Redes Sociales"]
     
     # Crear botones de pestaña personalizados
     cols = st.columns(len(tabs))
@@ -434,6 +435,31 @@ def show_gestion():
         show_gestion_radioexperimentadores()
     elif st.session_state.active_tab == "🏢 Estaciones":
         show_gestion_estaciones()
+    elif st.session_state.active_tab == "📱 Redes Sociales":
+        show_gestion_redes_sociales()
+
+def show_gestion_redes_sociales():
+    """Muestra la gestión de redes sociales con pestañas"""
+    from rs_management import show_rs_management
+    
+    # Mostrar pestañas
+    tab_lista, tab_crear = st.tabs(["📋 Lista de Redes Sociales", "➕ Agregar Red Social"])
+    
+    with tab_lista:
+        st.subheader("📱 Lista de Redes Sociales")
+        show_rs_management(show_tabs=False)
+    
+    with tab_crear:
+        st.subheader("➕ Agregar Nueva Red Social")
+        # Aquí puedes agregar un formulario para crear nuevas redes sociales si es necesario
+        st.info("Para agregar una nueva red social, por favor usa el formulario en la pestaña de lista.")
+        st.markdown("""
+        **Instrucciones:**
+        1. Ve a la pestaña "Lista de Redes Sociales"
+        2. Haz clic en el botón "Agregar Nueva Red Social"
+        3. Completa el formulario con los datos de la red social
+        4. Haz clic en "Guardar"
+        """)
 
 def show_gestion_eventos():
     """Muestra la gestión de eventos con pestañas para listar y crear eventos"""
@@ -2532,7 +2558,12 @@ def show_settings():
     st.title("⚙️ Configuración del Sistema")
     
     # Pestañas para las diferentes configuraciones
-    tab1, tab2, tab3 = st.tabs(["Correo Electrónico", "Opciones del Sistema", "Consulta SQL"])
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "Correo Electrónico", 
+        "Opciones del Sistema", 
+        "Consulta SQL",
+        "Redes Sociales"
+    ])
     
     with tab1:
         st.header("Configuración SMTP")
@@ -3760,7 +3791,21 @@ def show_settings():
 #                 st.info("No hay reportes registrados para el día de hoy.")
 
 def show_toma_reportes():
-    """Muestra la sección de Toma de Reportes con el flujo solicitado."""
+    """Muestra la sección de Toma de Reportes con pestañas para Tradicional y Redes Sociales."""
+    st.title("📝 Toma de Reportes")
+    
+    # Crear pestañas
+    tab1, tab2 = st.tabs(["📻 Tradicional", "📱 Redes Sociales"])
+    
+    with tab1:
+        _show_toma_reportes_tradicional()
+    
+    with tab2:
+        from rs_report_form import show_redes_sociales_form
+        show_redes_sociales_form()
+
+def _show_toma_reportes_tradicional():
+    """Muestra el formulario tradicional de toma de reportes."""
     import pandas as pd
     from datetime import datetime
     from time import sleep

@@ -3879,6 +3879,32 @@ def show_toma_reportes():
             fecha = st.date_input("Fecha de Reporte", fecha_actual)
             if fecha != fecha_actual:
                 st.warning("⚠️ Reporte con fecha distinta a la actual.")
+                
+            # Operando Estación
+            # Obtener la estación QRZ del usuario actual
+            qrz_estacion = ""
+            if 'user' in st.session_state and st.session_state.user and 'id' in st.session_state.user:
+                usuario = db.get_user_by_id(st.session_state.user['id'])
+                if usuario and 'qrz_station' in usuario:
+                    qrz_estacion = usuario['qrz_station']
+            
+            # Mostrar el campo de estación con el valor actual del usuario
+            try:
+                cursor = db.get_connection().cursor()
+                cursor.execute("SELECT qrz FROM stations ORDER BY qrz")
+                estaciones = [""] + [row[0] for row in cursor.fetchall()]
+                
+                # Si el usuario ya tiene una estación asignada, mostrarla como valor por defecto
+                indice_estacion = estaciones.index(qrz_estacion) if qrz_estacion in estaciones else 0
+                qrz_estacion = st.selectbox(
+                    "Operando Estación", 
+                    estaciones, 
+                    index=indice_estacion,
+                    help="Selecciona la estación desde la que estás operando"
+                )
+            except Exception as e:
+                st.error(f"Error al cargar las estaciones: {str(e)}")
+                qrz_estacion = qrz_estacion or ""  # Mantener el valor actual si hay un error
 
             # Tipo reporte
             try:
@@ -3992,6 +4018,7 @@ def show_toma_reportes():
             try:
                 # Persistir preferencias de usuario
                 if "user" in st.session_state and st.session_state.user and "id" in st.session_state.user:
+                    # Actualizar la base de datos
                     db.update_user(
                         user_id=st.session_state.user["id"],
                         sistema_preferido=sistema_preferido,
@@ -4001,13 +4028,20 @@ def show_toma_reportes():
                         pre_registro=pre_registro,
                         swl_estado=swl_estado,
                         swl_ciudad=swl_ciudad,
+                        qrz_station=qrz_estacion,
                     )
+                    # Actualizar la sesión del usuario con los datos actualizados de la base de datos
+                    updated_user = db.get_user_by_id(st.session_state.user["id"])
+                    if updated_user:
+                        st.session_state.user.update(updated_user)
+                        print(f"[DEBUG] Sesión actualizada: {st.session_state.user}")
             except Exception as e:
                 st.warning(f"⚠️ No se pudieron guardar preferencias de usuario: {e}")
 
             # Guardar parámetros en sesión
             st.session_state.parametros_reporte = {
                 "fecha_reporte": fecha.strftime("%d/%m/%Y"),
+                "qrz_estacion": qrz_estacion,
                 "tipo_reporte": tipo_reporte,
                 "sistema_preferido": sistema_preferido,
                 "pre_registro": pre_registro,
@@ -4339,6 +4373,25 @@ def show_toma_reportes():
                     print(f"[DEBUG] Valores: nombre_operador='{registro.get('nombre_operador', 'N/A')}', estado='{registro.get('estado', 'N/A')}', ciudad='{registro.get('ciudad', 'N/A')}'")
 
                     # Ensamble payload
+                    # Obtener el indicativo del usuario logueado
+                    usuario_logueado = st.session_state.user.get('username', '') if 'user' in st.session_state else ''
+                    
+                    # Obtener la estación QRZ del usuario logueado
+                    qrz_station = ''
+                    if 'user' in st.session_state and st.session_state.user:
+                        # Verificar la estructura del objeto user
+                        print(f"[DEBUG] Estructura del usuario: {st.session_state.user}")
+                        # Intentar obtener qrz_station de diferentes formas
+                        qrz_station = st.session_state.user.get('qrz_station', '')
+                        if not qrz_station:
+                            # Si no está en el primer nivel, verificar en data
+                            if 'data' in st.session_state.user and st.session_state.user['data']:
+                                qrz_station = st.session_state.user['data'].get('qrz_station', '')
+                    
+                    print(f"[DEBUG] qrz_station del usuario: {qrz_station}")
+                    print(f"[DEBUG] usuario_logueado: {usuario_logueado}")
+                    print(f"[DEBUG] Estructura completa del usuario: {st.session_state.user if 'user' in st.session_state else 'No hay usuario en la sesión'}")
+                    
                     payload = {
                         'indicativo': _safe_str(registro.get('indicativo')).upper(),
                         'nombre': _formatear_oracion(_safe_str(registro.get('nombre_operador'))),
@@ -4349,7 +4402,9 @@ def show_toma_reportes():
                         'senal': int(registro.get('senal') or 59),
                         'fecha_reporte': pr.get('fecha_reporte', get_current_cdmx_time().strftime('%d/%m/%Y')),
                         'tipo_reporte': pr.get('tipo_reporte','Boletín'),
-                        'origen': 'Sistema'
+                        'origen': 'Sistema',
+                        'qrz_captured_by': usuario_logueado,  # Indicativo del usuario que capturó el reporte
+                        'qrz_station': qrz_station  # Estación QRZ del usuario
                     }
 
                     print(f"[DEBUG] Payload: nombre='{payload['nombre']}', estado='{payload['estado']}', ciudad='{payload['ciudad']}'")

@@ -196,7 +196,8 @@ class FMREDatabase:
                     potencia TEXT,
                     pre_registro INTEGER DEFAULT 0,
                     swl_estado TEXT,
-                    swl_ciudad TEXT
+                    swl_ciudad TEXT,
+                    qrz_station TEXT
                 )
             ''')
             
@@ -219,6 +220,8 @@ class FMREDatabase:
                 cursor.execute('ALTER TABLE users ADD COLUMN swl_estado TEXT')
             if 'swl_ciudad' not in columns:
                 cursor.execute('ALTER TABLE users ADD COLUMN swl_ciudad TEXT')
+            if 'qrz_station' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN qrz_station TEXT')
                         
             # Tabla de Radioexperimentadores
             cursor.execute('''
@@ -287,6 +290,13 @@ class FMREDatabase:
             # Si la tabla ya existía, verificar y agregar columnas faltantes
             if 'tipo_reporte' not in columns:
                 cursor.execute('ALTER TABLE reportes ADD COLUMN tipo_reporte TEXT')
+            
+            # Verificar y agregar columnas para el QRZ del operador y la estación
+            if 'qrz_captured_by' not in columns:
+                cursor.execute('ALTER TABLE reportes ADD COLUMN qrz_captured_by TEXT')
+            
+            if 'qrz_station' not in columns:
+                cursor.execute('ALTER TABLE reportes ADD COLUMN qrz_station TEXT')
             
             # Crear índices para búsquedas frecuentes en reportes
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_reportes_indicativo ON reportes(indicativo)')
@@ -579,7 +589,7 @@ class FMREDatabase:
                 conn.rollback()
                 raise
     
-    def update_user(self, user_id, username=None, full_name=None, email=None, phone=None, role=None, password=None, is_active=None, sistema_preferido=None, frecuencia=None, modo=None, potencia=None, pre_registro=None, swl_estado=None, swl_ciudad=None):
+    def update_user(self, user_id, username=None, full_name=None, email=None, phone=None, role=None, password=None, is_active=None, sistema_preferido=None, frecuencia=None, modo=None, potencia=None, pre_registro=None, swl_estado=None, swl_ciudad=None, qrz_station=None):
         """
         Actualiza los datos de un usuario existente
         
@@ -599,6 +609,7 @@ class FMREDatabase:
             pre_registro: Valor de pre-registro (opcional)
             swl_estado: Estado del radioescucha (opcional)
             swl_ciudad: Ciudad del radioescucha (opcional)
+            qrz_station: Estación QRZ (opcional)
             
         Returns:
             bool: True si la actualización fue exitosa
@@ -654,6 +665,12 @@ class FMREDatabase:
                 if swl_ciudad is not None:
                     update_fields.append("swl_ciudad = ?")
                     params.append(swl_ciudad)
+                if qrz_station is not None:
+                    print(f"[DEBUG] Actualizando qrz_station a: {qrz_station}")
+                    update_fields.append("qrz_station = ?")
+                    params.append(qrz_station)
+                else:
+                    print("[DEBUG] qrz_station es None, no se actualizará")
                 
                 # Si no hay campos para actualizar, retornar False
                 if not update_fields:
@@ -666,7 +683,11 @@ class FMREDatabase:
                 query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
                 params.append(user_id)
                 
+                print(f"[DEBUG] Ejecutando consulta: {query}")
+                print(f"[DEBUG] Parámetros: {params}")
+                
                 cursor.execute(query, params)
+                print("[DEBUG] Consulta ejecutada exitosamente")
                 conn.commit()
                 return True
                 
@@ -688,7 +709,7 @@ class FMREDatabase:
             cursor.execute('''
                 SELECT id, username, full_name, email, phone, role, 
                        last_login, created_at, updated_at, sistema_preferido, 
-                       frecuencia, modo, potencia, pre_registro, swl_estado, swl_ciudad
+                       frecuencia, modo, potencia, pre_registro, swl_estado, swl_ciudad, qrz_station
                 FROM users 
                 WHERE id = ?
             ''', (user_id,))
@@ -702,7 +723,7 @@ class FMREDatabase:
             cursor.execute('''
                 SELECT id, username, password_hash, full_name, email, phone, role, 
                        last_login, created_at, updated_at, sistema_preferido, 
-                       frecuencia, modo, potencia, pre_registro, swl_estado, swl_ciudad
+                       frecuencia, modo, potencia, pre_registro, swl_estado, swl_ciudad, qrz_station
                 FROM users 
                 WHERE username = ?
             ''', (username,))
@@ -942,7 +963,8 @@ class FMREDatabase:
         allowed_fields = [
             'indicativo', 'nombre_completo', 'municipio', 'estado', 'pais',
             'fecha_nacimiento', 'nacionalidad', 'genero', 'tipo_licencia',
-            'tipo_ham', 'fecha_expedicion', 'estatus', 'observaciones', 'origen', 'activo'
+            'tipo_ham', 'fecha_expedicion', 'estatus', 'observaciones', 'origen', 
+            'activo', 'qrz_captured_by'
         ]
         
         data_filtrado = {k: v for k, v in data.items() if k in allowed_fields}
@@ -1813,11 +1835,16 @@ class FMREDatabase:
                 - estado (str, optional): Estado del operador
                 - origen (str, optional): Origen del reporte
                 - observaciones (str, optional): Observaciones adicionales
+                - qrz_captured_by (str, optional): Indicativo del usuario que capturó el reporte
+                - qrz_station (str, optional): Estación QRZ del usuario que capturó el reporte
 
         Returns:
             int: ID del reporte guardado o None si hubo un error
         """
         try:
+            print(f"[DEBUG] save_reporte - Datos recibidos: {reporte_data}")
+            print(f"[DEBUG] qrz_station recibido: {reporte_data.get('qrz_station', 'No proporcionado')}")
+            print(f"[DEBUG] qrz_captured_by recibido: {reporte_data.get('qrz_captured_by', 'No proporcionado')}")
             # Validar campos obligatorios
             required_fields = ['indicativo', 'sistema', 'fecha_reporte', 'tipo_reporte']
             for field in required_fields:
@@ -1899,8 +1926,8 @@ class FMREDatabase:
                     INSERT INTO reportes (
                         indicativo, nombre, zona, sistema, ciudad, estado,
                         senal, observaciones, origen, tipo_reporte, fecha_reporte,
-                        created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        created_at, qrz_captured_by, qrz_station
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     reporte_data['indicativo'],
                     reporte_data.get('nombre', ''),
@@ -1913,7 +1940,9 @@ class FMREDatabase:
                     reporte_data.get('origen', ''),
                     reporte_data['tipo_reporte'],
                     fecha_sql,
-                    created_at_utc
+                    created_at_utc,
+                    reporte_data.get('qrz_captured_by', ''),  # Nuevo campo
+                    reporte_data.get('qrz_station', '')       # Nuevo campo
                 ))
 
                 reporte_id = cursor.lastrowid

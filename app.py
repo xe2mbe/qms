@@ -2529,7 +2529,7 @@ def show_settings():
     st.title("⚙️ Configuración del Sistema")
     
     # Pestañas para las diferentes configuraciones
-    tab1, tab2 = st.tabs(["Correo Electrónico", "Opciones del Sistema"])
+    tab1, tab2, tab3 = st.tabs(["Correo Electrónico", "Opciones del Sistema", "Consulta SQL"])
     
     with tab1:
         st.header("Configuración SMTP")
@@ -2610,6 +2610,91 @@ def show_settings():
         st.header("Opciones del Sistema")
         st.write("Configuración general del sistema.")
         # Aquí puedes agregar más opciones de configuración en el futuro
+    
+    with tab3:
+        st.header("Consulta SQL Directa")
+        st.warning("⚠️ ADVERTENCIA: Esta herramienta permite ejecutar consultas SQL directamente en la base de datos. "
+                  "Úsala con precaución, ya que las consultas pueden modificar o eliminar datos.")
+        
+        # Área para escribir la consulta SQL
+        query = st.text_area("Escribe tu consulta SQL aquí", height=150,
+                           placeholder="Ejemplo: SELECT * FROM radioexperimentadores LIMIT 10;")
+        
+        # Opciones de ejecución
+        col1, col2 = st.columns(2)
+        
+        # Botón para ejecutar consulta
+        if col1.button("Ejecutar Consulta"):
+            if not query.strip():
+                st.warning("Por favor, ingresa una consulta SQL válida.")
+            else:
+                try:
+                    # Ejecutar la consulta
+                    with db.get_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute(query)
+                        
+                        # Obtener los resultados
+                        results = cursor.fetchall()
+                        
+                        # Mostrar resultados si es una consulta SELECT
+                        if query.strip().upper().startswith('SELECT'):
+                            if results:
+                                # Obtener nombres de columnas
+                                column_names = [description[0] for description in cursor.description]
+                                
+                                # Mostrar resultados en una tabla
+                                st.dataframe(results, width='stretch', 
+                                           column_config={col: st.column_config.TextColumn(col) for col in column_names})
+                                
+                                # Mostrar conteo de resultados
+                                st.success(f"Consulta ejecutada correctamente. Se encontraron {len(results)} registros.")
+                            else:
+                                st.info("La consulta no devolvió resultados.")
+                        else:
+                            # Para consultas que no son SELECT (INSERT, UPDATE, DELETE, etc.)
+                            conn.commit()
+                            st.success(f"Operación completada exitosamente. Filas afectadas: {cursor.rowcount}")
+                            
+                except Exception as e:
+                    st.error(f"Error al ejecutar la consulta: {str(e)}")
+        
+        # Botón para obtener información de las tablas
+        if col2.button("Mostrar Tablas"):
+            try:
+                with db.get_connection() as conn:
+                    cursor = conn.cursor()
+                    # Obtener lista de tablas
+                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                    tables = cursor.fetchall()
+                    
+                    if tables:
+                        st.subheader("Tablas en la base de datos:")
+                        for table in tables:
+                            table_name = table[0]
+                            with st.expander(f"📋 {table_name}"):
+                                try:
+                                    # Obtener estructura de la tabla
+                                    cursor.execute(f"PRAGMA table_info({table_name})")
+                                    columns = cursor.fetchall()
+                                    
+                                    # Mostrar columnas
+                                    st.write("**Columnas:**")
+                                    for col in columns:
+                                        st.write(f"- {col[1]} ({col[2]})")
+                                    
+                                    # Mostrar conteo de registros
+                                    cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+                                    count = cursor.fetchone()[0]
+                                    st.write(f"**Total de registros:** {count:,}")
+                                    
+                                except Exception as e:
+                                    st.error(f"Error al obtener información de la tabla {table_name}: {str(e)}")
+                    else:
+                        st.info("No se encontraron tablas en la base de datos.")
+                        
+            except Exception as e:
+                st.error(f"Error al obtener información de la base de datos: {str(e)}")
 
 # def show_toma_reportes():
 #     """Muestra la sección de Toma de Reportes"""

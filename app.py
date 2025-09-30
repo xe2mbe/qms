@@ -18,6 +18,7 @@ import json
 from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
+from utils import show_gestion_estaciones
 
 db = FMREDatabase()
 auth = AuthManager(db)
@@ -411,7 +412,7 @@ def show_gestion():
     st.title("🔧 Gestión")
     
     # Crear pestañas
-    tabs = ["👥 Usuarios", "📅 Eventos", "📍 Zonas", "📻 Radioexperimentadores"]
+    tabs = ["👥 Usuarios", "📅 Eventos", "📍 Zonas", "📻 Radioexperimentadores", "🏢 Estaciones"]
     
     # Crear botones de pestaña personalizados
     cols = st.columns(len(tabs))
@@ -431,6 +432,8 @@ def show_gestion():
         show_gestion_zonas()
     elif st.session_state.active_tab == "📻 Radioexperimentadores":
         show_gestion_radioexperimentadores()
+    elif st.session_state.active_tab == "🏢 Estaciones":
+        show_gestion_estaciones()
 
 def show_gestion_eventos():
     """Muestra la gestión de eventos con pestañas para listar y crear eventos"""

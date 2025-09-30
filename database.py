@@ -71,6 +71,26 @@ class FMREDatabase:
                 )
             ''')
             
+            # Tabla de estaciones (stations)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS stations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    qrz TEXT NOT NULL UNIQUE,
+                    descripcion TEXT,
+                    is_active BOOLEAN DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Insertar estación por defecto si no existe
+            cursor.execute('SELECT COUNT(*) FROM stations')
+            if cursor.fetchone()[0] == 0:
+                cursor.execute('''
+                    INSERT INTO stations (qrz, descripcion, is_active)
+                    VALUES (?, ?, ?)
+                ''', ('XE1LM', 'Federacion Mexicana de Radioexperimentadores A.C.', 1))
+            
             # Tabla de configuración SMTP
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS smtp_settings (

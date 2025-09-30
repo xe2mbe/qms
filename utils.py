@@ -1,4 +1,5 @@
 import re
+import time
 from datetime import datetime
 import pytz
 from database import FMREDatabase
@@ -301,3 +302,337 @@ def map_qth_to_estado(qth):
         pass
     
     return qth  # Si no se encuentra, devolver el valor original
+
+# ============================================
+# Funciones para la Gestión de Estaciones
+# ============================================
+
+def get_estaciones():
+    """
+    Obtiene todas las estaciones de la base de datos.
+    Retorna una lista de diccionarios con los datos de cada estación.
+    """
+    cursor = db.get_connection().cursor()
+    cursor.execute('''
+        SELECT id, qrz, descripcion, is_active, 
+               strftime('%Y-%m-%d %H:%M', created_at) as created_at
+        FROM stations
+        ORDER BY qrz
+    ''')
+    
+    # Convertir cada fila a un diccionario
+    return [dict(row) for row in cursor.fetchall()]
+
+def get_estacion_por_id(estacion_id):
+    """
+    Obtiene una estación por su ID.
+    Retorna un diccionario con los datos de la estación o None si no se encuentra.
+    """
+    cursor = db.get_connection().cursor()
+    cursor.execute('''
+        SELECT id, qrz, descripcion, is_active, 
+               strftime('%Y-%m-%d %H:%M', created_at) as created_at
+        FROM stations
+        WHERE id = ?
+    ''', (estacion_id,))
+    
+    row = cursor.fetchone()
+    return dict(row) if row else None
+
+def crear_estacion(qrz, descripcion, is_active=True):
+    """
+    Crea una nueva estación en la base de datos.
+    Lanza sqlite3.IntegrityError si ya existe una estación con el mismo QRZ.
+    """
+    cursor = db.get_connection().cursor()
+    cursor.execute('''
+        INSERT INTO stations (qrz, descripcion, is_active)
+        VALUES (?, ?, ?)
+    ''', (qrz.upper(), descripcion.strip(), 1 if is_active else 0))
+    db.get_connection().commit()
+    return cursor.lastrowid
+
+def actualizar_estacion(estacion_id, descripcion, is_active):
+    """
+    Actualiza los datos de una estación existente.
+    Retorna True si se actualizó correctamente, False si la estación no existe.
+    La fecha de actualización se guarda en UTC-6 (hora de la Ciudad de México).
+    """
+    # Obtener la hora actual en UTC-6
+    tz = pytz.timezone('America/Mexico_City')
+    now_utc6 = datetime.now(pytz.utc).astimezone(tz)
+    
+    cursor = db.get_connection().cursor()
+    cursor.execute('''
+        UPDATE stations 
+        SET descripcion = ?, is_active = ?, updated_at = ?
+        WHERE id = ?
+    ''', (descripcion.strip(), 1 if is_active else 0, now_utc6.strftime('%Y-%m-%d %H:%M:%S'), estacion_id))
+    
+    db.get_connection().commit()
+    return cursor.rowcount > 0
+
+def eliminar_estacion(estacion_id):
+    """
+    Elimina una estación de la base de datos.
+    Retorna True si se eliminó correctamente, False si la estación no existe.
+    """
+    cursor = db.get_connection().cursor()
+    cursor.execute('DELETE FROM stations WHERE id = ?', (estacion_id,))
+    db.get_connection().commit()
+    return cursor.rowcount > 0
+
+def show_gestion_estaciones():
+    """Muestra la gestión de estaciones con pestañas"""
+    import streamlit as st
+    
+    # Determinar qué pestaña mostrar por defecto
+    tab_titles = ["📋 Lista de Estaciones", "➕ Agregar Estación"]
+    
+    # Inicializar el estado de la pestaña activa si no existe
+    if 'active_tab' not in st.session_state:
+        st.session_state.active_tab = 0  # Por defecto mostrar la lista de estaciones
+    
+    # Si estamos editando, forzar la pestaña de lista
+    if 'editar_estacion_id' in st.session_state and st.session_state['editar_estacion_id'] is not None:
+        st.session_state.active_tab = 0
+    
+    # Crear las pestañas
+    tab1, tab2 = st.tabs(tab_titles)
+    
+    with tab1:
+        _show_lista_estaciones()
+        
+        # Mostrar el formulario de edición debajo de la lista si estamos editando
+        if 'editar_estacion_id' in st.session_state and st.session_state['editar_estacion_id'] is not None:
+            st.markdown("---")
+            st.subheader("✏️ Editar Estación")
+            _show_crear_estacion()
+    
+    with tab2:
+        # Si estamos en la pestaña de agregar, limpiar el ID de edición
+        if 'editar_estacion_id' in st.session_state:
+            st.session_state['editar_estacion_id'] = None
+        _show_crear_estacion()
+
+def _show_crear_estacion():
+    """Muestra el formulario para crear o editar una estación"""
+    import streamlit as st
+    import time
+    import sqlite3
+    
+    # Inicializar variables
+    estacion = None
+    es_edicion = 'editar_estacion_id' in st.session_state and st.session_state['editar_estacion_id'] is not None
+    
+    if es_edicion:
+        estacion_id = st.session_state['editar_estacion_id']
+        
+        # Cargar datos de la estación
+        estacion = get_estacion_por_id(estacion_id)
+        
+        # Verificar si la estación existe
+        if not estacion:
+            st.error("La estación solicitada no existe.")
+            time.sleep(2)
+            del st.session_state['editar_estacion_id']
+            st.rerun()
+            return
+            
+        # Mostrar encabezado de edición
+        st.header(f"✏️ Editar Estación: {estacion['qrz']}")
+        
+        # Botón para volver a la lista - con key único
+        if st.button("⬅️ Volver a la lista sin guardar", 
+                    key=f"btn_volver_editar_{estacion_id}",
+                    use_container_width=True,
+                    help="Volver a la lista sin guardar cambios"):
+            del st.session_state['editar_estacion_id']
+            st.rerun()
+    else:
+        # Modo creación de nueva estación
+        estacion_id = None
+        st.header("➕ Agregar Nueva Estación")
+        
+        # Botón para volver a la lista - con key único para creación
+        if st.button("⬅️ Volver a la lista sin guardar", 
+                    key="btn_volver_crear",
+                    use_container_width=True,
+                    help="Volver a la lista sin guardar cambios"):
+            if 'editar_estacion_id' in st.session_state:
+                del st.session_state['editar_estacion_id']
+            st.rerun()
+    
+    # Configurar claves únicas para el formulario
+    form_key = f"form_estacion_edit_{estacion_id}" if es_edicion else "form_estacion_new"
+    
+    with st.form(key=form_key, clear_on_submit=not es_edicion):
+        # Configurar claves únicas para los campos
+        qrz_key = f"qrz_{estacion_id}" if es_edicion else "qrz_new"
+        desc_key = f"desc_{estacion_id}" if es_edicion else "desc_new"
+        active_key = f"active_{estacion_id}" if es_edicion else "active_new"
+        
+        # Campo QRZ (solo lectura en modo edición)
+        qrz = st.text_input("QRZ (Indicativo):", 
+                           value=estacion['qrz'] if estacion else "",
+                           max_chars=10,
+                           disabled=es_edicion,
+                           key=qrz_key,
+                           help="Indicativo de la estación (máx. 10 caracteres)")
+        
+        descripcion = st.text_area("Descripción:", 
+                                 value=estacion['descripcion'] if estacion else "",
+                                 max_chars=200,
+                                 key=desc_key,
+                                 help="Descripción o notas sobre la estación (opcional)")
+        
+        is_active = st.checkbox("Activa", 
+                              value=estacion.get('is_active', True) if estacion else True,
+                              key=active_key,
+                              help="¿La estación está activa y disponible para su uso?")
+        
+        # Botones de acción
+        col1, col2 = st.columns(2)
+        with col1:
+            submit_button = st.form_submit_button("💾 Guardar")
+        with col2:
+            cancel_button = st.form_submit_button("❌ Cancelar")
+        
+        if submit_button:
+            if not qrz.strip():
+                st.error("El campo QRZ es obligatorio.")
+            else:
+                try:
+                    if es_edicion and estacion:
+                        # Actualizar estación existente
+                        actualizar_estacion(estacion_id, descripcion, is_active)
+                        mensaje = "✅ Estación actualizada correctamente."
+                    else:
+                        # Crear nueva estación
+                        crear_estacion(qrz.strip().upper(), descripcion.strip(), is_active)
+                        mensaje = "✅ Estación creada correctamente."
+                    
+                    st.success(mensaje)
+                    time.sleep(1)
+                    if 'editar_estacion_id' in st.session_state:
+                        del st.session_state['editar_estacion_id']
+                    st.rerun()
+                    
+                except sqlite3.IntegrityError as e:
+                    st.error("❌ Error: Ya existe una estación con ese QRZ.")
+                    print(f"[ERROR] Error de integridad: {e}")
+                except Exception as e:
+                    st.error(f"❌ Error al guardar la estación: {str(e)}")
+                    print(f"[ERROR] Error inesperado: {e}")
+        
+        if cancel_button:
+            if 'editar_estacion_id' in st.session_state:
+                del st.session_state['editar_estacion_id']
+            st.rerun()
+
+def _show_lista_estaciones():
+    """Muestra la lista de estaciones con opciones de búsqueda y acciones"""
+    import streamlit as st
+    
+    st.header("📋 Lista de Estaciones")
+    
+    # Barra de búsqueda
+    busqueda = st.text_input("🔍 Buscar estación por QRZ o descripción:", "")
+    
+    # Filtro de estado
+    estado_filtro = st.radio("Estado:", ["Todas", "Activas", "Inactivas"], horizontal=True)
+    
+    # Obtener estaciones con filtros
+    with st.spinner("Cargando estaciones..."):
+        estaciones = get_estaciones()
+        
+        # Aplicar filtros
+        if busqueda:
+            busqueda = busqueda.lower()
+            estaciones = [e for e in estaciones 
+                         if busqueda in e['qrz'].lower() or 
+                         (e['descripcion'] and busqueda in e['descripcion'].lower())]
+            
+        if estado_filtro != "Todas":
+            activo = estado_filtro == "Activas"
+            estaciones = [e for e in estaciones if e['is_active'] == activo]
+    
+    # Mostrar lista de estaciones con expanders
+    if estaciones:
+        for estacion in estaciones:
+            # Determinar el ícono de estado
+            estado_icono = "✅" if estacion['is_active'] else "❌"
+            estado_texto = "Activa" if estacion['is_active'] else "Inactiva"
+            
+            # Mostrar cada estación en un contenedor expandible
+            with st.expander(f"📻 {estacion['qrz']} - {estacion.get('descripcion', 'Sin descripción')} ({estado_icono} {estado_texto})", 
+                          expanded=st.session_state.get(f"editing_estacion_{estacion['id']}", False)):
+                
+                # Columnas para los botones de acción
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    st.write(f"**QRZ:** {estacion['qrz']}")
+                    st.write(f"**Descripción:** {estacion.get('descripcion', 'Sin descripción')}")
+                    st.write(f"**Estado:** {estado_icono} {estado_texto}")
+                    st.write(f"**Creada:** {estacion.get('created_at', 'N/A')}")
+                
+                with col2:
+                    # Botón para editar estación
+                    if st.button(f"✏️ Editar", 
+                              key=f"edit_{estacion['id']}",
+                              use_container_width=True):
+                        # Alternar el estado de edición
+                        current_state = st.session_state.get(f"editing_estacion_{estacion['id']}", False)
+                        st.session_state[f"editing_estacion_{estacion['id']}"] = not current_state
+                        st.rerun()
+                    
+                    # Botón para eliminar estación
+                    if st.button(f"🗑️ Eliminar",
+                              key=f"del_{estacion['id']}",
+                              use_container_width=True):
+                        if _eliminar_estacion(estacion['id']):
+                            st.success(f"Estación {estacion['qrz']} eliminada correctamente")
+                            time.sleep(2)
+                            st.rerun()
+                        else:
+                            st.error("Error al eliminar la estación")
+                
+                # Mostrar formulario de edición si está activo
+                if st.session_state.get(f"editing_estacion_{estacion['id']}", False):
+                    st.markdown("---")
+                    st.subheader("✏️ Editar Estación")
+                    
+                    # Obtener datos actuales de la estación
+                    estacion_actual = get_estacion_por_id(estacion['id'])
+                    
+                    with st.form(f"edit_estacion_{estacion['id']}"):
+                        # Campos del formulario
+                        nuevo_qrz = st.text_input("QRZ:", value=estacion_actual['qrz'])
+                        nueva_descripcion = st.text_area("Descripción:", value=estacion_actual.get('descripcion', ''))
+                        activa = st.toggle("Estación activa", value=bool(estacion_actual.get('is_active', True)))
+                        
+                        # Botones de acción
+                        col_save, col_cancel = st.columns(2)
+                        
+                        with col_save:
+                            if st.form_submit_button("💾 Guardar Cambios"):
+                                if actualizar_estacion(
+                                    estacion_id=estacion_actual['id'],
+                                    descripcion=nueva_descripcion,
+                                    is_active=activa
+                                ):
+                                    st.success("✅ Estación actualizada correctamente")
+                                    # Cerrar el formulario después de guardar
+                                    st.session_state[f"editing_estacion_{estacion['id']}"] = False
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Error al actualizar la estación")
+                        
+                        with col_cancel:
+                            if st.form_submit_button("❌ Cancelar"):
+                                st.session_state[f"editing_estacion_{estacion['id']}"] = False
+                                st.rerun()
+    else:
+        st.info("No se encontraron estaciones con los filtros actuales.")

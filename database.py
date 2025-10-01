@@ -2094,7 +2094,17 @@ class FMREDatabase:
                 print(f"No se encontró la entrada con ID {rs_id}")
                 return False
             
-            current = dict(current)  # Convertir a diccionario para facilitar el acceso
+            # Convertir la fila a diccionario de manera segura
+            if hasattr(current, 'keys'):  # Si ya es un diccionario o similar
+                current = dict(current)
+            elif isinstance(current, (list, tuple)):  # Si es una tupla o lista
+                # Obtener los nombres de las columnas
+                cursor.execute('PRAGMA table_info(rs)')
+                columns = [col[1] for col in cursor.fetchall()]
+                current = dict(zip(columns, current))
+            else:
+                print(f"Tipo de datos inesperado: {type(current)}")
+                return False
             
             # Si se está actualizando plataforma o nombre, verificar duplicados
             if 'plataforma' in kwargs or 'nombre' in kwargs:

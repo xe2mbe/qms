@@ -9,8 +9,14 @@ def show_redes_sociales_form():
     # Inicializar la base de datos
     db = FMREDatabase()
     
-    # Obtener la lista de plataformas activas
+    # Obtener la lista de plataformas (activas e inactivas)
     plataformas = db.get_rs_entries(active_only=True)
+    
+    # Mostrar información de depuración
+    st.sidebar.write("=== Depuración de plataformas ===")
+    st.sidebar.write(f"Total de plataformas encontradas: {len(plataformas)}")
+    for i, p in enumerate(plataformas, 1):
+        st.sidebar.write(f"{i}. {p.get('plataforma', 'Sin plataforma')} - {p.get('nombre', 'Sin nombre')} (Activo: {bool(p.get('is_active', False))})")
     
     # Crear opciones para el selectbox
     plataforma_options = [""]  # Opción vacía por defecto
@@ -30,12 +36,8 @@ def show_redes_sociales_form():
     with st.form("redes_sociales_form"):
         st.markdown("### Información del Reporte")
         
-        # Fecha y hora del reporte
-        col1, col2 = st.columns(2)
-        with col1:
-            fecha_reporte = st.date_input("Fecha del reporte", datetime.now())
-        with col2:
-            hora_reporte = st.time_input("Hora del reporte", datetime.now().time())
+        # Fecha del reporte
+        fecha_reporte = st.date_input("Fecha del reporte", datetime.now())
         
         # Selección de plataforma
         plataforma_seleccionada = st.selectbox(
@@ -68,7 +70,6 @@ def show_redes_sociales_form():
             # Preparar los datos del reporte
             reporte_data = {
                 'fecha': fecha_reporte.strftime('%Y-%m-%d'),
-                'hora': hora_reporte.strftime('%H:%M'),
                 'plataforma_id': plataforma_map[plataforma_seleccionada],
                 'contenido': contenido,
                 'me_gusta': me_gusta,

@@ -345,25 +345,79 @@ def show_redes_sociales_form():
                     # Botón para guardar los registros (más pequeño y centrado)
                     col1, col2, col3 = st.columns([1,2,1])
                     with col2:
-                        if st.form_submit_button("💾 Guardar Registros", 
-                                              type="primary", 
-                                              use_container_width=True,
-                                              help="Guarda los registros de las estaciones"):
-                            try:
-                                # Guardar cada estación en la base de datos
-                                for i, resultado in enumerate(st.session_state.resultados_busqueda):
-                                    datos = st.session_state.get(f'datos_estacion_{i}', {{}})
-                                    # Obtener los datos del formulario
-                                plataforma_nombre = st.session_state.plataforma_seleccionada
-                                me_gusta = st.session_state.get('me_gusta', 0)
-                                comentarios = st.session_state.get('comentarios', 0)
-                                compartidos = st.session_state.get('compartidos', 0)
-                                reproducciones = st.session_state.get('reproducciones', 0)
-                                fecha_reporte = st.session_state.fecha_reporte
-                                created_by = st.session_state.user.get('username', 'sistema')
-                                
-                                # Insertar en la tabla reportes_rs
+                        print("\n" + "="*80)
+                        print("DEPURACIÓN - BOTÓN DE GUARDADO")
+                        print("Se hizo clic en el botón de Guardar Registros")
+                        print("="*80 + "\n")
+                        
+                        # Mover el botón de submit fuera del if para que el formulario funcione correctamente
+                        submit_button = st.form_submit_button("💾 Guardar Registros", 
+                                                          type="primary", 
+                                                          use_container_width=True,
+                                                          help="Guarda los registros de las estaciones")
+                    
+                    # Procesar el formulario cuando se envía
+                    if submit_button:
+                        try:
+                            print("\n" + "="*80)
+                            print("PROCESANDO EL ENVÍO DEL FORMULARIO")
+                            print("="*80 + "\n")
+                            
+                            # Obtener los datos del formulario
+                            plataforma_nombre = st.session_state.plataforma_seleccionada
+                            me_gusta = st.session_state.get('me_gusta', 0)
+                            comentarios = st.session_state.get('comentarios', 0)
+                            compartidos = st.session_state.get('compartidos', 0)
+                            reproducciones = st.session_state.get('reproducciones', 0)
+                            fecha_reporte = st.session_state.fecha_reporte
+                            created_by = st.session_state.user.get('username', 'sistema')
+                            
+                            # Obtener el ID de la plataforma del mapa de plataformas
+                            plataforma_id = plataforma_map.get(plataforma_nombre)
+                            
+                            print(f"Plataforma: {plataforma_nombre} (ID: {plataforma_id})")
+                            print(f"Me gusta: {me_gusta}")
+                            print(f"Comentarios: {comentarios}")
+                            print(f"Compartidos: {compartidos}")
+                            print(f"Reproducciones: {reproducciones}")
+                            print(f"Fecha: {fecha_reporte}")
+                            print(f"Usuario: {created_by}")
+                            
+                            if not plataforma_id:
+                                raise ValueError(f"No se pudo encontrar el ID para la plataforma: {plataforma_nombre}")
+                            
+                            # Obtener los datos de las estaciones
+                            registros = []
+                            for i, resultado in enumerate(st.session_state.resultados_busqueda):
+                                datos = st.session_state.get(f'datos_estacion_{i}', {})
+                                registros.append({
+                                    'indicativo': resultado['indicativo'],
+                                    'operador': datos.get('operador', ''),
+                                    'estado': datos.get('estado', ''),
+                                    'ciudad': datos.get('ciudad', ''),
+                                    'zona': datos.get('zona', ''),
+                                    'senal': 59,  # Valor por defecto
+                                    'observaciones': f"Reporte de interacción en {plataforma_nombre}",
+                                    'qrz_captured_by': st.session_state.user.get('username', '')
+                                })
+                            
+                            # Preparar datos para estadísticas (solo un registro por plataforma/fecha)
+                            estadistica_data = {
+                                'plataforma_id': plataforma_id,
+                                'plataforma_nombre': plataforma_nombre,
+                                'me_gusta': int(me_gusta) if me_gusta else 0,
+                                'comentarios': int(comentarios) if comentarios else 0,
+                                'compartidos': int(compartidos) if compartidos else 0,
+                                'reproducciones': int(reproducciones) if reproducciones else 0,
+                                'fecha_reporte': fecha_reporte.strftime('%Y-%m-%d') if hasattr(fecha_reporte, 'strftime') else fecha_reporte,
+                                'captured_by': created_by,
+                                'observaciones': f"Reporte de {plataforma_nombre} capturado por {created_by}"
+                            }
+                            
+                            # Insertar en la tabla reportes_rs para cada estación
+                            for registro in registros:
                                 reporte_data = {
+                                    'plataforma_id': plataforma_id,
                                     'plataforma_nombre': plataforma_nombre,
                                     'me_gusta': int(me_gusta) if me_gusta else 0,
                                     'comentarios': int(comentarios) if comentarios else 0,
@@ -371,94 +425,31 @@ def show_redes_sociales_form():
                                     'reproducciones': int(reproducciones) if reproducciones else 0,
                                     'fecha_reporte': fecha_reporte.strftime('%Y-%m-%d') if hasattr(fecha_reporte, 'strftime') else fecha_reporte,
                                     'created_by': created_by,
-                                    'indicativo': 'N/A',  # Campo obligatorio
-                                    'zona': 'N/A'         # Campo obligatorio
+                                    'indicativo': registro['indicativo'],
+                                    'operador': registro['operador'],
+                                    'estado': registro['estado'],
+                                    'ciudad': registro['ciudad'],
+                                    'zona': registro['zona'],
+                                    'senal': registro['senal'],
+                                    'observaciones': registro['observaciones'],
+                                    'qrz_captured_by': registro['qrz_captured_by']
                                 }
-                                db.save_reporte_rs(reporte_data)
                                 
-                                st.success("¡Los registros se han guardado correctamente!")
-                                # Opcional: Limpiar el formulario después de guardar
-                                # st.session_state.mostrar_panel_captura = False
-                                # st.session_state.resultados_busqueda = []
-                                # st.rerun()
-                            except Exception as e:
-                                st.error(f"Error al guardar los registros: {str(e)}")
+                                # Guardar el reporte de la estación
+                                db.save_reporte_rs(reporte_data)
+                            
+                            # Guardar las estadísticas generales
+                            db.save_estadistica_rs(estadistica_data)
+                            
+                            st.success("¡Los registros y estadísticas se han guardado correctamente!")
+                            
+                        except Exception as e:
+                            st.error(f"Error al guardar los registros: {str(e)}")
+                            import traceback
+                            st.error("Detalles del error:")
+                            st.code(traceback.format_exc())
                     
-                    # Mostrar información de depuración
-                    with st.expander("🔍 Depuración - Datos de la sesión", expanded=False):
-                        # Mostrar JSON completo de la sesión
-                        st.write("### Estado completo de la sesión (JSON)")
-                        session_data = {}
-                        for key, value in st.session_state.items():
-                            # Convertir a string si es un objeto datetime, date o cualquier otro tipo no serializable
-                            if hasattr(value, 'isoformat'):  # Para datetime, date, etc.
-                                session_data[key] = str(value)
-                            else:
-                                try:
-                                    json.dumps({key: value})  # Probar si es serializable
-                                    session_data[key] = value
-                                except (TypeError, OverflowError):
-                                    session_data[key] = str(value)
-                        
-                        st.json(session_data)
-                        
-                        # Datos del usuario y reporte
-                        st.write("### Información del Usuario y Reporte")
-                        
-                        # Obtener información del usuario autenticado
-                        user_info = st.session_state.get('user', {})
-                        user_id = user_info.get('id', 'No definido')
-                        user_name = user_info.get('full_name', 'Invitado')
-                        user_role = user_info.get('role', 'N/A')
-                        
-                        # Mostrar información del usuario
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Usuario ID", user_id)
-                            st.caption(f"Nombre: {user_name}")
-                        with col2:
-                            st.metric("Rol", user_role.capitalize())
-                        with col3:
-                            st.metric("Plataforma", st.session_state.get('plataforma_seleccionada', 'No seleccionada'))
-                        
-                        # Información del reporte
-                        col4, col5 = st.columns(2)
-                        with col4:
-                            st.metric("Fecha Reporte", str(st.session_state.get('fecha_reporte', 'No definida')))
-                        
-                        # Datos del formulario
-                        st.write("### Datos del Formulario")
-                        form_data = {
-                            'contenido': st.session_state.get('contenido', ''),
-                            'num_registros': st.session_state.get('num_registros', 1),
-                            'parametros_expandidos': st.session_state.get('parametros_expanded', True)
-                        }
-                        st.json(form_data)
-                        
-                        # Datos de búsqueda
-                        st.write("### Resultados de Búsqueda")
-                        st.json({
-                            'mostrar_panel_captura': st.session_state.get('mostrar_panel_captura', False),
-                            'total_estaciones': len(st.session_state.get('resultados_busqueda', [])),
-                            'indicativos_ingresados': [
-                                st.session_state.get(f'indicativo_{i}', '') 
-                                for i in range(st.session_state.get('num_registros', 0))
-                                if st.session_state.get(f'indicativo_{i}')
-                            ]
-                        })
-                        
-                        # Datos detallados de las estaciones
-                        st.write("### Detalles de las Estaciones")
-                        for i, resultado in enumerate(st.session_state.get('resultados_busqueda', [])):
-                            datos = st.session_state.get(f'datos_estacion_{i}', {})
-                            with st.expander(f"Estación {i+1} - {resultado.get('indicativo', 'Sin indicativo')}"):
-                                st.json({
-                                    'indicativo': resultado.get('indicativo'),
-                                    'operador': datos.get('operador', ''),
-                                    'estado': datos.get('estado', ''),
-                                    'ciudad': datos.get('ciudad', ''),
-                                    'zona': datos.get('zona', '')
-                                })
+                    # Sección de depuración eliminada
                     
                     # Mostrar resumen de estaciones registradas
                     st.markdown("### Resumen de Estaciones")
@@ -684,8 +675,109 @@ def show_redes_sociales_form():
                 
                 # Guardar en la base de datos
                 try:
-                    # Aquí iría el código para guardar en la base de datos
-                    # db.guardar_reporte_redes_sociales(reporte_data)
+                    # Inicializar la base de datos
+                    print("\n" + "="*80)
+                    print("DEPURACIÓN - INICIO DEL PROCESO DE GUARDADO")
+                    print("="*80 + "\n")
+                    
+                    db = FMREDatabase()
+                    
+                    # Obtener el ID de la plataforma
+                    plataforma_id = plataforma_map[st.session_state.plataforma_seleccionada]
+                    print(f"Plataforma ID obtenida: {plataforma_id}")
+                    
+                    # Preparar los datos para guardar
+                    estadistica_data = {
+                        'plataforma_id': plataforma_id,
+                        'plataforma_nombre': st.session_state.plataforma_seleccionada,
+                        'me_gusta': me_gusta,
+                        'comentarios': comentarios,
+                        'compartidos': compartidos,
+                        'reproducciones': reproducciones,
+                        'alcance': 0,  # Este campo podría calcularse o pedirse en el formulario
+                        'interaccion': me_gusta + comentarios + compartidos,  # Suma de interacción
+                        'fecha_reporte': st.session_state.fecha_reporte.strftime('%Y-%m-%d'),
+                        'captured_by': st.session_state.user.get('username', 'Sistema'),
+                        'observaciones': st.session_state.contenido,
+                        'metadata_json': {
+                            'tipo': 'publicacion',
+                        }
+                    }
+                    
+                    # Depuración: Mostrar los datos que se van a guardar
+                    print("\n" + "="*80)
+                    print("DEPURACIÓN - DATOS A GUARDAR")
+                    print("="*80)
+                    print(f"Tipo de estadistica_data: {type(estadistica_data)}")
+                    print(f"Contenido de estadistica_data: {estadistica_data}")
+                    
+                    # Guardar las estadísticas
+                    print("\nLlamando a save_estadistica_rs...")
+                    try:
+                        estadistica_id = db.save_estadistica_rs(estadistica_data)
+                        print(f"Resultado de save_estadistica_rs: {estadistica_id}")
+                        
+                        if not estadistica_id:
+                            raise Exception("Error al guardar las estadísticas de la publicación")
+                            
+                    except Exception as e:
+                        print(f"Error en save_estadistica_rs: {str(e)}")
+                        raise
+                    
+                    # Depuración: Mostrar los datos que se van a guardar
+                    print("\n" + "="*80)
+                    print("DEPURACIÓN - DATOS A GUARDAR")
+                    print("="*80)
+                    
+                    # Mostrar datos de la estadística
+                    print("\nESTADÍSTICA PRINCIPAL:")
+                    print(f"- Plataforma ID: {plataforma_id}")
+                    print(f"- Me gusta: {estadistica_data['me_gusta']}")
+                    print(f"- Comentarios: {estadistica_data['comentarios']}")
+                    print(f"- Compartidos: {estadistica_data['compartidos']}")
+                    print(f"- Reproducciones: {estadistica_data['reproducciones']}")
+                    print(f"- Fecha: {estadistica_data['fecha_reporte']}")
+                    print(f"- Usuario: {estadistica_data['captured_by']}")
+                    print(f"- Observaciones: {estadistica_data['observaciones']}")
+                    print(f"- Metadata: {estadistica_data['metadata_json']}")
+                    
+                    print("\nREGISTROS DE ESTACIONES:")
+                    for i, reg in enumerate(registros, 1):
+                        print(f"\nEstación {i}:")
+                        print(f"- Indicativo: {reg.get('indicativo', 'No disponible')}")
+                        print(f"- Operador: {reg.get('operador', 'No disponible')}")
+                        print(f"- Estado: {reg.get('estado', 'No disponible')}")
+                        print(f"- Ciudad: {reg.get('ciudad', 'No disponible')}")
+                        print(f"- Zona: {reg.get('zona', 'No disponible')}")
+                    
+                    print("\nINICIANDO GUARDADO DE REGISTROS...")
+                    print("="*80 + "\n")
+                    
+                    # Guardar cada reporte de estación
+                    for registro in registros:
+                        if registro.get('indicativo'):  # Solo guardar registros con indicativo
+                            reporte_data = {
+                                'indicativo': registro['indicativo'].upper(),
+                                'operador': registro.get('operador', ''),
+                                'estado': registro.get('estado', ''),
+                                'ciudad': registro.get('ciudad', ''),
+                                'zona': registro.get('zona', ''),
+                                'senal': 59,  # Valor fijo según la estructura
+                                'observaciones': f"Reporte de interacción en {st.session_state.plataforma_seleccionada}",
+                                'qrz_captured_by': st.session_state.user.get('username', ''),
+                                'qrz_station': st.session_state.user.get('qrz_station', ''),
+                                'plataforma_id': plataforma_id,
+                                'plataforma_nombre': st.session_state.plataforma_seleccionada,
+                                'created_by': st.session_state.user['id'],
+                                'fecha_reporte': st.session_state.fecha_reporte.strftime('%Y-%m-%d')
+                            }
+                            
+                            # Guardar el reporte de la estación
+                            reporte_id = db.save_reporte_rs(reporte_data)
+                            
+                            if not reporte_id:
+                                raise Exception(f"Error al guardar el reporte para la estación {registro['indicativo']}")
+                    
                     st.success("✅ ¡Reporte guardado exitosamente!")
                     st.balloons()
                     
@@ -695,20 +787,27 @@ def show_redes_sociales_form():
                     st.session_state.contenido = ""
                     st.session_state.fecha_reporte = datetime.now().date()
                     st.session_state.num_registros = 1
+                    st.session_state.mostrar_panel_captura = False
+                    
+                    # Limpiar los campos de indicativos
+                    for i in range(100):  # Asumiendo un máximo de 100 registros
+                        if f'indicativo_{i}' in st.session_state:
+                            del st.session_state[f'indicativo_{i}']
+                    
                     st.rerun()
                     
                 except Exception as e:
                     st.error(f"❌ Error al guardar el reporte: {str(e)}")
-                
-                st.stop()
-    
-    # Sección de reportes recientes
-    st.markdown("---")
-    st.markdown("### Reportes Recientes")
-    
-    # Aquí iría el código para mostrar los reportes recientes
-    # reportes_recientes = db.obtener_reportes_recientes()
-    # if reportes_recientes:
+                    st.error("Por favor intenta nuevamente o contacta al administrador.")
+                    # Mostrar más detalles del error para depuración
+                    import traceback
+                    st.error("Detalles del error:")
+                    st.code(traceback.format_exc())
+                    
+                    # Usar st.button en lugar de st.form para evitar anidación
+                    if st.button("🔄 Intentar nuevamente", key='intento_nuevamente_btn'):
+                        st.session_state.mostrar_panel_captura = False
+                        st.rerun()
     #     st.dataframe(reportes_recientes)
     # else:
     #     st.info("Aún no hay reportes registrados.")

@@ -2400,6 +2400,64 @@ class FMREDatabase:
         Returns:
             int: ID del registro guardado o None si hubo un error
         """
+        # Configuración de depuración directa
+        import os
+        from datetime import datetime
+        
+        # Ruta absoluta para el archivo de log
+        log_dir = os.path.dirname(os.path.abspath(__file__))
+        log_file = os.path.join(log_dir, 'qms_debug.log')
+        
+        # Asegurarse de que el directorio existe
+        os.makedirs(log_dir, exist_ok=True)
+        
+        def log_debug(*args, **kwargs):
+            """Función de depuración que escribe directamente en la consola y en archivo"""
+            try:
+                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                # Crear mensaje
+                message = ' '.join(str(arg) for arg in args)
+                full_message = f"\n\n=== QMS DEBUG [{timestamp}] ===\n{message}\n{'='*40}\n"
+                
+                # 1. Escribir en consola (forzando salida)
+                print(full_message, flush=True)
+                
+                # 2. Escribir en archivo
+                try:
+                    with open(log_file, 'a', encoding='utf-8') as f:
+                        f.write(full_message)
+                except Exception as file_error:
+                    print(f"\n\n!!! ERROR AL ESCRIBIR EN ARCHIVO DE LOG: {file_error} !!!\n", flush=True)
+                    # Intentar crear el archivo si no existe
+                    try:
+                        with open(log_file, 'w', encoding='utf-8') as f:
+                            f.write(full_message)
+                    except Exception as create_error:
+                        print(f"\n\n!!! NO SE PUDO CREAR EL ARCHIVO DE LOG: {create_error} !!!\n", flush=True)
+                    
+            except Exception as e:
+                print(f"\n\n!!! ERROR EN LOG_DEBUG: {e} !!!\n", flush=True)
+                
+            # Mostrar la ruta del archivo de log una sola vez
+            if not hasattr(log_debug, 'path_shown'):
+                print(f"\nRUTA DEL ARCHIVO DE LOG: {log_file}")
+                log_debug.path_shown = True
+            
+        log_debug("=" * 50)
+        log_debug("INICIO DE save_estadistica_rs")
+        log_debug(f"Hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        log_debug(f"Tipo de estadistica_data: {type(estadistica_data)}")
+        
+        # Registrar contenido de estadistica_data de forma segura
+        if not isinstance(estadistica_data, dict):
+            error_msg = f"ERROR: estadistica_data no es un diccionario: {estadistica_data}"
+            log_debug(error_msg)
+            raise ValueError("El parámetro estadistica_data debe ser un diccionario")
+            
+        log_debug("Contenido de estadistica_data:")
+        for key, value in estadistica_data.items():
+            log_debug(f"- {key}: {value} (tipo: {type(value).__name__})")
+        
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
@@ -2407,50 +2465,155 @@ class FMREDatabase:
                 
                 # Calcular interacciones totales si no se proporciona
                 if 'interacciones' not in estadistica_data:
-                    estadistica_data['interacciones'] = (
-                        estadistica_data.get('me_gusta', 0) +
-                        estadistica_data.get('comentarios', 0) +
-                        estadistica_data.get('compartidos', 0)
-                    )
-                
-                # Convertir metadata_json a cadena si es un diccionario
-                metadata = estadistica_data.get('metadata_json')
-                if metadata and isinstance(metadata, dict):
                     try:
-                        metadata = json.dumps(metadata, ensure_ascii=False)
-                    except (TypeError, ValueError):
+                        log_debug("Calculando interacciones...")
+                        me_gusta = int(estadistica_data.get('me_gusta', 0) or 0)
+                        comentarios = int(estadistica_data.get('comentarios', 0) or 0)
+                        compartidos = int(estadistica_data.get('compartidos', 0) or 0)
+                        
+                        log_debug(f"- Me gusta: {me_gusta}")
+                        log_debug(f"- Comentarios: {comentarios}")
+                        log_debug(f"- Compartidos: {compartidos}")
+                        
+                        estadistica_data['interacciones'] = me_gusta + comentarios + compartidos
+                        log_debug(f"Interacciones calculadas: {estadistica_data['interacciones']}")
+                    except Exception as e:
+                        error_msg = f"Error al calcular interacciones: {str(e)}"
+                        log_debug(error_msg)
+                        estadistica_data['interacciones'] = 0
+                        log_debug("Se estableció interacciones=0 por error en el cálculo")
+                
+                # Procesar metadata_json - Asegurarse de que sea una cadena JSON válida o None
+                metadata = estadistica_data.get('metadata_json')
+                log_debug(f"\nProcesando metadata (tipo: {type(metadata).__name__}): {metadata}")
+                
+                if metadata is not None:
+                    try:
+                        # Si es un diccionario o lista, convertirlo a JSON string
+                        if isinstance(metadata, (dict, list)):
+                            log_debug("Serializando metadata (dict/list) a JSON...")
+                            metadata = json.dumps(metadata, ensure_ascii=False, default=str)
+                        # Si ya es un string, verificar que sea JSON válido
+                        elif isinstance(metadata, str):
+                            try:
+                                # Verificar si es un JSON válido
+                                json.loads(metadata)
+                                log_debug("Metadata ya es un JSON string válido")
+                            except json.JSONDecodeError:
+                                # Si no es JSON válido, escapar comillas y crear un JSON string simple
+                                log_debug("El string no es JSON válido, convirtiendo a JSON string")
+                                metadata = json.dumps(str(metadata))
+                        # Para cualquier otro tipo, convertirlo a string y luego a JSON
+                        else:
+                            log_debug(f"Convirtiendo metadata de tipo {type(metadata).__name__} a JSON string")
+                            metadata = json.dumps(str(metadata))
+                        
+                        log_debug(f"Metadata procesada correctamente: {metadata}")
+                        
+                    except Exception as e:
+                        error_msg = f"Error al procesar metadata_json: {str(e)}"
+                        log_debug(error_msg)
                         metadata = None
+                else:
+                    metadata = None  # Asegurarse de que sea None si no hay metadata
+                    log_debug("No hay metadata para procesar")
                 
-                cursor.execute('''
-                    INSERT INTO estadisticas_rs (
-                        plataforma_id, plataforma_nombre, me_gusta, comentarios,
-                        compartidos, reproducciones, alcance, interacciones,
-                        fecha_reporte, captured_by, observaciones, metadata_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    estadistica_data['plataforma_id'],
-                    estadistica_data['plataforma_nombre'],
-                    estadistica_data.get('me_gusta', 0),
-                    estadistica_data.get('comentarios', 0),
-                    estadistica_data.get('compartidos', 0),
-                    estadistica_data.get('reproducciones', 0),
-                    estadistica_data.get('alcance', 0),
-                    estadistica_data.get('interacciones', 0),
-                    estadistica_data['fecha_reporte'],
-                    estadistica_data['captured_by'],
-                    estadistica_data.get('observaciones'),
-                    metadata
-                ))
+                log_debug(f"Metadata final (tipo: {type(metadata).__name__}): {metadata}")
                 
-                estadistica_id = cursor.lastrowid
-                conn.commit()
-                return estadistica_id
+                # Validar tipos de datos antes de la inserción
+                log_debug("\nValidando tipos de datos para la inserción:")
+                campos_requeridos = ['plataforma_id', 'plataforma_nombre', 'fecha_reporte', 'captured_by']
                 
-        except sqlite3.Error as e:
-            print(f"Error al guardar estadística de redes sociales: {e}")
+                # Validar campos requeridos
+                for campo in campos_requeridos:
+                    if campo not in estadistica_data:
+                        error_msg = f"Campo requerido faltante: {campo}"
+                        log_debug(f"ERROR: {error_msg}")
+                        raise ValueError(error_msg)
+                    log_debug(f"- {campo}: {estadistica_data[campo]} (tipo: {type(estadistica_data[campo]).__name__})")
+                
+                # Preparar los parámetros para la consulta SQL con manejo de errores
+                try:
+                    # Asegurarse de que todos los valores sean tipos básicos (no objetos)
+                    plataforma_id = int(estadistica_data['plataforma_id'])
+                    plataforma_nombre = str(estadistica_data['plataforma_nombre'])
+                    me_gusta = int(estadistica_data.get('me_gusta', 0) or 0)
+                    comentarios = int(estadistica_data.get('comentarios', 0) or 0)
+                    compartidos = int(estadistica_data.get('compartidos', 0) or 0)
+                    reproducciones = int(estadistica_data.get('reproducciones', 0) or 0)
+                    alcance = int(estadistica_data.get('alcance', 0) or 0)
+                    interacciones = int(estadistica_data.get('interacciones', 0) or 0)
+                    fecha_reporte = str(estadistica_data['fecha_reporte'])
+                    captured_by = str(estadistica_data['captured_by'])
+                    observaciones = str(estadistica_data.get('observaciones', ''))
+                    
+                    # Asegurarse de que metadata sea None o string
+                    if metadata is not None and not isinstance(metadata, str):
+                        metadata = str(metadata)
+                    
+                    # Crear la tupla de parámetros
+                    params = (
+                        plataforma_id,
+                        plataforma_nombre,
+                        me_gusta,
+                        comentarios,
+                        compartidos,
+                        reproducciones,
+                        alcance,
+                        interacciones,
+                        fecha_reporte,
+                        captured_by,
+                        observaciones,
+                        metadata
+                    )
+                    
+                    log_debug("\nParámetros para la consulta SQL:")
+                    for i, param in enumerate(params, 1):
+                        log_debug(f"  Param {i}: {param} (tipo: {type(param).__name__})")
+                        
+                except Exception as e:
+                    error_msg = f"Error al preparar parámetros: {str(e)}"
+                    log_debug(f"ERROR: {error_msg}")
+                    raise ValueError(error_msg)
+                
+                try:
+                    log_debug("\nEjecutando consulta SQL...")
+                    cursor.execute('''
+                        INSERT INTO estadisticas_rs (
+                            plataforma_id, plataforma_nombre, me_gusta, comentarios,
+                            compartidos, reproducciones, alcance, interacciones,
+                            fecha_reporte, captured_by, observaciones, metadata_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', params)
+                    
+                    estadistica_id = cursor.lastrowid
+                    conn.commit()
+                    log_debug(f"\nRegistro guardado exitosamente con ID: {estadistica_id}")
+                    log_debug("="*50 + "\n")
+                    return estadistica_id
+                    
+                except sqlite3.Error as e:
+                    error_msg = f"Error al ejecutar la consulta SQL: {str(e)}"
+                    log_debug(f"ERROR: {error_msg}")
+                    raise
+                    
+        except Exception as e:
+            import traceback
+            error_msg = f"Error en save_estadistica_rs: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+            log_debug("\n" + "="*50)
+            log_debug("ERROR DETALLADO:")
+            log_debug(error_msg)
+            log_debug("="*50 + "\n")
+            
             if 'conn' in locals():
-                conn.rollback()
-            return None
+                try:
+                    conn.rollback()
+                    log_debug("Rollback realizado")
+                except Exception as rollback_error:
+                    log_debug(f"Error al hacer rollback: {str(rollback_error)}")
+            
+            # Relanzar la excepción para que se muestre en la interfaz
+            raise ValueError(f"No se pudo guardar el registro: {str(e)}")
     
     def get_reportes_rs_por_fecha(self, fecha_inicio, fecha_fin=None):
         """

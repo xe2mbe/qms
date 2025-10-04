@@ -160,97 +160,149 @@ def show_redes_sociales_form():
                 # Botón de búsqueda
                 buscar_guardar = st.form_submit_button("🔍 Buscar y Pre-Registrar")
                 
+                # Inicializar variables de validación
+                if 'errores_validacion' not in st.session_state:
+                    st.session_state.errores_validacion = {}
+                
                 if buscar_guardar:
                     st.session_state.resultados_busqueda = []
+                    st.session_state.errores_validacion = {}
                     indicativos = []
+                    hay_errores = False
                     
+                    # Validar todos los indicativos ingresados
                     for i in range(st.session_state.num_registros):
                         indicativo = st.session_state.get(f"indicativo_{i}", "").strip()
                         if indicativo:
-                            # Buscar datos en la base de datos
-                            db = FMREDatabase()
+                            # Validar el indicativo
+                            validacion = validar_call_sign(indicativo)
                             
-                            # Buscar primero en reportes
-                            reporte = db.get_ultimo_reporte_por_indicativo(indicativo.upper())
+                            # Verificar cada tipo de error
+                            if not validacion["indicativo"]:
+                                st.session_state.errores_validacion[f'indicativo_{i}'] = f"❌ El indicativo '{indicativo}' no es válido. Formato esperado: XE1ABC o SWL."
+                                hay_errores = True
+                            elif not validacion["completo"]:
+                                st.session_state.errores_validacion[f'indicativo_{i}'] = f"❌ El indicativo '{indicativo}' está incompleto. Asegúrate de incluir el sufijo (ej: XE1ABC)."
+                                hay_errores = True
+                            elif validacion["Zona"] == "Error":
+                                st.session_state.errores_validacion[f'indicativo_{i}'] = f"❌ El indicativo '{indicativo}' tiene un formato incorrecto. Verifica que siga el formato correcto."
+                                hay_errores = True
+                            else:
+                                # Si pasa todas las validaciones, limpiar cualquier error previo
+                                if f'indicativo_{i}' in st.session_state.errores_validacion:
+                                    del st.session_state.errores_validacion[f'indicativo_{i}']
+                                indicativos.append(indicativo.upper())
+                    
+                    # Mostrar errores si los hay
+                    for campo, mensaje in st.session_state.errores_validacion.items():
+                        st.error(mensaje)
+                    
+                    # Si hay errores, detener el proceso
+                    if hay_errores:
+                        st.stop()
+                    
+                    # Si no hay indicativos válidos, mostrar advertencia
+                    if not indicativos:
+                        st.warning("❌ No se proporcionaron indicativos válidos para buscar.")
+                        st.stop()
+                    
+                    # Procesar cada indicativo válido
+                    for i, indicativo in enumerate(indicativos):
+                        # Buscar datos en la base de datos
+                        db = FMREDatabase()
+                        
+                        # Buscar primero en reportes
+                        reporte = db.get_ultimo_reporte_por_indicativo(indicativo)
+                        
+                        # Debug: Mostrar información en la terminal
+                        print("\n" + "="*50)
+                        print(f"BUSCANDO INDICATIVO: {indicativo.upper()}")
+                        print("-"*50)
+                        
+                        if reporte:
+                            # Debug: Mostrar datos encontrados en reportes
+                            print("ENCONTRADO EN REPORTES:")
+                            print(f"- Operador: {reporte.get('nombre', 'No disponible')}")
+                            print(f"- Estado: {reporte.get('estado', 'No disponible')}")
+                            print(f"- Ciudad: {reporte.get('ciudad', 'No disponible')}")
+                            print(f"- Zona: {reporte.get('zona', 'No disponible')}")
                             
-                            # Debug: Mostrar información en la terminal
-                            print("\n" + "="*50)
-                            print(f"BUSCANDO INDICATIVO: {indicativo.upper()}")
-                            print("-"*50)
+                            # Si se encuentra en reportes, usar esos datos
+                            datos = {
+                                'indicativo': indicativo.upper(),
+                                'operador': reporte.get('nombre', ''),
+                                'estado': reporte.get('estado', ''),
+                                'ciudad': reporte.get('ciudad', ''),
+                                'zona': reporte.get('zona', ''),
+                                'fuente': 'Reporte existente',
+                                'fecha_consulta': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            }
+                            print(f"- Fuente: Reportes")
+                            print(f"- Fecha de consulta: {datos['fecha_consulta']}")
                             
-                            if reporte:
-                                # Debug: Mostrar datos encontrados en reportes
-                                print("ENCONTRADO EN REPORTES:")
-                                print(f"- Operador: {reporte.get('nombre', 'No disponible')}")
-                                print(f"- Estado: {reporte.get('estado', 'No disponible')}")
-                                print(f"- Ciudad: {reporte.get('ciudad', 'No disponible')}")
-                                print(f"- Zona: {reporte.get('zona', 'No disponible')}")
+                            # Agregar a resultados
+                            st.session_state.resultados_busqueda.append(datos)
+                            
+                            # Guardar en sesión para edición posterior
+                            st.session_state[f'datos_estacion_{i}'] = {
+                                'operador': datos['operador'],
+                                'estado': datos['estado'],
+                                'ciudad': datos['ciudad'],
+                                'zona': datos['zona']
+                            }
+                        else:
+                            # Si no está en reportes, buscar en radioexperimentadores
+                            radio = db.get_radioexperimentador_por_indicativo(indicativo.upper())
+                            
+                            if radio:
+                                # Determinar la zona usando validar_call_sign
+                                validacion = validar_call_sign(indicativo.upper())
+                                zona_detectada = validacion.get('Zona', 'Desconocida')
                                 
-                                # Si se encuentra en reportes, usar esos datos
+                                # Si la zona es 'Definir' o 'Error', intentar obtener de la base de datos
+                                if zona_detectada in ['Definir', 'Error']:
+                                    zonas_dict = dict(get_zonas())
+                                    zona_db = radio.get('zona', '')
+                                    if zona_db and zona_db in zonas_dict:
+                                        zona_detectada = zonas_dict[zona_db]
+                                
+                                # Debug: Mostrar datos encontrados en radioexperimentadores
+                                print("NO ENCONTRADO EN REPORTES, BUSCANDO EN RADIOEXPERIMENTADORES...")
+                                print("ENCONTRADO EN RADIOEXPERIMENTADORES:")
+                                print(f"- Operador: {radio.get('nombre_completo', 'No disponible')}")
+                                print(f"- Estado: {radio.get('estado', 'No disponible')}")
+                                print(f"- Ciudad: {radio.get('municipio', 'No disponible')}")
+                                print(f"- Zona detectada: {zona_detectada}")
+                                print(f"- Validación completa: {validacion}")
+                                
                                 datos = {
                                     'indicativo': indicativo.upper(),
-                                    'operador': reporte.get('nombre', ''),
-                                    'estado': reporte.get('estado', ''),
-                                    'ciudad': reporte.get('ciudad', ''),
-                                    'zona': reporte.get('zona', ''),
-                                    'fuente': 'Reporte existente',
+                                    'operador': radio.get('nombre_completo', ''),
+                                    'estado': radio.get('estado', ''),
+                                    'ciudad': radio.get('municipio', ''),
+                                    'zona': zona_detectada if zona_detectada != 'Desconocida' else '',
+                                    'fuente': 'Radioexperimentador',
                                     'fecha_consulta': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                                 }
-                                print(f"- Fuente: Reportes")
+                                print(f"- Fuente: Radioexperimentadores")
+                                print(f"- Zona asignada: {datos['zona']}")
                                 print(f"- Fecha de consulta: {datos['fecha_consulta']}")
                             else:
-                                # Si no está en reportes, buscar en radioexperimentadores
-                                radio = db.get_radioexperimentador_por_indicativo(indicativo.upper())
+                                # Si no se encuentra en ninguna tabla
+                                print("NO ENCONTRADO EN NINGUNA BASE DE DATOS")
+                                print("Se creará un nuevo registro vacío")
                                 
-                                if radio:
-                                    # Determinar la zona usando validar_call_sign
-                                    validacion = validar_call_sign(indicativo.upper())
-                                    zona_detectada = validacion.get('Zona', 'Desconocida')
-                                    
-                                    # Si la zona es 'Definir' o 'Error', intentar obtener de la base de datos
-                                    if zona_detectada in ['Definir', 'Error']:
-                                        zonas_dict = dict(get_zonas())
-                                        zona_db = radio.get('zona', '')
-                                        if zona_db and zona_db in zonas_dict:
-                                            zona_detectada = zonas_dict[zona_db]
-                                    
-                                    # Debug: Mostrar datos encontrados en radioexperimentadores
-                                    print("NO ENCONTRADO EN REPORTES, BUSCANDO EN RADIOEXPERIMENTADORES...")
-                                    print("ENCONTRADO EN RADIOEXPERIMENTADORES:")
-                                    print(f"- Operador: {radio.get('nombre_completo', 'No disponible')}")
-                                    print(f"- Estado: {radio.get('estado', 'No disponible')}")
-                                    print(f"- Ciudad: {radio.get('municipio', 'No disponible')}")
-                                    print(f"- Zona detectada: {zona_detectada}")
-                                    print(f"- Validación completa: {validacion}")
-                                    
-                                    datos = {
-                                        'indicativo': indicativo.upper(),
-                                        'operador': radio.get('nombre_completo', ''),
-                                        'estado': radio.get('estado', ''),
-                                        'ciudad': radio.get('municipio', ''),
-                                        'zona': zona_detectada if zona_detectada != 'Desconocida' else '',
-                                        'fuente': 'Radioexperimentador',
-                                        'fecha_consulta': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                                    }
-                                    print(f"- Fuente: Radioexperimentadores")
-                                    print(f"- Zona asignada: {datos['zona']}")
-                                    print(f"- Fecha de consulta: {datos['fecha_consulta']}")
-                                else:
-                                    # Si no se encuentra en ninguna tabla
-                                    print("NO ENCONTRADO EN NINGUNA BASE DE DATOS")
-                                    print("Se creará un nuevo registro vacío")
-                                    
-                                    datos = {
-                                        'indicativo': indicativo.upper(),
-                                        'operador': '',
-                                        'estado': '',
-                                        'ciudad': '',
-                                        'zona': '',
-                                        'fuente': 'Nuevo registro',
-                                        'fecha_consulta': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                                    }
-                                    print(f"- Fuente: Nuevo registro")
-                                    print(f"- Fecha de consulta: {datos['fecha_consulta']}")
+                                datos = {
+                                    'indicativo': indicativo.upper(),
+                                    'operador': '',
+                                    'estado': '',
+                                    'ciudad': '',
+                                    'zona': '',
+                                    'fuente': 'Nuevo registro',
+                                    'fecha_consulta': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                }
+                                print(f"- Fuente: Nuevo registro")
+                                print(f"- Fecha de consulta: {datos['fecha_consulta']}")
                                 
                                 # Separador al final de cada búsqueda
                                 print("="*50 + "\n")
@@ -500,49 +552,52 @@ def show_redes_sociales_form():
                     st.markdown(f"---")
                     st.markdown(f"#### Estación {i+1}")
                     
-                    # Mostrar el indicativo como texto
-                    st.text_input("Indicativo", value=indicativo, disabled=True, key=f"disp_indicativo_{i}")
+                    # Primera fila: Indicativo y Operador
+                    row1_col1, row1_col2 = st.columns(2)
                     
-                    # Obtener datos prellenados si existen
-                    datos_estacion = st.session_state.get(f'datos_estacion_{i}', {})
+                    with row1_col1:
+                        # Mostrar el indicativo como texto
+                        st.text_input("Indicativo", value=indicativo, disabled=True, key=f"disp_indicativo_{i}")
                     
-                    # Crear columnas para los campos
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
+                    with row1_col2:
                         # Campo para el operador
                         operador = st.text_input(
-                            f"Operador {i+1}",
-                            value=datos_estacion.get('operador', ''),
+                            "Operador",
+                            value=st.session_state.get(f'datos_estacion_{i}', {}).get('operador', ''),
                             key=f"operador_{i}",
                             help="Nombre del operador de la estación"
                         )
-                        
+                    
+                    # Segunda fila: Estado, Ciudad y Zona
+                    row2_col1, row2_col2, row2_col3 = st.columns(3)
+                    
+                    with row2_col1:
                         # Estado
-                        estado_actual = datos_estacion.get('estado', '')
+                        estado_actual = st.session_state.get(f'datos_estacion_{i}', {}).get('estado', '')
                         estado_index = estado_options.index(estado_actual) if estado_actual in estado_options else 0
                         estado = st.selectbox(
-                            f"Estado {i+1}",
+                            "Estado",
                             options=estado_options,
                             index=estado_index,
                             key=f"estado_{i}",
                             help="Selecciona el estado de la estación"
                         )
                     
-                    with col2:
+                    with row2_col2:
                         # Ciudad
                         ciudad = st.text_input(
-                            f"Ciudad {i+1}",
-                            value=datos_estacion.get('ciudad', ''),
+                            "Ciudad",
+                            value=st.session_state.get(f'datos_estacion_{i}', {}).get('ciudad', ''),
                             key=f"ciudad_{i}",
                             help="Ciudad de la estación"
                         )
-                        
+                    
+                    with row2_col3:
                         # Zona (selección de zona)
-                        zona_actual = datos_estacion.get('zona', '')
+                        zona_actual = st.session_state.get(f'datos_estacion_{i}', {}).get('zona', '')
                         zona_index = zona_options.index(zona_actual) if zona_actual in zona_options else 0
                         zona = st.selectbox(
-                            f"Zona {i+1}", 
+                            "Zona", 
                             options=zona_options,
                             index=zona_index,
                             key=f"zona_{i}",

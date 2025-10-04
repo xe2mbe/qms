@@ -440,7 +440,7 @@ def show_gestion():
 
 def show_gestion_redes_sociales():
     """Muestra la gestión de redes sociales con pestañas"""
-    from rs_management import show_rs_management
+    from rs_management import show_rs_management, show_rs_form
     
     # Mostrar pestañas
     tab_lista, tab_crear = st.tabs(["📋 Lista de Redes Sociales", "➕ Agregar Red Social"])
@@ -451,15 +451,8 @@ def show_gestion_redes_sociales():
     
     with tab_crear:
         st.subheader("➕ Agregar Nueva Red Social")
-        # Aquí puedes agregar un formulario para crear nuevas redes sociales si es necesario
-        st.info("Para agregar una nueva red social, por favor usa el formulario en la pestaña de lista.")
-        st.markdown("""
-        **Instrucciones:**
-        1. Ve a la pestaña "Lista de Redes Sociales"
-        2. Haz clic en el botón "Agregar Nueva Red Social"
-        3. Completa el formulario con los datos de la red social
-        4. Haz clic en "Guardar"
-        """)
+        # Mostrar el formulario para agregar una nueva red social
+        show_rs_form()
 
 def show_gestion_eventos():
     """Muestra la gestión de eventos con pestañas para listar y crear eventos"""

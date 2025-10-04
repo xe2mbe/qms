@@ -85,11 +85,70 @@ class FMREDatabase:
             
             # Insertar estación por defecto si no existe
             cursor.execute('SELECT COUNT(*) FROM stations')
-            if cursor.fetchone()[0] == 0:
+            count = cursor.fetchone()[0]
+            if count == 0:
                 cursor.execute('''
                     INSERT INTO stations (qrz, descripcion, is_active)
                     VALUES (?, ?, ?)
                 ''', ('XE1LM', 'Federacion Mexicana de Radioexperimentadores A.C.', 1))
+            
+            # Tabla de reportes de redes sociales
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS reportes_rs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    indicativo TEXT NOT NULL,
+                    operador TEXT,
+                    estado TEXT,
+                    ciudad TEXT,
+                    zona TEXT,
+                    senal INTEGER DEFAULT 59,
+                    observaciones TEXT,
+                    qrz_captured_by TEXT,
+                    qrz_station TEXT,
+                    plataforma_id INTEGER NOT NULL,
+                    plataforma_nombre TEXT NOT NULL,
+                    created_by INTEGER NOT NULL,
+                    fecha_reporte TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (plataforma_id) REFERENCES rs(id) ON DELETE CASCADE,
+                    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+                )
+            ''')
+            
+            # Tabla de estadísticas de redes sociales
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS estadisticas_rs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    plataforma_id INTEGER NOT NULL,
+                    plataforma_nombre TEXT NOT NULL,
+                    me_gusta INTEGER DEFAULT 0,
+                    comentarios INTEGER DEFAULT 0,
+                    compartidos INTEGER DEFAULT 0,
+                    reproducciones INTEGER DEFAULT 0,
+                    alcance INTEGER DEFAULT 0,
+                    interacciones INTEGER DEFAULT 0,
+                    fecha_reporte DATE NOT NULL,
+                    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    captured_by TEXT NOT NULL,
+                    observaciones TEXT,
+                    metadata_json TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (plataforma_id) REFERENCES rs(id) ON DELETE CASCADE
+                )
+            ''')
+            
+            # Crear índices para búsquedas frecuentes
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_estadisticas_rs_fecha 
+                ON estadisticas_rs(fecha_reporte)
+            ''')
+            
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_estadisticas_rs_plataforma 
+                ON estadisticas_rs(plataforma_id)
+            ''')
             
             # Tabla de configuración SMTP
             cursor.execute('''
@@ -1478,6 +1537,35 @@ class FMREDatabase:
         """Elimina lógicamente un evento (lo marca como inactivo)"""
         return self.update_evento(evento_id, activo=0)
         
+    def get_ultimo_reporte_por_indicativo(self, indicativo):
+        """
+        Obtiene el último reporte registrado para un indicativo específico
+        
+        Args:
+            indicativo (str): El indicativo de la estación a buscar
+            
+        Returns:
+            dict or None: Diccionario con los datos del reporte o None si no se encuentra
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Buscar el último reporte para el indicativo
+                cursor.execute('''
+                    SELECT * FROM reportes 
+                    WHERE indicativo = ? 
+                    ORDER BY fecha_reporte DESC 
+                    LIMIT 1
+                ''', (indicativo.upper(),))
+                
+                row = cursor.fetchone()
+                return dict(row) if row else None
+                
+        except Exception as e:
+            print(f"Error al buscar reporte para el indicativo {indicativo}: {str(e)}")
+            return None
+            
     def get_reportes_por_fecha(self, fecha_reporte):
         """
         Obtiene los reportes de una fecha específica con estadísticas
@@ -2014,7 +2102,7 @@ class FMREDatabase:
             print(f"Error al verificar entrada RS: {e}")
             return False
     
-    def add_rs_entry(self, plataforma, nombre, descripcion=None, url=None, administrador=None):
+    def add_rs_entry(self, plataforma, nombre, descripcion=None, url=None, administrador=None, is_active=1):
         """Agrega una nueva entrada de red social
         
         Args:
@@ -2023,14 +2111,17 @@ class FMREDatabase:
             descripcion (str, optional): Descripción de la red social
             url (str, optional): URL del perfil/grupo
             administrador (str, optional): Responsable de la cuenta/grupo
+            is_active (int, optional): Estado de la red social (1 = activa, 0 = inactiva)
             
         Returns:
-            int/None: ID de la entrada creada o None en caso de error o si ya existe
+            tuple: (success, message) donde success es un booleano que indica si la operación fue exitosa,
+                  y message es un mensaje de éxito o error
         """
         # Verificar si ya existe una entrada idéntica
         if self.rs_entry_exists(plataforma, nombre):
-            print(f"Error: Ya existe una entrada para {plataforma} - {nombre}")
-            return None
+            error_msg = f"Error: Ya existe una entrada para {plataforma} - {nombre}"
+            print(error_msg)
+            return False, error_msg
             
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -2038,15 +2129,16 @@ class FMREDatabase:
                 
                 cursor.execute('''
                     INSERT INTO rs (plataforma, nombre, descripcion, url, administrador, is_active)
-                    VALUES (?, ?, ?, ?, ?, 1)
-                ''', (plataforma, nombre, descripcion, url, administrador))
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (plataforma, nombre, descripcion, url, administrador, is_active))
                 
                 conn.commit()
-                return cursor.lastrowid
+                return True, f"Red social {plataforma} - {nombre} agregada correctamente"
                 
         except sqlite3.Error as e:
-            print(f"Error al agregar entrada RS: {e}")
-            return None
+            error_msg = f"Error al agregar entrada RS: {e}"
+            print(error_msg)
+            return False, error_msg
     
     def get_rs_entries(self, active_only=True):
         """Obtiene todas las entradas de redes sociales
@@ -2198,11 +2290,8 @@ class FMREDatabase:
                     print(f"No se encontró la entrada con ID {rs_id}")
                     return False
                 
-                # Primero actualizamos la entrada con un identificador único para evitar conflictos
-                # con la restricción única al marcar como inactivo
-                temp_id = f"DELETED_{int(datetime.now().timestamp())}_{rs_id}"
-                
                 # Actualizamos la entrada con un identificador único
+                temp_id = f"DELETED_{int(datetime.now().timestamp())}_{rs_id}"
                 cursor.execute(
                     'UPDATE rs SET plataforma = ?, nombre = ?, is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
                     (f"{entry['plataforma']}_{temp_id}", f"{entry['nombre']}_{temp_id}", rs_id)
@@ -2227,6 +2316,203 @@ class FMREDatabase:
                 except:
                     pass  # Si falla la restauración, no hay mucho que podamos hacer
             return False
+
+    def save_reporte_rs(self, reporte_data):
+        """
+        Guarda un nuevo reporte de redes sociales en la base de datos
+        
+        Args:
+            reporte_data (dict): Diccionario con los datos del reporte que debe contener:
+                - indicativo (str): Indicativo de la estación
+                - operador (str, opcional): Nombre del operador de la estación
+                - estado (str, opcional): Estado de la estación
+                - ciudad (str, opcional): Ciudad de la estación
+                - zona (str, opcional): Zona de la estación
+                - senal (int, opcional): Señal reportada (default: 59)
+                - observaciones (str, opcional): Observaciones adicionales
+                - qrz_captured_by (str, opcional): Indicativo del usuario que capturó el reporte
+                - qrz_station (str, opcional): Estación QRZ del usuario que capturó el reporte
+                - plataforma_id (int): ID de la plataforma de redes sociales
+                - plataforma_nombre (str): Nombre de la plataforma
+                - created_by (int): ID del usuario que crea el reporte
+                - fecha_reporte (str, opcional): Fecha del reporte (default: fecha actual)
+                
+        Returns:
+            int: ID del reporte guardado o None si hubo un error
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                # Insertar el reporte principal
+                cursor.execute('''
+                    INSERT INTO reportes_rs (
+                        indicativo, operador, estado, ciudad, zona, senal,
+                        observaciones, qrz_captured_by, qrz_station,
+                        plataforma_id, plataforma_nombre, created_by, fecha_reporte
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    reporte_data.get('indicativo', ''),
+                    reporte_data.get('operador'),
+                    reporte_data.get('estado'),
+                    reporte_data.get('ciudad'),
+                    reporte_data.get('zona'),
+                    reporte_data.get('senal', 59),
+                    reporte_data.get('observaciones'),
+                    reporte_data.get('qrz_captured_by'),
+                    reporte_data.get('qrz_station'),
+                    reporte_data.get('plataforma_id'),
+                    reporte_data.get('plataforma_nombre'),
+                    reporte_data.get('created_by'),
+                    reporte_data.get('fecha_reporte', datetime.now().strftime('%Y-%m-%d'))
+                ))
+                
+                reporte_id = cursor.lastrowid
+                conn.commit()
+                return reporte_id
+                
+        except sqlite3.Error as e:
+            print(f"Error al guardar reporte de redes sociales: {e}")
+            if 'conn' in locals():
+                conn.rollback()
+            return None
+            
+    def save_estadistica_rs(self, estadistica_data):
+        """
+        Guarda un nuevo registro de estadísticas de redes sociales en la base de datos
+        
+        Args:
+            estadistica_data (dict): Diccionario con los datos de la estadística que debe contener:
+                - plataforma_id (int): ID de la plataforma de redes sociales
+                - plataforma_nombre (str): Nombre de la plataforma
+                - me_gusta (int, opcional): Cantidad de "me gusta" (default: 0)
+                - comentarios (int, opcional): Cantidad de comentarios (default: 0)
+                - compartidos (int, opcional): Cantidad de veces compartido (default: 0)
+                - reproducciones (int, opcional): Cantidad de reproducciones (default: 0)
+                - alcance (int, opcional): Número de personas alcanzadas (default: 0)
+                - interacciones (int, opcional): Total de interacciones (default: calculado)
+                - fecha_reporte (str): Fecha del reporte en formato 'YYYY-MM-DD'
+                - captured_by (str): Usuario que capturó el reporte
+                - observaciones (str, opcional): Notas adicionales
+                - metadata_json (dict, opcional): Datos adicionales en formato JSON
+                
+        Returns:
+            int: ID del registro guardado o None si hubo un error
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                # Calcular interacciones totales si no se proporciona
+                if 'interacciones' not in estadistica_data:
+                    estadistica_data['interacciones'] = (
+                        estadistica_data.get('me_gusta', 0) +
+                        estadistica_data.get('comentarios', 0) +
+                        estadistica_data.get('compartidos', 0)
+                    )
+                
+                # Convertir metadata_json a cadena si es un diccionario
+                metadata = estadistica_data.get('metadata_json')
+                if metadata and isinstance(metadata, dict):
+                    try:
+                        metadata = json.dumps(metadata, ensure_ascii=False)
+                    except (TypeError, ValueError):
+                        metadata = None
+                
+                cursor.execute('''
+                    INSERT INTO estadisticas_rs (
+                        plataforma_id, plataforma_nombre, me_gusta, comentarios,
+                        compartidos, reproducciones, alcance, interacciones,
+                        fecha_reporte, captured_by, observaciones, metadata_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    estadistica_data['plataforma_id'],
+                    estadistica_data['plataforma_nombre'],
+                    estadistica_data.get('me_gusta', 0),
+                    estadistica_data.get('comentarios', 0),
+                    estadistica_data.get('compartidos', 0),
+                    estadistica_data.get('reproducciones', 0),
+                    estadistica_data.get('alcance', 0),
+                    estadistica_data.get('interacciones', 0),
+                    estadistica_data['fecha_reporte'],
+                    estadistica_data['captured_by'],
+                    estadistica_data.get('observaciones'),
+                    metadata
+                ))
+                
+                estadistica_id = cursor.lastrowid
+                conn.commit()
+                return estadistica_id
+                
+        except sqlite3.Error as e:
+            print(f"Error al guardar estadística de redes sociales: {e}")
+            if 'conn' in locals():
+                conn.rollback()
+            return None
+    
+    def get_reportes_rs_por_fecha(self, fecha_inicio, fecha_fin=None):
+        """
+        Obtiene los reportes de redes sociales en un rango de fechas
+        
+        Args:
+            fecha_inicio (str): Fecha de inicio en formato 'YYYY-MM-DD'
+            fecha_fin (str, opcional): Fecha de fin en formato 'YYYY-MM-DD'. Si no se especifica, se usa la fecha actual
+            
+        Returns:
+            list: Lista de diccionarios con los reportes encontrados
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                if not fecha_fin:
+                    fecha_fin = datetime.now().strftime('%Y-%m-%d')
+                
+                cursor.execute('''
+                    SELECT r.*, u.username as usuario_creador
+                    FROM reportes_rs r
+                    LEFT JOIN users u ON r.created_by = u.id
+                    WHERE date(r.fecha_reporte) BETWEEN ? AND ?
+                    ORDER BY r.fecha_reporte DESC
+                ''', (fecha_inicio, fecha_fin))
+                
+                return [dict(row) for row in cursor.fetchall()]
+                
+        except sqlite3.Error as e:
+            print(f"Error al obtener reportes de redes sociales: {e}")
+            return []
+    
+    def get_reporte_rs_por_id(self, reporte_id):
+        """
+        Obtiene un reporte de redes sociales por su ID
+        
+        Args:
+            reporte_id (int): ID del reporte a buscar
+            
+        Returns:
+            dict: Datos del reporte o None si no se encuentra
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    SELECT r.*, u.username as usuario_creador
+                    FROM reportes_rs r
+                    LEFT JOIN users u ON r.created_by = u.id
+                    WHERE r.id = ?
+                ''', (reporte_id,))
+                
+                result = cursor.fetchone()
+                return dict(result) if result else None
+                
+        except sqlite3.Error as e:
+            print(f"Error al obtener reporte de redes sociales: {e}")
+            return None
 
 if __name__ == "__main__":
     # Crear la base de datos y tablas si no existen

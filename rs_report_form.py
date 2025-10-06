@@ -167,6 +167,7 @@ def show_redes_sociales_form():
                 if buscar_guardar:
                     st.session_state.resultados_busqueda = []
                     st.session_state.errores_validacion = {}
+                    st.session_state.mostrar_panel_captura = True  # Mostrar los expanders
                     indicativos = []
                     hay_errores = False
                     
@@ -325,8 +326,8 @@ def show_redes_sociales_form():
                     else:
                         st.warning("Por favor ingrese al menos un indicativo")
                 
-                # Mostrar tabla de resultados si hay búsquedas previas
-                if st.session_state.resultados_busqueda:
+                # Mostrar expanders para cada estación si hay resultados
+                if st.session_state.resultados_busqueda and st.session_state.get('mostrar_panel_captura', False):
                     st.markdown("### Pre-Registros de Estaciones")
                     
                     # Obtener listas para los dropdowns
@@ -634,7 +635,8 @@ def show_redes_sociales_form():
                     })
                 
                 # Botón para guardar registros
-                guardar_registros = st.form_submit_button("💾 Guardar Registros")
+                st.markdown("---")  # Separador visual
+                guardar_registros = st.form_submit_button("💾 Guardar Registros", type="primary", use_container_width=True)
                 if guardar_registros:
                     # Validar que haya datos para guardar
                     if not registros:
@@ -926,6 +928,71 @@ def show_redes_sociales_form():
                     if st.button("🔄 Intentar nuevamente", key='intento_nuevamente_btn'):
                         st.session_state.mostrar_panel_captura = False
                         st.rerun()
-    #     st.dataframe(reportes_recientes)
-    # else:
-    #     st.info("Aún no hay reportes registrados.")
+    # Mostrar tabla de registros del día
+    st.markdown("---")
+    st.markdown("### Registros del Día")
+    
+    try:
+        db = FMREDatabase()
+        fecha_reporte = st.session_state.get('fecha_reporte', datetime.now().date()).strftime('%Y-%m-%d')
+        registros_dia = db.get_reportes_rs_por_fecha(fecha_reporte, fecha_reporte)
+        
+        if registros_dia:
+            # Función segura para formatear la fecha/hora
+            def format_hora(fecha_str):
+                if not fecha_str:
+                    return ''
+                try:
+                    # Intentar con formato que incluye tiempo
+                    return datetime.strptime(fecha_str, '%Y-%m-%d %H:%M:%S').strftime('%H:%M:%S')
+                except ValueError:
+                    try:
+                        # Si falla, intentar con solo fecha
+                        return datetime.strptime(fecha_str, '%Y-%m-%d').strftime('%H:%M:%S')
+                    except:
+                        return fecha_str  # Devolver el valor original si no se puede formatear
+            
+            # Crear DataFrame con los campos relevantes
+            df_registros = pd.DataFrame([{
+                'Indicativo': r.get('indicativo', ''),
+                'Operador': r.get('operador', ''),
+                'Estado': r.get('estado', ''),
+                'Ciudad': r.get('ciudad', ''),
+                'Zona': r.get('zona', ''),
+                'Plataforma': r.get('plataforma_nombre', ''),
+                'Hora': format_hora(r.get('fecha_reporte', ''))
+            } for r in registros_dia])
+            
+            # Ordenar por hora de forma descendente
+            if 'Hora' in df_registros.columns:
+                df_registros = df_registros.sort_values('Hora', ascending=False)
+            
+            # Mostrar la tabla con estilo
+            st.dataframe(
+                df_registros,
+                column_config={
+                    'Indicativo': 'Indicativo',
+                    'Operador': 'Operador',
+                    'Estado': 'Estado',
+                    'Ciudad': 'Ciudad',
+                    'Zona': 'Zona',
+                    'Plataforma': 'Plataforma',
+                    'Hora': 'Hora'
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+            
+            # Mostrar total de registros
+            st.info(f"Total de registros del día: **{len(registros_dia)}**")
+        else:
+            st.info("No hay registros para la fecha seleccionada.")
+            
+    except Exception as e:
+        st.error(f"Error al cargar los registros del día: {str(e)}")
+        if 'db' in locals():
+            st.error("Detalles de la base de datos:")
+            st.json({
+                'fecha_consulta': fecha_reporte,
+                'total_registros': len(registros_dia) if 'registros_dia' in locals() else 0
+            })

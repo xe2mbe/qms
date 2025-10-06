@@ -553,7 +553,7 @@ def show_redes_sociales_form():
                     st.markdown(f"#### Estación {i+1}")
                     
                     # Primera fila: Indicativo y Operador
-                    row1_col1, row1_col2 = st.columns(2)
+                    row1_col1, row1_col2, row1_col3 = st.columns(3)
                     
                     with row1_col1:
                         # Mostrar el indicativo como texto
@@ -566,6 +566,18 @@ def show_redes_sociales_form():
                             value=st.session_state.get(f'datos_estacion_{i}', {}).get('operador', ''),
                             key=f"operador_{i}",
                             help="Nombre del operador de la estación"
+                        )
+                    
+                    with row1_col3:
+                        # Zona (selección de zona)
+                        zona_actual = st.session_state.get(f'datos_estacion_{i}', {}).get('zona', '')
+                        zona_index = zona_options.index(zona_actual) if zona_actual in zona_options else 0
+                        zona = st.selectbox(
+                            "Zona", 
+                            options=zona_options,
+                            index=zona_index,
+                            key=f"zona_{i}",
+                            help="Selecciona la zona de la estación"
                         )
                     
                     # Segunda fila: Estado, Ciudad y Zona
@@ -593,28 +605,23 @@ def show_redes_sociales_form():
                         )
                     
                     with row2_col3:
-                        # Zona (selección de zona)
-                        zona_actual = st.session_state.get(f'datos_estacion_{i}', {}).get('zona', '')
-                        zona_index = zona_options.index(zona_actual) if zona_actual in zona_options else 0
-                        zona = st.selectbox(
-                            "Zona", 
-                            options=zona_options,
-                            index=zona_index,
-                            key=f"zona_{i}",
-                            help="Selecciona la zona de la estación"
+                        # Mostrar el nombre de la plataforma seleccionada
+                        plataforma_info = next((p for p in plataformas if p.get('plataforma') in st.session_state.plataforma_seleccionada), {})
+                        nombre_plataforma = st.session_state.plataforma_seleccionada
+                        zona_plataforma = plataforma_info.get('zona', '')
+                        
+                        # Mostrar el nombre de la plataforma y su zona
+                        valor_mostrado = f"{nombre_plataforma}"
+                        if zona_plataforma:
+                            valor_mostrado += f" (Zona: {zona_plataforma})"
+                        
+                        st.text_input(
+                            "Plataforma", 
+                            value=valor_mostrado,
+                            key=f"plataforma_{i}",
+                            disabled=True,
+                            help="Plataforma seleccionada en el formulario"
                         )
-                    
-                    # Zona de la plataforma (solo lectura)
-                    plataforma_info = next((p for p in plataformas if p.get('plataforma') in st.session_state.plataforma_seleccionada), {})
-                    zona_plataforma = plataforma_info.get('zona', '')
-                    
-                    st.text_input(
-                        "Zona Plataforma", 
-                        value=zona_plataforma,
-                        key=f"zona_plataforma_{i}",
-                        disabled=True,
-                        help="Zona de la plataforma (automática)"
-                    )
                     
                     # Agregar los datos del registro a la lista
                     registros.append({
@@ -626,24 +633,80 @@ def show_redes_sociales_form():
                         'zona_plataforma': zona_plataforma
                     })
                 
-                # Botón para volver atrás
-                col1, col2 = st.columns(2)
-                with col1:
-                    volver = st.form_submit_button("↩️ Volver a editar indicativos")
-                    if volver:
-                        st.session_state.mostrar_panel_captura = False
-                        st.rerun()
-                
-                # Agregar los datos del registro a la lista
-                registros.append({
-                    'indicativo': indicativo,
-                    'operador': operador,
-                    'estado': estado,
-                    'ciudad': ciudad,
-                    'zona': zona,
-                    'zona_plataforma': zona_plataforma,
-                    'plataforma': st.session_state.plataforma_seleccionada
-                })
+                # Botón para guardar registros
+                guardar_registros = st.form_submit_button("💾 Guardar Registros")
+                if guardar_registros:
+                    # Validar que haya datos para guardar
+                    if not registros:
+                        st.error("❌ No hay registros para guardar")
+                        st.stop()
+                    
+                    try:
+                        db = FMREDatabase()
+                        fecha_actual = datetime.now().strftime('%Y-%m-%d')
+                        
+                        # Guardar cada registro
+                        for registro in registros:
+                            reporte_data = {
+                                'indicativo': registro['indicativo'],
+                                'operador': registro['operador'],
+                                'estado': registro['estado'],
+                                'ciudad': registro['ciudad'],
+                                'zona': registro['zona'],
+                                'senal': 59,  # Valor por defecto
+                                'observaciones': f"Reporte de interacción en {st.session_state.plataforma_seleccionada}",
+                                'qrz_captured_by': st.session_state.user.get('username', ''),
+                                'plataforma_id': plataforma_map.get(st.session_state.plataforma_seleccionada),
+                                'plataforma_nombre': st.session_state.plataforma_seleccionada,
+                                'created_by': 1,  # ID del usuario, ajustar según tu sistema
+                                'fecha_reporte': fecha_actual
+                            }
+                            db.save_reporte_rs(reporte_data)
+                        
+                        st.success("✅ Registros guardados exitosamente")
+                        
+                        # Mostrar resumen de registros guardados
+                        st.markdown("### Resumen de Registros Guardados")
+                        
+                        # Obtener registros guardados hoy
+                        registros_hoy = db.get_reportes_rs_por_fecha(fecha_actual)
+                        
+                        if registros_hoy:
+                            # Crear DataFrame para mostrar en tabla
+                            df_resumen = pd.DataFrame([{
+                                'Indicativo': r['indicativo'],
+                                'Operador': r['operador'] or 'N/A',
+                                'Estado': r['estado'] or 'N/A',
+                                'Ciudad': r['ciudad'] or 'N/A',
+                                'Zona': r['zona'] or 'N/A',
+                                'Plataforma': r['plataforma_nombre']
+                            } for r in registros_hoy])
+                            
+                            # Mostrar tabla con estilo
+                            st.dataframe(
+                                df_resumen,
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    'Indicativo': 'Indicativo',
+                                    'Operador': 'Operador',
+                                    'Estado': 'Estado',
+                                    'Ciudad': 'Ciudad',
+                                    'Zona': 'Zona',
+                                    'Plataforma': 'Plataforma'
+                                }
+                            )
+                            
+                            # Mostrar total de registros
+                            st.info(f"Total de registros guardados hoy: **{len(registros_hoy)}**")
+                        
+                    except Exception as e:
+                        st.error(f"Error al guardar los registros: {str(e)}")
+                        st.stop()
+                    
+                    # Limpiar el formulario
+                    st.session_state.mostrar_panel_captura = False
+                    st.rerun()
             
             # Botón de pre-registrar al final del formulario
             pre_registrar = st.form_submit_button("📝 Pre-Registrar Todos")

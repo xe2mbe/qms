@@ -2621,7 +2621,7 @@ class FMREDatabase:
         
         Args:
             fecha_inicio (str): Fecha de inicio en formato 'YYYY-MM-DD'
-            fecha_fin (str, opcional): Fecha de fin en formato 'YYYY-MM-DD'. Si no se especifica, se usa la fecha actual
+            fecha_fin (str, opcional): Fecha de fin en formato 'YYYY-MM-DD'. Si no se especifica, se usa la misma que fecha_inicio
             
         Returns:
             list: Lista de diccionarios con los reportes encontrados
@@ -2631,23 +2631,32 @@ class FMREDatabase:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 
-                if not fecha_fin:
-                    fecha_fin = datetime.now().strftime('%Y-%m-%d')
+                # Si no se especifica fecha_fin, usar la misma que fecha_inicio
+                if fecha_fin is None:
+                    fecha_fin = fecha_inicio
                 
                 cursor.execute('''
-                    SELECT r.*, u.username as usuario_creador
-                    FROM reportes_rs r
-                    LEFT JOIN users u ON r.created_by = u.id
-                    WHERE date(r.fecha_reporte) BETWEEN ? AND ?
-                    ORDER BY r.fecha_reporte DESC
+                    SELECT * FROM reportes_rs 
+                    WHERE fecha_reporte BETWEEN ? AND ?
+                    ORDER BY fecha_reporte DESC, id DESC
                 ''', (fecha_inicio, fecha_fin))
                 
                 return [dict(row) for row in cursor.fetchall()]
                 
         except sqlite3.Error as e:
-            print(f"Error al obtener reportes de redes sociales: {e}")
+            print(f"Error al obtener reportes por fecha: {e}")
             return []
-    
+            
+    def get_reportes_rs_hoy(self):
+        """
+        Obtiene los reportes de redes sociales del día actual
+        
+        Returns:
+            list: Lista de diccionarios con los reportes del día actual
+        """
+        fecha_hoy = datetime.now().strftime('%Y-%m-%d')
+        return self.get_reportes_rs_por_fecha(fecha_hoy, fecha_hoy)
+        
     def get_reporte_rs_por_id(self, reporte_id):
         """
         Obtiene un reporte de redes sociales por su ID

@@ -930,12 +930,39 @@ def show_redes_sociales_form():
             #             st.rerun()
     # Mostrar tabla de registros del día
     st.markdown("---")
-    st.markdown("### Registros del Día")
+    st.markdown("### 📊 Estadísticas del Día")
     
     try:
         db = FMREDatabase()
         fecha_reporte = st.session_state.get('fecha_reporte', datetime.now().date()).strftime('%Y-%m-%d')
         registros_dia = db.get_reportes_rs_por_fecha(fecha_reporte, fecha_reporte)
+        estadisticas = db.get_estadisticas_rs_por_fecha(fecha_reporte, fecha_reporte)
+        
+        # Mostrar estadísticas en tarjetas con texto más grande
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.markdown("<div style='font-size: 15px;'><b>📋 Total de Reportes</b><br>{}</div>".format(
+                estadisticas.get('total_reportes', 0)), unsafe_allow_html=True)
+            
+        with col2:
+            st.markdown("<div style='font-size: 15px;'><b>👥 Estaciones Únicas</b><br>{}</div>".format(
+                estadisticas.get('estaciones_unicas', 0)), unsafe_allow_html=True)
+            
+        with col3:
+            plataformas = ", ".join([f"{p['plataforma_nombre']} ({p['cantidad']})" 
+                                   for p in estadisticas.get('plataformas_mas_utilizadas', [])])
+            st.markdown("<div style='font-size: 14px;'><b>📱 Plataformas</b><br>{}</div>".format(
+                plataformas if plataformas else "Ninguna"), unsafe_allow_html=True)
+            
+        with col4:
+            zonas = ", ".join([f"{z['zona']} ({z['cantidad']})" 
+                             for z in estadisticas.get('zonas_mas_reportadas', [])])
+            st.markdown("<div style='font-size: 14px;'><b>📍 Zonas</b><br>{}</div>".format(
+                zonas if zonas else "Ninguna"), unsafe_allow_html=True)
+        
+        # Mostrar tabla de registros
+        st.markdown("### 📝 Registros del Día")
         
         if registros_dia:
             # Función segura para formatear la fecha/hora
@@ -943,12 +970,28 @@ def show_redes_sociales_form():
                 if not fecha_str:
                     return ''
                 try:
-                    # Intentar con formato que incluye tiempo
+                    # Primero intentar con el formato completo
                     return datetime.strptime(fecha_str, '%Y-%m-%d %H:%M:%S').strftime('%H:%M:%S')
                 except ValueError:
                     try:
                         # Si falla, intentar con solo fecha
-                        return datetime.strptime(fecha_str, '%Y-%m-%d').strftime('%H:%M:%S')
+                        datetime_obj = datetime.strptime(fecha_str, '%Y-%m-%d')
+                        return datetime_obj.strftime('%H:%M:%S')
+                    except:
+                        return '00:00:00'  # Valor por defecto si no se puede formatear
+            
+            # Función para formatear la fecha
+            def format_fecha(fecha_str):
+                if not fecha_str:
+                    return ''
+                try:
+                    # Primero intentar con el formato completo
+                    return datetime.strptime(fecha_str, '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y')
+                except ValueError:
+                    try:
+                        # Si falla, intentar con solo fecha
+                        datetime_obj = datetime.strptime(fecha_str, '%Y-%m-%d')
+                        return datetime_obj.strftime('%d/%m/%Y')
                     except:
                         return fecha_str  # Devolver el valor original si no se puede formatear
             
@@ -960,7 +1003,9 @@ def show_redes_sociales_form():
                 'Ciudad': r.get('ciudad', ''),
                 'Zona': r.get('zona', ''),
                 'Plataforma': r.get('plataforma_nombre', ''),
-                'Hora': format_hora(r.get('fecha_reporte', ''))
+                'Fecha': format_fecha(r.get('fecha_reporte', '')),
+                'Hora': format_hora(r.get('fecha_reporte', '')),
+                'Capturado por': r.get('qrz_captured_by', 'Sistema')
             } for r in registros_dia])
             
             # Ordenar por hora de forma descendente
@@ -977,7 +1022,9 @@ def show_redes_sociales_form():
                     'Ciudad': 'Ciudad',
                     'Zona': 'Zona',
                     'Plataforma': 'Plataforma',
-                    'Hora': 'Hora'
+                    'Fecha': 'Fecha',
+                    'Hora': 'Hora',
+                    'Capturado por': 'Capturado por'
                 },
                 hide_index=True,
                 use_container_width=True

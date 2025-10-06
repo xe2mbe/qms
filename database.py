@@ -2657,6 +2657,95 @@ class FMREDatabase:
         fecha_hoy = datetime.now().strftime('%Y-%m-%d')
         return self.get_reportes_rs_por_fecha(fecha_hoy, fecha_hoy)
         
+    def get_estadisticas_rs_por_fecha(self, fecha_inicio, fecha_fin=None):
+        """
+        Obtiene estadísticas de los reportes de redes sociales en un rango de fechas
+        
+        Args:
+            fecha_inicio (str): Fecha de inicio en formato 'YYYY-MM-DD'
+            fecha_fin (str, opcional): Fecha de fin en formato 'YYYY-MM-DD'. Si no se especifica, se usa la misma que fecha_inicio
+            
+        Returns:
+            dict: Diccionario con las estadísticas
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                # Si no se especifica fecha_fin, usar la misma que fecha_inicio
+                if fecha_fin is None:
+                    fecha_fin = fecha_inicio
+                
+                # Obtener total de reportes
+                cursor.execute('''
+                    SELECT COUNT(*) as total_reportes
+                    FROM reportes_rs 
+                    WHERE fecha_reporte BETWEEN ? AND ?
+                ''', (fecha_inicio, fecha_fin))
+                total_reportes = cursor.fetchone()['total_reportes']
+                
+                # Obtener total de estaciones únicas
+                cursor.execute('''
+                    SELECT COUNT(DISTINCT indicativo) as estaciones_unicas
+                    FROM reportes_rs 
+                    WHERE fecha_reporte BETWEEN ? AND ?
+                ''', (fecha_inicio, fecha_fin))
+                estaciones_unicas = cursor.fetchone()['estaciones_unicas']
+                
+                # Obtener plataformas más utilizadas
+                cursor.execute('''
+                    SELECT plataforma_nombre, COUNT(*) as cantidad
+                    FROM reportes_rs 
+                    WHERE fecha_reporte BETWEEN ? AND ?
+                    GROUP BY plataforma_nombre
+                    ORDER BY cantidad DESC
+                    LIMIT 3
+                ''', (fecha_inicio, fecha_fin))
+                plataformas_mas_utilizadas = [dict(row) for row in cursor.fetchall()]
+                
+                # Obtener zonas más reportadas
+                cursor.execute('''
+                    SELECT zona, COUNT(*) as cantidad
+                    FROM reportes_rs 
+                    WHERE fecha_reporte BETWEEN ? AND ?
+                      AND zona IS NOT NULL AND zona != ''
+                    GROUP BY zona
+                    ORDER BY cantidad DESC
+                    LIMIT 3
+                ''', (fecha_inicio, fecha_fin))
+                zonas_mas_reportadas = [dict(row) for row in cursor.fetchall()]
+                
+                # Obtener estados más reportados
+                cursor.execute('''
+                    SELECT estado, COUNT(*) as cantidad
+                    FROM reportes_rs 
+                    WHERE fecha_reporte BETWEEN ? AND ?
+                      AND estado IS NOT NULL AND estado != ''
+                    GROUP BY estado
+                    ORDER BY cantidad DESC
+                    LIMIT 3
+                ''', (fecha_inicio, fecha_fin))
+                estados_mas_reportados = [dict(row) for row in cursor.fetchall()]
+                
+                return {
+                    'total_reportes': total_reportes,
+                    'estaciones_unicas': estaciones_unicas,
+                    'plataformas_mas_utilizadas': plataformas_mas_utilizadas,
+                    'zonas_mas_reportadas': zonas_mas_reportadas,
+                    'estados_mas_reportados': estados_mas_reportados
+                }
+                
+        except sqlite3.Error as e:
+            print(f"Error al obtener estadísticas por fecha: {e}")
+            return {
+                'total_reportes': 0,
+                'estaciones_unicas': 0,
+                'plataformas_mas_utilizadas': [],
+                'zonas_mas_reportadas': [],
+                'estados_mas_reportados': []
+            }
+        
     def get_reporte_rs_por_id(self, reporte_id):
         """
         Obtiene un reporte de redes sociales por su ID

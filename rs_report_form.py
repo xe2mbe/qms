@@ -422,7 +422,11 @@ def show_redes_sociales_form():
                             comentarios = st.session_state.get('comentarios', 0)
                             compartidos = st.session_state.get('compartidos', 0)
                             reproducciones = st.session_state.get('reproducciones', 0)
-                            fecha_reporte = st.session_state.fecha_reporte
+                            # Asegurarse de que la fecha del reporte sea un objeto date
+                            if hasattr(st.session_state.fecha_reporte, 'date'):
+                                fecha_reporte = st.session_state.fecha_reporte.date()
+                            else:
+                                fecha_reporte = st.session_state.fecha_reporte
                             created_by = st.session_state.user.get('username', 'sistema')
                             
                             # Obtener el ID de la plataforma del mapa de plataformas
@@ -462,7 +466,7 @@ def show_redes_sociales_form():
                                 'comentarios': int(comentarios) if comentarios else 0,
                                 'compartidos': int(compartidos) if compartidos else 0,
                                 'reproducciones': int(reproducciones) if reproducciones else 0,
-                                'fecha_reporte': fecha_reporte.strftime('%Y-%m-%d') if hasattr(fecha_reporte, 'strftime') else fecha_reporte,
+                                'fecha_reporte': fecha_reporte.strftime('%Y-%m-%d') if hasattr(fecha_reporte, 'strftime') else str(fecha_reporte),
                                 'captured_by': created_by,
                                 'observaciones': f"Reporte de {plataforma_nombre} capturado por {created_by}"
                             }
@@ -476,7 +480,7 @@ def show_redes_sociales_form():
                                     'comentarios': int(comentarios) if comentarios else 0,
                                     'compartidos': int(compartidos) if compartidos else 0,
                                     'reproducciones': int(reproducciones) if reproducciones else 0,
-                                    'fecha_reporte': fecha_reporte.strftime('%Y-%m-%d') if hasattr(fecha_reporte, 'strftime') else fecha_reporte,
+                                    'fecha_reporte': fecha_reporte.strftime('%Y-%m-%d') if hasattr(fecha_reporte, 'strftime') else str(fecha_reporte),
                                     'created_by': created_by,
                                     'indicativo': registro['indicativo'],
                                     'operador': registro['operador'],
@@ -661,7 +665,7 @@ def show_redes_sociales_form():
                                 'plataforma_id': plataforma_map.get(st.session_state.plataforma_seleccionada),
                                 'plataforma_nombre': st.session_state.plataforma_seleccionada,
                                 'created_by': 1,  # ID del usuario, ajustar según tu sistema
-                                'fecha_reporte': fecha_actual
+                                'fecha_reporte': st.session_state.fecha_reporte.strftime('%Y-%m-%d')
                             }
                             db.save_reporte_rs(reporte_data)
                         
@@ -670,8 +674,10 @@ def show_redes_sociales_form():
                         # Mostrar resumen de registros guardados
                         st.markdown("### Resumen de Registros Guardados")
                         
-                        # Obtener registros guardados hoy
-                        registros_hoy = db.get_reportes_rs_por_fecha(fecha_actual)
+                        # Obtener registros guardados para la fecha seleccionada
+                        registros_hoy = db.get_reportes_rs_por_fecha(
+                            st.session_state.fecha_reporte.strftime('%Y-%m-%d')
+                        )
                         
                         if registros_hoy:
                             # Crear DataFrame para mostrar en tabla

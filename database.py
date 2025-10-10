@@ -2,6 +2,7 @@ import sqlite3
 import hashlib
 import secrets
 import string
+import json
 from datetime import datetime
 
 class FMREDatabase:
@@ -9,7 +10,6 @@ class FMREDatabase:
         self.db_path = db_path
         self.init_database()
         self.ensure_zona_column_exists()
-        
     def _check_password(self, password, hashed_password):
         """
         Verifica si la contraseña coincide con el hash almacenado
@@ -2659,14 +2659,14 @@ class FMREDatabase:
         
     def get_estadisticas_rs_por_fecha(self, fecha_inicio, fecha_fin=None):
         """
-        Obtiene estadísticas de los reportes de redes sociales en un rango de fechas
+        Obtiene estadísticas de las métricas de redes sociales en un rango de fechas
         
         Args:
             fecha_inicio (str): Fecha de inicio en formato 'YYYY-MM-DD'
             fecha_fin (str, opcional): Fecha de fin en formato 'YYYY-MM-DD'. Si no se especifica, se usa la misma que fecha_inicio
             
         Returns:
-            dict: Diccionario con las estadísticas
+            dict: Diccionario con las estadísticas de interacción
         """
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -2677,73 +2677,87 @@ class FMREDatabase:
                 if fecha_fin is None:
                     fecha_fin = fecha_inicio
                 
-                # Obtener total de reportes
+                # Obtener total de registros
                 cursor.execute('''
-                    SELECT COUNT(*) as total_reportes
-                    FROM reportes_rs 
+                    SELECT COUNT(*) as total_registros
+                    FROM estadisticas_rs 
                     WHERE fecha_reporte BETWEEN ? AND ?
                 ''', (fecha_inicio, fecha_fin))
-                total_reportes = cursor.fetchone()['total_reportes']
+                total_registros = cursor.fetchone()['total_registros']
                 
-                # Obtener total de estaciones únicas
+                # Obtener métricas agregadas de interacción
                 cursor.execute('''
-                    SELECT COUNT(DISTINCT indicativo) as estaciones_unicas
-                    FROM reportes_rs 
+                    SELECT 
+                        SUM(me_gusta) as total_me_gusta,
+                        SUM(comentarios) as total_comentarios,
+                        SUM(compartidos) as total_compartidos,
+                        SUM(reproducciones) as total_reproducciones,
+                        SUM(alcance) as total_alcance,
+                        SUM(interacciones) as total_interacciones
+                    FROM estadisticas_rs 
                     WHERE fecha_reporte BETWEEN ? AND ?
                 ''', (fecha_inicio, fecha_fin))
-                estaciones_unicas = cursor.fetchone()['estaciones_unicas']
+                metricas = cursor.fetchone()
                 
-                # Obtener plataformas más utilizadas
+                # Obtener plataformas con más interacción
                 cursor.execute('''
-                    SELECT plataforma_nombre, COUNT(*) as cantidad
-                    FROM reportes_rs 
+                    SELECT 
+                        plataforma_nombre,
+                        SUM(interacciones) as total_interacciones,
+                        COUNT(*) as total_registros
+                    FROM estadisticas_rs 
                     WHERE fecha_reporte BETWEEN ? AND ?
                     GROUP BY plataforma_nombre
-                    ORDER BY cantidad DESC
+                    ORDER BY total_interacciones DESC
                     LIMIT 3
                 ''', (fecha_inicio, fecha_fin))
-                plataformas_mas_utilizadas = [dict(row) for row in cursor.fetchall()]
+                plataformas_top = [dict(row) for row in cursor.fetchall()]
                 
-                # Obtener zonas más reportadas
+                # Obtener métricas por día para gráficos
                 cursor.execute('''
-                    SELECT zona, COUNT(*) as cantidad
-                    FROM reportes_rs 
+                    SELECT 
+                        fecha_reporte,
+                        SUM(me_gusta) as me_gusta,
+                        SUM(comentarios) as comentarios,
+                        SUM(compartidos) as compartidos,
+                        SUM(reproducciones) as reproducciones,
+                        SUM(alcance) as alcance,
+                        SUM(interacciones) as interacciones
+                    FROM estadisticas_rs 
                     WHERE fecha_reporte BETWEEN ? AND ?
-                      AND zona IS NOT NULL AND zona != ''
-                    GROUP BY zona
-                    ORDER BY cantidad DESC
-                    LIMIT 3
+                    GROUP BY fecha_reporte
+                    ORDER BY fecha_reporte
                 ''', (fecha_inicio, fecha_fin))
-                zonas_mas_reportadas = [dict(row) for row in cursor.fetchall()]
-                
-                # Obtener estados más reportados
-                cursor.execute('''
-                    SELECT estado, COUNT(*) as cantidad
-                    FROM reportes_rs 
-                    WHERE fecha_reporte BETWEEN ? AND ?
-                      AND estado IS NOT NULL AND estado != ''
-                    GROUP BY estado
-                    ORDER BY cantidad DESC
-                    LIMIT 3
-                ''', (fecha_inicio, fecha_fin))
-                estados_mas_reportados = [dict(row) for row in cursor.fetchall()]
+                datos_por_dia = [dict(row) for row in cursor.fetchall()]
                 
                 return {
-                    'total_reportes': total_reportes,
-                    'estaciones_unicas': estaciones_unicas,
-                    'plataformas_mas_utilizadas': plataformas_mas_utilizadas,
-                    'zonas_mas_reportadas': zonas_mas_reportadas,
-                    'estados_mas_reportados': estados_mas_reportados
+                    'total_registros': total_registros,
+                    'metricas': {
+                        'me_gusta': metricas['total_me_gusta'] or 0,
+                        'comentarios': metricas['total_comentarios'] or 0,
+                        'compartidos': metricas['total_compartidos'] or 0,
+                        'reproducciones': metricas['total_reproducciones'] or 0,
+                        'alcance': metricas['total_alcance'] or 0,
+                        'interacciones': metricas['total_interacciones'] or 0
+                    },
+                    'plataformas_top': plataformas_top,
+                    'datos_por_dia': datos_por_dia
                 }
-                
+                    
         except sqlite3.Error as e:
             print(f"Error al obtener estadísticas por fecha: {e}")
             return {
-                'total_reportes': 0,
-                'estaciones_unicas': 0,
-                'plataformas_mas_utilizadas': [],
-                'zonas_mas_reportadas': [],
-                'estados_mas_reportados': []
+                'total_registros': 0,
+                'metricas': {
+                    'me_gusta': 0,
+                    'comentarios': 0,
+                    'compartidos': 0,
+                    'reproducciones': 0,
+                    'alcance': 0,
+                    'interaccion': 0
+                },
+                'plataformas_top': [],
+                'datos_por_dia': []
             }
         
     def get_reporte_rs_por_id(self, reporte_id):

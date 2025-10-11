@@ -413,7 +413,7 @@ def show_gestion():
     st.title("🔧 Gestión")
     
     # Crear pestañas
-    tabs = ["👥 Usuarios", "📅 Eventos", "📍 Zonas", "📻 Radioexperimentadores", "🏢 Estaciones", "📱 Redes Sociales"]
+    tabs = ["👥 Usuarios", "📅 Eventos", "📍 Zonas", "📻 HAMs", "🏢 Estaciones", "📱 Redes Sociales"]
     
     # Crear botones de pestaña personalizados
     cols = st.columns(len(tabs))

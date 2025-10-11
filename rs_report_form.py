@@ -16,37 +16,37 @@ def show_redes_sociales_form():
     # Obtener la lista de plataformas (activas e inactivas)
     plataformas = db.get_rs_entries(active_only=True)
     
-    # Mostrar información de depuración
-    st.sidebar.write("=== Depuración de plataformas ===")
-    st.sidebar.write(f"Total de plataformas encontradas: {len(plataformas)}")
-    for i, p in enumerate(plataformas, 1):
-        st.sidebar.write(f"{i}. {p.get('plataforma', 'Sin plataforma')} - {p.get('nombre', 'Sin nombre')} (Activo: {bool(p.get('is_active', False))})")
+    # # Mostrar información de depuración
+    # st.sidebar.write("=== Depuración de plataformas ===")
+    # st.sidebar.write(f"Total de plataformas encontradas: {len(plataformas)}")
+    # for i, p in enumerate(plataformas, 1):
+    #     st.sidebar.write(f"{i}. {p.get('plataforma', 'Sin plataforma')} - {p.get('nombre', 'Sin nombre')} (Activo: {bool(p.get('is_active', False))})")
     
-    # Crear opciones para el selectbox
+     # Crear opciones para el selectbox
     plataforma_options = [""]  # Opción vacía por defecto
     plataforma_map = {}
     
-    # Cargar las plataformas desde la base de datos
-    for p in plataformas:
-        # Obtener el ID de la plataforma
-        plataforma_id = p.get('id')
+    # # Cargar las plataformas desde la base de datos
+    # for p in plataformas:
+    #     # Obtener el ID de la plataforma
+    #     plataforma_id = p.get('id')
         
-        # Usar solo el nombre de la plataforma como valor mostrado
-        display_name = p.get('plataforma', '')
-        # Agregar el nombre del grupo si existe
-        if p.get('nombre'):
-            display_name = f"{display_name} - {p['nombre']}"
+    #     # Usar solo el nombre de la plataforma como valor mostrado
+    #     display_name = p.get('plataforma', '')
+    #     # Agregar el nombre del grupo si existe
+    #     if p.get('nombre'):
+    #         display_name = f"{display_name} - {p['nombre']}"
         
-        if display_name and plataforma_id is not None:  # Solo agregar si hay un nombre para mostrar y un ID válido
-            plataforma_options.append(display_name)
-            # Asegurarse de que el ID sea un entero
-            try:
-                plataforma_map[display_name] = int(plataforma_id)
-                st.sidebar.write(f"Mapeo agregado: '{display_name}' -> {plataforma_map[display_name]} (tipo: {type(plataforma_map[display_name]).__name__})")
-            except (ValueError, TypeError) as e:
-                st.sidebar.error(f"Error al convertir ID para {display_name}: {e}")
-                continue
-            plataforma_map[display_name] = int(plataforma_id)  # Asegurarse de que sea un entero
+    #     if display_name and plataforma_id is not None:  # Solo agregar si hay un nombre para mostrar y un ID válido
+    #         plataforma_options.append(display_name)
+    #         # Asegurarse de que el ID sea un entero
+    #         try:
+    #             plataforma_map[display_name] = int(plataforma_id)
+    #             st.sidebar.write(f"Mapeo agregado: '{display_name}' -> {plataforma_map[display_name]} (tipo: {type(plataforma_map[display_name]).__name__})")
+    #         except (ValueError, TypeError) as e:
+    #             st.sidebar.error(f"Error al convertir ID para {display_name}: {e}")
+    #             continue
+    #         plataforma_map[display_name] = int(plataforma_id)  # Asegurarse de que sea un entero
     
     # Inicializar el estado del expander si no existe
     if 'parametros_expanded' not in st.session_state:
@@ -1264,13 +1264,8 @@ def show_redes_sociales_form():
                 'Zona': r.get('zona', ''),
                 'Plataforma': r.get('plataforma_nombre', ''),
                 'Fecha': format_fecha(r.get('fecha_reporte', '')),
-                'Hora': format_hora(r.get('fecha_reporte', '')),
                 'Capturado por': r.get('qrz_captured_by', 'Sistema')
             } for r in registros_dia])
-            
-            # Ordenar por hora de forma descendente
-            if 'Hora' in df_registros.columns:
-                df_registros = df_registros.sort_values('Hora', ascending=False)
             
             # Mostrar la tabla con estilo
             st.dataframe(
@@ -1283,7 +1278,6 @@ def show_redes_sociales_form():
                     'Zona': 'Zona',
                     'Plataforma': 'Plataforma',
                     'Fecha': 'Fecha',
-                    'Hora': 'Hora',
                     'Capturado por': 'Capturado por'
                 },
                 hide_index=True,

@@ -698,34 +698,99 @@ def show_crear_evento():
 def show_reports():
     """Muestra la sección de reportes con análisis completo"""
     st.title("📊 Reportes y Análisis")
+    tipo_reportes = st.selectbox("Tipo de reportes", ["Tradicional", "Redes Sociales"], index=0, key="reports_tipo")
+    if tipo_reportes == "Tradicional":
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+            "📈 Actividad General",
+            "🌍 Análisis Geográfico",
+            "📡 Sistemas de Radio",
+            "📊 Tendencias",
+            "⚖️ Comparativos",
+            "📅 Reportes por Evento"
+        ])
 
-    # Crear pestañas para diferentes tipos de reportes
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📈 Actividad General",
-        "🌍 Análisis Geográfico",
-        "📡 Sistemas de Radio",
-        "📊 Tendencias",
-        "⚖️ Comparativos",
-        "📅 Reportes por Evento"
-    ])
+        with tab1:
+            show_actividad_general_report()
 
-    with tab1:
-        show_actividad_general_report()
+        with tab2:
+            show_geografico_report()
 
-    with tab2:
-        show_geografico_report()
+        with tab3:
+            show_sistemas_report()
 
-    with tab3:
-        show_sistemas_report()
+        with tab4:
+            show_tendencias_report()
 
-    with tab4:
-        show_tendencias_report()
+        with tab5:
+            show_comparativos_report()
 
-    with tab5:
-        show_comparativos_report()
+        with tab6:
+            show_evento_report()
+    else:
+        show_rs_reports()
+ 
+def show_rs_reports():
+    st.subheader("📱 Reportes de Redes Sociales")
+    col1, col2 = st.columns(2)
+    from datetime import datetime
+    with col1:
+        fecha_inicio = st.date_input("Fecha inicio", value=datetime.now().replace(day=1), key="rs_fecha_inicio")
+    with col2:
+        fecha_fin = st.date_input("Fecha fin", value=datetime.now(), key="rs_fecha_fin")
+    if fecha_inicio > fecha_fin:
+        st.error("❌ La fecha de inicio debe ser anterior a la fecha de fin")
+        return
+    fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d')
+    fecha_fin_str = fecha_fin.strftime('%Y-%m-%d')
+    reportes_rs = db.get_reportes_rs_por_fecha(fecha_inicio_str, fecha_fin_str)
+    est = db.get_estadisticas_rs_por_fecha(fecha_inicio_str, fecha_fin_str)
 
-    with tab6:
-        show_evento_report()
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1:
+        st.metric("Total", int(((est or {}).get('total_registros') or 0)))
+    metricas = (est or {}).get('metricas', {}) or {}
+    with c2:
+        st.metric("Me gusta", int(metricas.get('me_gusta') or 0))
+    with c3:
+        st.metric("Comentarios", int(metricas.get('comentarios') or 0))
+    with c4:
+        st.metric("Compartidos", int(metricas.get('compartidos') or 0))
+    with c5:
+        st.metric("Interacciones", int(metricas.get('interacciones') or 0))
+
+    plataformas_top = (est or {}).get('plataformas_top', []) or []
+    if plataformas_top:
+        import pandas as pd
+        df_plat = pd.DataFrame(plataformas_top)
+        st.dataframe(df_plat, hide_index=True, use_container_width=True)
+
+    if reportes_rs:
+        import pandas as pd
+        df = pd.DataFrame([
+            {
+                'Fecha': r.get('fecha_reporte', ''),
+                'Indicativo': r.get('indicativo', ''),
+                'Operador': r.get('operador', ''),
+                'Plataforma': r.get('plataforma_nombre', ''),
+                'Estado': r.get('estado', ''),
+                'Ciudad': r.get('ciudad', ''),
+                'Zona': r.get('zona', ''),
+                'Señal': r.get('senal', ''),
+                'Capturado Por': r.get('qrz_captured_by', ''),
+                'Operando': r.get('qrz_station', ''),
+                'Observaciones': r.get('observaciones', '')
+            }
+            for r in reportes_rs
+        ])
+        st.dataframe(df, hide_index=True, use_container_width=True)
+
+        datos_por_dia = (est or {}).get('datos_por_dia', []) or []
+        if datos_por_dia:
+            df_dia = pd.DataFrame(datos_por_dia)
+            if not df_dia.empty and 'interacciones' in df_dia.columns and 'fecha_reporte' in df_dia.columns:
+                st.line_chart(df_dia.set_index('fecha_reporte')['interacciones'])
+    else:
+        st.info("No hay reportes de redes sociales para el período seleccionado.")
 
 def show_actividad_general_report():
     """Muestra reporte de actividad general con filtros"""

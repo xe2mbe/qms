@@ -26,27 +26,27 @@ def show_redes_sociales_form():
     plataforma_options = [""]  # Opción vacía por defecto
     plataforma_map = {}
     
-    # # Cargar las plataformas desde la base de datos
-    # for p in plataformas:
-    #     # Obtener el ID de la plataforma
-    #     plataforma_id = p.get('id')
+    # Cargar las plataformas desde la base de datos
+    for p in plataformas:
+         # Obtener el ID de la plataforma
+         plataforma_id = p.get('id')
         
-    #     # Usar solo el nombre de la plataforma como valor mostrado
-    #     display_name = p.get('plataforma', '')
-    #     # Agregar el nombre del grupo si existe
-    #     if p.get('nombre'):
-    #         display_name = f"{display_name} - {p['nombre']}"
+         # Usar solo el nombre de la plataforma como valor mostrado
+         display_name = p.get('plataforma', '')
+         # Agregar el nombre del grupo si existe
+         if p.get('nombre'):
+             display_name = f"{display_name} - {p['nombre']}"
         
-    #     if display_name and plataforma_id is not None:  # Solo agregar si hay un nombre para mostrar y un ID válido
-    #         plataforma_options.append(display_name)
-    #         # Asegurarse de que el ID sea un entero
-    #         try:
-    #             plataforma_map[display_name] = int(plataforma_id)
-    #             st.sidebar.write(f"Mapeo agregado: '{display_name}' -> {plataforma_map[display_name]} (tipo: {type(plataforma_map[display_name]).__name__})")
-    #         except (ValueError, TypeError) as e:
-    #             st.sidebar.error(f"Error al convertir ID para {display_name}: {e}")
-    #             continue
-    #         plataforma_map[display_name] = int(plataforma_id)  # Asegurarse de que sea un entero
+         if display_name and plataforma_id is not None:  # Solo agregar si hay un nombre para mostrar y un ID válido
+             plataforma_options.append(display_name)
+             # Asegurarse de que el ID sea un entero
+             try:
+                 plataforma_map[display_name] = int(plataforma_id)
+                 st.sidebar.write(f"Mapeo agregado: '{display_name}' -> {plataforma_map[display_name]} (tipo: {type(plataforma_map[display_name]).__name__})")
+             except (ValueError, TypeError) as e:
+                 st.sidebar.error(f"Error al convertir ID para {display_name}: {e}")
+                 continue
+             plataforma_map[display_name] = int(plataforma_id)  # Asegurarse de que sea un entero
     
     # Inicializar el estado del expander si no existe
     if 'parametros_expanded' not in st.session_state:

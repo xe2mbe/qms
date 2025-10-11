@@ -42,9 +42,9 @@ def show_redes_sociales_form():
              # Asegurarse de que el ID sea un entero
              try:
                  plataforma_map[display_name] = int(plataforma_id)
-                 st.sidebar.write(f"Mapeo agregado: '{display_name}' -> {plataforma_map[display_name]} (tipo: {type(plataforma_map[display_name]).__name__})")
+                 
              except (ValueError, TypeError) as e:
-                 st.sidebar.error(f"Error al convertir ID para {display_name}: {e}")
+                 
                  continue
              plataforma_map[display_name] = int(plataforma_id)  # Asegurarse de que sea un entero
     

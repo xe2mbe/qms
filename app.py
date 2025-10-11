@@ -3123,41 +3123,57 @@ def _show_toma_reportes_tradicional():
                     registro["zona"] = ""
                     registro["_es_swr"] = True
                 else:
-                    # Buscar en radioexperimentadores
-                    rx = db.get_radioexperimentador_por_indicativo(indicativo)
-                    if rx:
+                    rep = db.get_ultimo_reporte_por_indicativo(indicativo)
+                    if rep:
                         registro.update({
-                            "nombre_operador": _safe_str(rx.get("nombre_completo","")),
-                            "apellido_paterno": _safe_str(rx.get("apellido_paterno","")),
-                            "apellido_materno": _safe_str(rx.get("apellido_materno","")),
-                            "estado": _safe_str(rx.get("estado","")),
-                            "ciudad": _safe_str(rx.get("municipio","")),
-                            "colonia": _safe_str(rx.get("colonia","")),
-                            "codigo_postal": _safe_str(rx.get("codigo_postal","")),
-                            "telefono": _safe_str(rx.get("telefono","")),
-                            "email": _safe_str(rx.get("email","")),
+                            "nombre_operador": _safe_str(rep.get("nombre", "")),
+                            "estado": _safe_str(rep.get("estado", "")),
+                            "ciudad": _safe_str(rep.get("ciudad", "")),
                         })
-                        zona_bd = _safe_str(rx.get("zona",""))
-                        registro["zona"] = _estimar_zona(indicativo, zona_bd=zona_bd, result_validacion=result_val)
-
-                        # Si sigue sin estado/ciudad, usa SWL como respaldo
+                        zona_rep = _safe_str(rep.get("zona", ""))
+                        registro["zona"] = zona_rep if zona_rep else _estimar_zona(indicativo, zona_bd="", result_validacion=result_val)
+                        registro["origen"] = "Reportes"
                         if not registro.get("estado"):
                             registro["estado"] = _safe_str(pr.get("swl_estado"))
                         if not registro.get("ciudad"):
                             registro["ciudad"] = _safe_str(pr.get("swl_ciudad"))
                     else:
-                        # No existe en BD → usar SWL + estimar zona y dejar nombre vacío
-                        registro.update({
-                            "nombre_operador": "",
-                            "estado": _safe_str(pr.get("swl_estado")),
-                            "ciudad": _safe_str(pr.get("swl_ciudad")),
-                        })
-                        # Extranjero directo si la validación lo marcó así
-                        if result_val.get("Zona") == "Extranjera":
-                            registro["zona"] = "EXT"
-                            registro["estado"] = "Extranjero"
+                        # Buscar en radioexperimentadores
+                        rx = db.get_radioexperimentador_por_indicativo(indicativo)
+                        if rx:
+                            registro.update({
+                                "nombre_operador": _safe_str(rx.get("nombre_completo","")),
+                                "apellido_paterno": _safe_str(rx.get("apellido_paterno","")),
+                                "apellido_materno": _safe_str(rx.get("apellido_materno","")),
+                                "estado": _safe_str(rx.get("estado","")),
+                                "ciudad": _safe_str(rx.get("municipio","")),
+                                "colonia": _safe_str(rx.get("colonia","")),
+                                "codigo_postal": _safe_str(rx.get("codigo_postal","")),
+                                "telefono": _safe_str(rx.get("telefono","")),
+                                "email": _safe_str(rx.get("email","")),
+                            })
+                            zona_bd = _safe_str(rx.get("zona",""))
+                            registro["zona"] = _estimar_zona(indicativo, zona_bd=zona_bd, result_validacion=result_val)
+                            registro["origen"] = "Radioexperimentadores"
+
+                            # Si sigue sin estado/ciudad, usa SWL como respaldo
+                            if not registro.get("estado"):
+                                registro["estado"] = _safe_str(pr.get("swl_estado"))
+                            if not registro.get("ciudad"):
+                                registro["ciudad"] = _safe_str(pr.get("swl_ciudad"))
                         else:
-                            registro["zona"] = _estimar_zona(indicativo, zona_bd="", result_validacion=result_val)
+                            # No existe en BD → usar SWL + estimar zona y dejar nombre vacío
+                            registro.update({
+                                "nombre_operador": "",
+                                "estado": _safe_str(pr.get("swl_estado")),
+                                "ciudad": _safe_str(pr.get("swl_ciudad")),
+                            })
+                            # Extranjero directo si la validación lo marcó así
+                            if result_val.get("Zona") == "Extranjera":
+                                registro["zona"] = "EXT"
+                                registro["estado"] = "Extranjero"
+                            else:
+                                registro["zona"] = _estimar_zona(indicativo, zona_bd="", result_validacion=result_val)
 
                 # HF extras
                 if pr.get("sistema_preferido") == "HF":
@@ -3381,7 +3397,7 @@ def _show_toma_reportes_tradicional():
                         'senal': int(registro.get('senal') or 59),
                         'fecha_reporte': pr.get('fecha_reporte', get_current_cdmx_time().strftime('%d/%m/%Y')),
                         'tipo_reporte': pr.get('tipo_reporte','Boletín'),
-                        'origen': 'Sistema',
+                        'origen': _safe_str(registro.get('origen') or 'Manual'),
                         'qrz_captured_by': usuario_logueado,  # Indicativo del usuario que capturó el reporte
                         'qrz_station': qrz_station  # Estación QRZ del usuario
                     }
@@ -3549,6 +3565,13 @@ def _show_toma_reportes_tradicional():
                     except ValueError: continue
                 return ''
 
+            def format_date(dt_str):
+                if not dt_str: return ''
+                for fmt in ('%Y-%m-%d %H:%M:%S','%d/%m/%Y %H:%M:%S'):
+                    try: return datetime.strptime(dt_str, fmt).strftime('%d/%m/%Y')
+                    except ValueError: continue
+                return ''
+
             df_reportes = pd.DataFrame([{
                 'Indicativo': r.get('indicativo',''),
                 'Nombre': r.get('nombre',''),
@@ -3557,9 +3580,11 @@ def _show_toma_reportes_tradicional():
                 'Estado': r.get('estado',''),
                 'Ciudad': r.get('ciudad',''),
                 'Señal': r.get('senal',''),
+                'Fecha': format_date(r.get('fecha_reporte','')),
                 'Hora': format_time(r.get('fecha_reporte')),
-                'Operando': r.get('qrz_station',''),
-                'Capturado Por': r.get('qrz_captured_by','')
+                'Origen': r.get('origen',''),
+                'Capturado Por': r.get('qrz_captured_by',''),
+                'Operando': r.get('qrz_station','')
             } for r in reportes])
 
             st.data_editor(
@@ -3572,6 +3597,7 @@ def _show_toma_reportes_tradicional():
                     'Estado': st.column_config.TextColumn("Estado"),
                     'Ciudad': st.column_config.TextColumn("Ciudad"),
                     'Señal': st.column_config.NumberColumn("Señal"),
+                    'Origen': st.column_config.TextColumn("Origen"),
                     'Hora': st.column_config.TextColumn("Hora")
                 },
                 hide_index=True,

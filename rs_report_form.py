@@ -61,7 +61,19 @@ def show_redes_sociales_form():
         st.session_state.fecha_reporte = datetime.now().date()
     if 'num_registros' not in st.session_state:
         st.session_state.num_registros = 1
-    
+        # ==========================
+    # UI: Encabezado
+    # ==========================
+    #st.title("📝 Toma de Reportes")
+    st.markdown("### Registro de Reportes")
+    st.markdown("""
+    <div style="background-color: #f0f8ff; padding: 15px; border-radius: 10px; border-left: 4px solid #1f77b4; margin-bottom: 20px;">
+        <h4 style="color: #1f77b4; margin-top: 0;">📋 Configuración de Parámetros</h4>
+        <p>Selecciona los parámetros iniciales para la captura de reporte de redes sociales.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
     # Crear el formulario principal
     with st.form(key='reporte_form'):
         # Sección de parámetros del reporte
@@ -86,14 +98,14 @@ def show_redes_sociales_form():
                     help="Selecciona la fecha del reporte"
                 )
             
-            # Detalles del reporte
-            st.session_state.contenido = st.text_area(
-                "Contenido del reporte", 
-                value=st.session_state.contenido,
-                placeholder="Ingresa el contenido del reporte...",
-                height=100,
-                key='contenido_textarea'
-            )
+            # # Detalles del reporte
+            # st.session_state.contenido = st.text_area(
+            #     "Contenido del reporte", 
+            #     value=st.session_state.contenido,
+            #     placeholder="Ingresa el contenido del reporte...",
+            #     height=100,
+            #     key='contenido_textarea'
+            #)
             
             # Slider para seleccionar cantidad de registros
             st.session_state.num_registros = st.slider(

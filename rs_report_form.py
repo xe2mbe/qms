@@ -65,7 +65,7 @@ def show_redes_sociales_form():
     # Crear el formulario principal
     with st.form(key='reporte_form'):
         # Sección de parámetros del reporte
-        with st.expander("📋 Información del Reporte", expanded=st.session_state.parametros_expanded):
+        with st.expander("📋 Parámetros de Captura", expanded=st.session_state.parametros_expanded):
             # Primera sección: Parámetros del reporte
             col1, col2 = st.columns(2)
             
@@ -1153,7 +1153,7 @@ def show_redes_sociales_form():
             #             st.rerun()
     # Mostrar tabla de registros del día
     st.markdown("---")
-    st.markdown("### 📊 Estadísticas del Día")
+    st.markdown("### 📊 Estadísticas en Redes Sociales del Día")
     
     try:
         db = FMREDatabase()
@@ -1162,10 +1162,9 @@ def show_redes_sociales_form():
         estadisticas = db.get_estadisticas_rs_por_fecha(fecha_reporte, fecha_reporte)
         
         # Mostrar estadísticas en tarjetas con texto más grande
-        st.markdown("### 📊 Estadísticas de Interacción en Redes Sociales")
-        
+
         # Primera fila de métricas
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3,col4, col5 = st.columns(5)
         
         with col1:
             st.markdown("<div style='font-size: 15px;'><b>❤️ Me Gusta</b><br>{:,}</div>".format(
@@ -1179,18 +1178,11 @@ def show_redes_sociales_form():
             st.markdown("<div style='font-size: 15px;'><b>🔄 Compartidos</b><br>{:,}</div>".format(
                 estadisticas.get('metricas', {}).get('compartidos', 0)), unsafe_allow_html=True)
         
-        # Segunda fila de métricas
-        col4, col5, col6 = st.columns(3)
-        
         with col4:
             st.markdown("<div style='font-size: 15px;'><b>▶️ Reproducciones</b><br>{:,}</div>".format(
                 estadisticas.get('metricas', {}).get('reproducciones', 0)), unsafe_allow_html=True)
             
         with col5:
-            st.markdown("<div style='font-size: 15px;'><b>👥 Alcance</b><br>{:,}</div>".format(
-                estadisticas.get('metricas', {}).get('alcance', 0)), unsafe_allow_html=True)
-            
-        with col6:
             st.markdown("<div style='font-size: 15px;'><b>🤝 Interacciones Totales</b><br>{:,}</div>".format(
                 estadisticas.get('metricas', {}).get('interacciones', 0)), unsafe_allow_html=True)
         
@@ -1215,27 +1207,7 @@ def show_redes_sociales_form():
                 </div>
                 """, unsafe_allow_html=True)
         
-        # Mostrar gráficos de datos por día si hay datos
-        if estadisticas.get('datos_por_dia'):
-            st.markdown("### 📈 Tendencias por Día")
-            df_diario = pd.DataFrame(estadisticas['datos_por_dia'])
-            if not df_diario.empty:
-                df_diario['fecha_reporte'] = pd.to_datetime(df_diario['fecha_reporte'])
-                df_diario = df_diario.set_index('fecha_reporte')
-                
-                # Gráfico de líneas para métricas principales
-                st.line_chart(df_diario[['me_gusta', 'comentarios', 'compartidos', 'reproducciones', 'alcance', 'interacciones']])
-                
-                # Mostrar tabla con los datos detallados
-                st.markdown("#### Datos Detallados")
-                st.dataframe(df_diario[['me_gusta', 'comentarios', 'compartidos', 'reproducciones', 'alcance', 'interacciones']].rename(columns={
-                    'me_gusta': 'Me Gusta',
-                    'comentarios': 'Comentarios',
-                    'compartidos': 'Compartidos',
-                    'reproducciones': 'Reproducciones',
-                    'alcance': 'Alcance',
-                    'interacciones': 'Interacciones'
-                }))
+        # Se removió la sección "📈 Tendencias por Día" a solicitud
         
         # Mostrar tabla de registros
         st.markdown("### 📝 Registros del Día")

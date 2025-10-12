@@ -735,10 +735,15 @@ def show_reports():
         show_rs_reports()
  
 def show_reportes():
-    """Muestra la sección de Reportes (por evento)."""
+    """Muestra la sección de Reportes con pestañas para Tradicional y Redes Sociales"""
     st.title("🧾 Reportes")
-    # Reutilizamos el reporte por evento aquí
-    show_evento_report()
+    tab1, tab2 = st.tabs(["📻 Tradicional", "📱 Redes Sociales"])
+
+    with tab1:
+        show_evento_report()
+
+    with tab2:
+        show_rs_event_report()
 
 def show_rs_reports():
     st.subheader("📱 Reportes de Redes Sociales")
@@ -802,6 +807,390 @@ def show_rs_reports():
                 st.line_chart(df_dia.set_index('fecha_reporte')['interacciones'])
     else:
         st.info("No hay reportes de redes sociales para el período seleccionado.")
+
+def show_rs_event_report():
+    """Muestra reportes de Redes Sociales por período con estadísticas y exportación"""
+    import pandas as pd
+    from datetime import datetime
+    import io
+
+    st.subheader("📱 Reportes de Redes Sociales")
+
+    # Filtros de período
+    col1, col2 = st.columns(2)
+    with col1:
+        fecha_inicio = st.date_input("Fecha inicio", value=datetime.now().replace(day=1), key="rs_evt_fecha_inicio")
+    with col2:
+        fecha_fin = st.date_input("Fecha fin", value=datetime.now(), key="rs_evt_fecha_fin")
+
+    if fecha_inicio > fecha_fin:
+        st.error("❌ La fecha de inicio debe ser anterior a la fecha de fin")
+        return
+
+    fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d')
+    fecha_fin_str = fecha_fin.strftime('%Y-%m-%d')
+    fecha_rango_lbl = f"{fecha_inicio_str} a {fecha_fin_str}" if fecha_inicio_str != fecha_fin_str else fecha_inicio_str
+
+    # Obtener datos RS de la BD
+    try:
+        reportes_rs = db.get_reportes_rs_por_fecha(fecha_inicio_str, fecha_fin_str) or []
+        est = db.get_estadisticas_rs_por_fecha(fecha_inicio_str, fecha_fin_str) or {}
+    except Exception as e:
+        st.error(f"Error al cargar reportes RS: {e}")
+        return
+
+    if not reportes_rs:
+        st.info("No hay reportes de redes sociales para el período seleccionado.")
+        return
+
+    # Armar DataFrame principal
+    df_rs = pd.DataFrame([
+        {
+            'Estación': (r.get('qrz_station') or ''),
+            'Indicativo': r.get('indicativo', ''),
+            'Nombre': r.get('operador', ''),
+            'Estado': r.get('estado', ''),
+            'Ciudad': r.get('ciudad', ''),
+            'Zona': r.get('zona', ''),
+            'Plataforma': r.get('plataforma_nombre', ''),
+            'Fecha': (r.get('fecha_reporte') or '')
+        }
+        for r in reportes_rs
+    ])
+
+    # Métricas básicas
+    estaciones_unicas = df_rs['Indicativo'].nunique()
+    zona_mas_reportada = (df_rs['Zona'].mode().iloc[0] if not df_rs['Zona'].mode().empty else "N/A")
+    plataforma_mas_usada = (df_rs['Plataforma'].mode().iloc[0] if not df_rs['Plataforma'].mode().empty else "N/A")
+    cobertura_estados = df_rs['Estado'].nunique() if 'Estado' in df_rs.columns else 0
+
+    # Distribuciones
+    zonas_count = df_rs['Zona'].value_counts()
+    df_zonas = pd.DataFrame({
+        'Zona': zonas_count.index,
+        'Cantidad': zonas_count.values,
+        'Porcentaje': (zonas_count.values / max(len(df_rs), 1) * 100).round(1)
+    })
+    plataformas_count = df_rs['Plataforma'].value_counts()
+    df_plataformas = pd.DataFrame({
+        'Plataforma': plataformas_count.index,
+        'Cantidad': plataformas_count.values,
+        'Porcentaje': (plataformas_count.values / max(len(df_rs), 1) * 100).round(1)
+    })
+
+    # Mostrar resumen simple
+    colm1, colm2, colm3, colm4 = st.columns(4)
+    colm1.metric("Total de Reportes", f"{len(df_rs)}")
+    colm2.metric("Estaciones Únicas", f"{estaciones_unicas}")
+    colm3.metric("Zona Más Reportada", zona_mas_reportada)
+    colm4.metric("Plataforma Más Usada", plataforma_mas_usada)
+
+    st.subheader("📍 Distribución por Zona")
+    st.dataframe(df_zonas, hide_index=True, use_container_width=True)
+
+    st.subheader("📱 Distribución por Plataforma")
+    st.dataframe(df_plataformas, hide_index=True, use_container_width=True)
+
+    # Detalle de reportes (similar a tradicional)
+    st.subheader("📄 Detalle de Reportes")
+    st.dataframe(df_rs, hide_index=True, use_container_width=True)
+
+    # Información del usuario para leyendas
+    usuario = st.session_state.user if 'user' in st.session_state and st.session_state.user else {}
+    indicativo_usuario = usuario.get('username', 'Sistema')
+    nombre_usuario = usuario.get('full_name', 'Sistema')
+
+    # Exportación
+    st.subheader("📤 Exportar Reporte")
+    with st.expander("Filtros de exportación", expanded=True):
+        export_estaciones = ['Todas'] + sorted([e for e in df_rs['Estación'].dropna().unique().tolist() if str(e).strip()])
+        export_est_sel = st.selectbox("Estación a exportar (QRZ Station)", export_estaciones, key="rs_export_est_sel")
+        if export_est_sel != 'Todas':
+            df_export = df_rs[df_rs['Estación'] == export_est_sel]
+        else:
+            df_export = df_rs
+        st.caption(f"Registros a exportar: {len(df_export)}")
+
+    colx, coly, colz = st.columns(3)
+    # Excel
+    with colx:
+        if st.button("📊 Excel", key="rs_btn_excel", use_container_width=True):
+            buffer = io.BytesIO()
+            # Recalcular distribuciones sobre export
+            zonas_count_exp = df_export['Zona'].value_counts()
+            df_zonas_exp = pd.DataFrame({
+                'Zona': zonas_count_exp.index,
+                'Cantidad': zonas_count_exp.values,
+                'Porcentaje': (zonas_count_exp.values / max(len(df_export), 1) * 100).round(1)
+            })
+            plataformas_count_exp = df_export['Plataforma'].value_counts()
+            df_plataformas_exp = pd.DataFrame({
+                'Plataforma': plataformas_count_exp.index,
+                'Cantidad': plataformas_count_exp.values,
+                'Porcentaje': (plataformas_count_exp.values / max(len(df_export), 1) * 100).round(1)
+            })
+
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                stats_df = pd.DataFrame({
+                    'Métrica': ['Reporte', 'Período', 'Total Reportes', 'Estaciones Únicas', 'Zona Más Reportada', 'Plataforma Más Usada', 'Generado por'],
+                    'Valor': ['Redes Sociales', fecha_rango_lbl, len(df_export), df_export['Indicativo'].nunique(),
+                              (df_export['Zona'].mode().iloc[0] if not df_export['Zona'].mode().empty else 'N/A'),
+                              (df_export['Plataforma'].mode().iloc[0] if not df_export['Plataforma'].mode().empty else 'N/A'),
+                              f"{indicativo_usuario} - {nombre_usuario}"]
+                })
+                stats_df.to_excel(writer, sheet_name='Estadísticas', index=False)
+                # Interacciones
+                try:
+                    m = (est or {}).get('metricas', {})
+                    pd.DataFrame([m]).to_excel(writer, sheet_name='Interacciones', index=False)
+                except Exception:
+                    pass
+                df_export.to_excel(writer, sheet_name='Datos Detallados', index=False)
+                df_zonas_exp.to_excel(writer, sheet_name='Por Zona', index=False)
+                df_plataformas_exp.to_excel(writer, sheet_name='Por Plataforma', index=False)
+
+            buffer.seek(0)
+            est_suffix = "" if export_est_sel == 'Todas' else f"_{str(export_est_sel).replace(' ', '_')}"
+            st.download_button(
+                label="⬇️ Descargar Excel",
+                data=buffer,
+                file_name=f"reporte_rs_{fecha_inicio_str}_a_{fecha_fin_str}{est_suffix}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+
+    # CSV
+    with coly:
+        if st.button("📄 CSV", key="rs_btn_csv", use_container_width=True):
+            csv_bytes = df_export.to_csv(index=False).encode('utf-8-sig')
+            est_suffix = "" if export_est_sel == 'Todas' else f"_{str(export_est_sel).replace(' ', '_')}"
+            st.download_button(
+                label="⬇️ Descargar CSV",
+                data=csv_bytes,
+                file_name=f"reporte_rs_{fecha_inicio_str}_a_{fecha_fin_str}{est_suffix}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+    # PDF
+    with colz:
+        if st.button("📋 PDF", key="rs_btn_pdf", use_container_width=True):
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import letter
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image, HRFlowable
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.units import inch
+            from reportlab.lib.enums import TA_CENTER
+            import os
+
+            buffer = io.BytesIO()
+
+            # Etiqueta dinámica de encabezado por sección
+            header_current_station = {
+                'label': (export_est_sel if export_est_sel != 'Todas' else 'General')
+            }
+
+            # Preparar variables de fecha y título como en Tradicional
+            fi_fmt = datetime.strptime(fecha_inicio_str, '%Y-%m-%d').strftime('%d/%m/%y')
+            ff_fmt = datetime.strptime(fecha_fin_str, '%Y-%m-%d').strftime('%d/%m/%y')
+            fecha_formateada = fi_fmt if fecha_inicio_str == fecha_fin_str else f"{fi_fmt} - {ff_fmt}"
+            evento_nombre = "Redes Sociales"
+
+            # Encabezado y pie de página idénticos al Tradicional (ajustando variables locales)
+            def add_header_footer(canvas, doc):
+                canvas.saveState()
+                canvas.setFont('Helvetica', 4)
+                canvas.setFillColor(colors.HexColor('#333333'))
+                evento = (evento_nombre[:12] + '...') if len(evento_nombre) > 15 else evento_nombre
+                header_text = f"{evento} | {fecha_formateada} | Estación: {header_current_station['label']} | Página {canvas.getPageNumber()}"
+                # Encabezado: parte superior del área de contenido
+                canvas.drawString(doc.leftMargin, doc.height + doc.bottomMargin + 5, header_text)
+                # Pie: línea divisoria inferior
+                canvas.setStrokeColor(colors.HexColor('#CCCCCC'))
+                canvas.setLineWidth(0.1)
+                canvas.line(doc.leftMargin, doc.bottomMargin + 2, doc.width + doc.leftMargin, doc.bottomMargin + 2)
+                canvas.restoreState()
+
+            # Estilos
+            styles = getSampleStyleSheet()
+            # Copiado del tradicional
+            info_style = ParagraphStyle(
+                'InfoStyle',
+                parent=styles['Normal'],
+                fontSize=10,
+                spaceAfter=4,
+                textColor=colors.HexColor('#333333'),
+                alignment=1,
+                leading=12
+            )
+            section_style = ParagraphStyle('SectionStyle', parent=styles['Normal'], fontSize=12, fontName='Helvetica-Bold', textColor=colors.HexColor('#1f4e79'), spaceBefore=0, spaceAfter=0, leading=12)
+
+            # Dataset export a usar en PDF
+            df_pdf = df_export.copy()
+
+            # Recalcular métricas para PDF
+            estaciones_unicas_pdf = df_pdf['Indicativo'].nunique()
+            zona_mas_pdf = (df_pdf['Zona'].mode().iloc[0] if not df_pdf['Zona'].mode().empty else "N/A")
+            plataforma_mas_pdf = (df_pdf['Plataforma'].mode().iloc[0] if not df_pdf['Plataforma'].mode().empty else "N/A")
+            cobertura_estados_pdf = df_pdf['Estado'].nunique() if 'Estado' in df_pdf.columns else 0
+
+            zonas_count_pdf = df_pdf['Zona'].value_counts()
+            df_zonas_pdf = pd.DataFrame({'Zona': zonas_count_pdf.index, 'Cantidad': zonas_count_pdf.values, 'Porcentaje': (zonas_count_pdf.values / max(len(df_pdf), 1) * 100).round(1)})
+            plataformas_count_pdf = df_pdf['Plataforma'].value_counts()
+            df_plataformas_pdf = pd.DataFrame({'Plataforma': plataformas_count_pdf.index, 'Cantidad': plataformas_count_pdf.values, 'Porcentaje': (plataformas_count_pdf.values / max(len(df_pdf), 1) * 100).round(1)})
+
+            # Documento
+            doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=54, bottomMargin=36)
+            story = []
+
+            # Encabezado con logo y título (idéntico al tradicional)
+            logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'LogoFMRE_medium.png')
+            header_style = ParagraphStyle(
+                'HeaderStyle',
+                fontName='Helvetica-Bold',
+                fontSize=11,
+                leading=13,
+                spaceBefore=0,
+                spaceAfter=0,
+                alignment=TA_CENTER,
+                textColor=colors.HexColor('#006400'),
+                leftIndent=0,
+                rightIndent=0
+            )
+
+            if os.path.exists(logo_path):
+                header_data = [[
+                    Image(logo_path, width=0.8*inch, height=0.8*inch, kind='proportional'),
+                    Paragraph("FEDERACIÓN MEXICANA DE RADIOEXPERIMENTADORES", header_style)
+                ]]
+                header_table = Table(header_data, colWidths=[1.0*inch, 5*inch], rowHeights=[0.7*inch])
+                header_table.setStyle(TableStyle([
+                    ('ALIGN', (0, 0), (0, 0), 'CENTER'),
+                    ('ALIGN', (1, 0), (1, 0), 'CENTER'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                    ('TOPPADDING', (0, 0), (-1, -1), 6),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 4),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+                    ('TEXTCOLOR', (1, 0), (1, 0), colors.HexColor('#2c3e50')),
+                    ('FONTSIZE', (0, 0), (-1, -1), 10),
+                    ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#DDDDDD')),
+                    ('LINEAFTER', (0, 0), (0, 0), 0.5, colors.HexColor('#DDDDDD')),
+                    ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8F9FA'))
+                ]))
+                story.append(Spacer(1, 6))
+                story.append(header_table)
+                story.append(Spacer(1, 6))
+            else:
+                story.append(Paragraph("FEDERACIÓN MEXICANA DE RADIOEXPERIMENTADORES", ParagraphStyle('HeaderNoLogo', fontName='Helvetica-Bold', fontSize=8, alignment=TA_CENTER, spaceAfter=2)))
+                story.append(Spacer(1, 2))
+
+            # Información general
+            story.append(Paragraph(f"<b>Evento:</b> Redes Sociales", info_style))
+            story.append(Paragraph(f"<b>Fecha del Evento:</b> {fecha_formateada}", info_style))
+            story.append(Paragraph(f"<b>Fecha de Generación:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", info_style))
+            story.append(Paragraph(f"<b>Generado por:</b> {indicativo_usuario} - {nombre_usuario}", info_style))
+            story.append(Spacer(1, 2))
+
+            # Línea divisoria
+            story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#CCCCCC')))
+            story.append(Paragraph("Estadísticas del evento", section_style))
+            story.append(Spacer(1, 8))
+
+            # Estadísticas
+            stats = [
+                ['Métrica', 'Valor', 'Detalles'],
+                ['Total de Reportes', str(len(df_pdf)), f"Participantes activos: {len(df_pdf)}"],
+                ['Estaciones Únicas', str(estaciones_unicas_pdf), "Diferentes estaciones que reportaron"],
+                ['Zona Más Reportada', zona_mas_pdf, "Concentración geográfica principal"],
+                ['Plataforma Más Usada', plataforma_mas_pdf, "Plataforma predominante"],
+                ['Cobertura Geográfica', f"{cobertura_estados_pdf} estados", "Alcance territorial del período"]
+            ]
+            stats_table = Table(stats)
+            stats_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4e79')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8f9fa')),
+                ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#333333')),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6'))
+            ]))
+            story.append(stats_table)
+            story.append(Spacer(1, 8))
+
+            # Distribución por zona
+            story.append(Paragraph("Distribución por zona geográfica", section_style))
+            story.append(Spacer(1, 6))
+            zonas_data = [['Zona', 'Cantidad', 'Porcentaje']]
+            for _, row in df_zonas_pdf.iterrows():
+                zonas_data.append([str(row['Zona']), str(int(row['Cantidad'])), f"{row['Porcentaje']:.1f}%"])
+            zonas_table = Table(zonas_data)
+            zonas_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c5f2d')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#90EE90'))
+            ]))
+            story.append(zonas_table)
+            story.append(Spacer(1, 8))
+
+            # Distribución por plataforma
+            story.append(Paragraph("Distribución por plataforma", section_style))
+            story.append(Spacer(1, 6))
+            plat_data = [['Plataforma', 'Cantidad', 'Porcentaje']]
+            for _, row in df_plataformas_pdf.iterrows():
+                plat_data.append([str(row['Plataforma']), str(int(row['Cantidad'])), f"{row['Porcentaje']:.1f}%"])
+            plat_table = Table(plat_data)
+            plat_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#8B4513')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#DEB887'))
+            ]))
+            story.append(plat_table)
+
+            # Página de detalle
+            story.append(PageBreak())
+            story.append(Paragraph("Reporte de Actividad", section_style))
+            reportes_data = [['Estación', 'Indicativo', 'Nombre', 'Estado', 'Ciudad', 'Zona', 'Plataforma']]
+            for _, row in df_pdf.iterrows():
+                reportes_data.append([
+                    row.get('Estación', ''), row.get('Indicativo', ''), row.get('Nombre', ''),
+                    row.get('Estado', ''), row.get('Ciudad', ''), row.get('Zona', ''), row.get('Plataforma', '')
+                ])
+            reportes_table = Table(reportes_data, colWidths=[1.0*inch, 1.0*inch, 1.6*inch, 0.9*inch, 1.0*inch, 0.5*inch, 0.5*inch])
+            reportes_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4e79')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 8),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8f9fa')),
+                ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#333333')),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 7),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6'))
+            ]))
+            story.append(reportes_table)
+
+            doc.build(story, onFirstPage=add_header_footer, onLaterPages=add_header_footer)
+            buffer.seek(0)
+            est_suffix = "" if export_est_sel == 'Todas' else f"_{str(export_est_sel).replace(' ', '_')}"
+            st.download_button(
+                label="⬇️ Descargar PDF",
+                data=buffer,
+                file_name=f"reporte_rs_{fecha_inicio_str}_a_{fecha_fin_str}{est_suffix}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
 
 def show_actividad_general_report():
     """Muestra reporte de actividad general con filtros"""

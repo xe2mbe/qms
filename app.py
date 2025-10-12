@@ -2077,6 +2077,11 @@ def show_evento_report():
                 # Crear buffer para el PDF
                 buffer = io.BytesIO()
 
+                # Etiqueta dinámica de encabezado por sección
+                header_current_station = {
+                    'label': (selected_export_station if selected_export_station != 'Todas' else 'General')
+                }
+
                 # Función para crear el encabezado ultra compacto
                 def create_header(canvas, doc, **kwargs):
                     canvas.saveState()
@@ -2093,7 +2098,7 @@ def show_evento_report():
                     fecha_formateada = datetime.strptime(datos['fecha'], '%Y-%m-%d').strftime('%d/%m/%y')
                     # Acortar el nombre del evento a 15 caracteres máximo
                     evento = (datos['evento'][:12] + '...') if len(datos['evento']) > 15 else datos['evento']
-                    header_text = f"{evento} | {fecha_formateada} | {canvas.getPageNumber()}"
+                    header_text = f"{evento} | {fecha_formateada} | Estación: {header_current_station['label']} | Página {canvas.getPageNumber()}"
                     
                     # Posición del texto (arriba a la izquierda)
                     text_x = doc.leftMargin
@@ -2140,7 +2145,7 @@ def show_evento_report():
                     evento = (datos['evento'][:12] + '...') if len(datos['evento']) > 15 else datos['evento']
                     
                     # Texto del encabezado (sin logo)
-                    header_text = f"{evento} | {fecha_formateada} | Página {canvas.getPageNumber()}"
+                    header_text = f"{evento} | {fecha_formateada} | Estación: {header_current_station['label']} | Página {canvas.getPageNumber()}"
                     canvas.drawString(doc.leftMargin, doc.height + doc.bottomMargin + 5, header_text)
                     
                     # Línea divisoria
@@ -2386,6 +2391,150 @@ def show_evento_report():
                     ('BOTTOMPADDING', (0, 1), (-1, -1), 3)  # Espaciado reducido
                 ]))
                 story.append(sistemas_table)
+
+                # Si se exportan todas las estaciones, añadir secciones por estación
+                if selected_export_station == 'Todas':
+                    # Ordenar estaciones alfabéticamente, ignorando vacíos
+                    estaciones_lista = sorted([e for e in datos['df_evento']['Estación'].dropna().unique().tolist() if str(e).strip()])
+
+                    for est in estaciones_lista:
+                        # Nueva página por estación y actualizar encabezado
+                        story.append(PageBreak())
+                        header_current_station['label'] = est
+
+                        # Sección de estación
+                        story.append(Paragraph(f"Estación: {est}", section_style))
+                        story.append(Spacer(1, 8))
+
+                        df_est = datos['df_evento'][datos['df_evento']['Estación'] == est]
+
+                        # Métricas de estación
+                        est_estaciones_unicas = df_est['Indicativo'].nunique()
+                        est_zona_mas = (df_est['Zona'].mode().iloc[0] if not df_est['Zona'].mode().empty else "N/A")
+                        est_sistema_mas = (df_est['Sistema'].mode().iloc[0] if not df_est['Sistema'].mode().empty else "N/A")
+                        est_cobertura = df_est['Estado'].nunique() if 'Estado' in df_est.columns else 0
+
+                        stats_est = [
+                            ['Métrica', 'Valor', 'Detalles'],
+                            ['Total de Reportes', str(len(df_est)), f"Participantes activos: {len(df_est)}"],
+                            ['Estaciones Únicas', str(est_estaciones_unicas), f"Diferentes estaciones que reportaron"],
+                            ['Zona Más Reportada', est_zona_mas, f"Concentración geográfica principal"],
+                            ['Sistema Más Usado', est_sistema_mas, f"Tecnología de radio predominante"],
+                            ['Cobertura Geográfica', f"{est_cobertura} estados", f"Alcance territorial del evento"]
+                        ]
+
+                        table_est = Table(stats_est)
+                        table_est.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4e79')),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0, 0), (-1, 0), 10),
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                            ('TOPPADDING', (0, 0), (-1, 0), 4),
+                            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8f9fa')),
+                            ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#333333')),
+                            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                            ('FONTSIZE', (0, 1), (-1, -1), 8),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6')),
+                            ('BOTTOMPADDING', (0, 1), (-1, -1), 3)
+                        ]))
+                        story.append(table_est)
+                        story.append(Spacer(1, 10))
+
+                        # Distribución por zona (estación)
+                        zonas_est = df_est['Zona'].value_counts()
+                        df_zonas_est = pd.DataFrame({
+                            'Zona': zonas_est.index,
+                            'Cantidad': zonas_est.values,
+                            'Porcentaje': (zonas_est.values / max(len(df_est), 1) * 100).round(1)
+                        })
+
+                        story.append(Paragraph("Distribución por zona geográfica", section_style))
+                        story.append(Spacer(1, 6))
+                        zonas_data_est = [['Zona', 'Cantidad', 'Porcentaje', 'Participación']]
+                        for _, row in df_zonas_est.iterrows():
+                            zonas_data_est.append([
+                                str(row['Zona']), str(int(row['Cantidad'])), f"{row['Porcentaje']:.1f}%", "●" * min(int(row['Cantidad']), 10)
+                            ])
+                        zonas_table_est = Table(zonas_data_est)
+                        zonas_table_est.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c5f2d')),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0, 0), (-1, 0), 10),
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                            ('TOPPADDING', (0, 0), (-1, 0), 4),
+                            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f0f8f0')),
+                            ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#2c5f2d')),
+                            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                            ('FONTSIZE', (0, 1), (-1, -1), 8),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#90EE90')),
+                            ('BOTTOMPADDING', (0, 1), (-1, -1), 3)
+                        ]))
+                        story.append(zonas_table_est)
+                        story.append(Spacer(1, 10))
+
+                        # Principales estados (estación)
+                        story.append(Paragraph("Principales estados participantes", section_style))
+                        story.append(Spacer(1, 6))
+                        estados_est = df_est['Estado'].value_counts()
+                        top_est = estados_est.head(3)
+                        estados_data_est = [['Estado', 'Reportes', 'Porcentaje', 'Participación']]
+                        for estado, cantidad in top_est.items():
+                            if estado and str(estado).strip():
+                                pct = (cantidad / max(len(df_est), 1) * 100)
+                                estados_data_est.append([str(estado), str(int(cantidad)), f"{pct:.1f}%", "●" * min(int(cantidad), 12)])
+                        if len(estados_data_est) > 1:
+                            estados_table_est = Table(estados_data_est)
+                            estados_table_est.setStyle(TableStyle([
+                                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#DC143C')),
+                                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                                ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                                ('TOPPADDING', (0, 0), (-1, 0), 4),
+                                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#FFF0F0')),
+                                ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#DC143C')),
+                                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#FFB6C1')),
+                                ('BOTTOMPADDING', (0, 1), (-1, -1), 3)
+                            ]))
+                            story.append(estados_table_est)
+                            story.append(Spacer(1, 10))
+
+                        # Distribución por sistema (estación)
+                        story.append(Paragraph("Distribución por sistema de radio", section_style))
+                        story.append(Spacer(1, 6))
+                        sistemas_est = df_est['Sistema'].value_counts()
+                        df_sist_est = pd.DataFrame({
+                            'Sistema': sistemas_est.index,
+                            'Cantidad': sistemas_est.values,
+                            'Porcentaje': (sistemas_est.values / max(len(df_est), 1) * 100).round(1)
+                        })
+                        sist_data_est = [['Sistema', 'Cantidad', 'Porcentaje', 'Uso']]
+                        for _, row in df_sist_est.iterrows():
+                            sist_data_est.append([str(row['Sistema']), str(int(row['Cantidad'])), f"{row['Porcentaje']:.1f}%", "●" * min(int(row['Cantidad']), 8)])
+                        sist_table_est = Table(sist_data_est)
+                        sist_table_est.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#8B4513')),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0, 0), (-1, 0), 9),
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                            ('TOPPADDING', (0, 0), (-1, 0), 4),
+                            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#FFF8DC')),
+                            ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#8B4513')),
+                            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                            ('FONTSIZE', (0, 1), (-1, -1), 8),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#DEB887')),
+                            ('BOTTOMPADDING', (0, 1), (-1, -1), 3)
+                        ]))
+                        story.append(sist_table_est)
 
                 # Generar el PDF con la historia
                 try:
@@ -2658,6 +2807,143 @@ def show_evento_report():
                 ]))
                 story.append(sistemas_table)
 
+                # Si se exportan todas las estaciones, añadir secciones por estación (también en este bloque)
+                if selected_export_station == 'Todas':
+                    estaciones_lista = sorted([e for e in datos['df_evento']['Estación'].dropna().unique().tolist() if str(e).strip()])
+
+                    for est in estaciones_lista:
+                        story.append(PageBreak())
+                        header_current_station['label'] = est
+
+                        story.append(Paragraph(f"Estación: {est}", section_style))
+                        story.append(Spacer(1, 8))
+
+                        df_est = datos['df_evento'][datos['df_evento']['Estación'] == est]
+
+                        est_estaciones_unicas = df_est['Indicativo'].nunique()
+                        est_zona_mas = (df_est['Zona'].mode().iloc[0] if not df_est['Zona'].mode().empty else "N/A")
+                        est_sistema_mas = (df_est['Sistema'].mode().iloc[0] if not df_est['Sistema'].mode().empty else "N/A")
+                        est_cobertura = df_est['Estado'].nunique() if 'Estado' in df_est.columns else 0
+
+                        stats_est = [
+                            ['Métrica', 'Valor', 'Detalles'],
+                            ['Total de Reportes', str(len(df_est)), f"Participantes activos: {len(df_est)}"],
+                            ['Estaciones Únicas', str(est_estaciones_unicas), f"Diferentes estaciones que reportaron"],
+                            ['Zona Más Reportada', est_zona_mas, f"Concentración geográfica principal"],
+                            ['Sistema Más Usado', est_sistema_mas, f"Tecnología de radio predominante"],
+                            ['Cobertura Geográfica', f"{est_cobertura} estados", f"Alcance territorial del evento"]
+                        ]
+
+                        table_est = Table(stats_est)
+                        table_est.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4e79')),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0, 0), (-1, 0), 10),
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                            ('TOPPADDING', (0, 0), (-1, 0), 4),
+                            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8f9fa')),
+                            ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#333333')),
+                            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                            ('FONTSIZE', (0, 1), (-1, -1), 8),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6')),
+                            ('BOTTOMPADDING', (0, 1), (-1, -1), 3)
+                        ]))
+                        story.append(table_est)
+                        story.append(Spacer(1, 10))
+
+                        # Distribución por zona (estación)
+                        zonas_est = df_est['Zona'].value_counts()
+                        df_zonas_est = pd.DataFrame({
+                            'Zona': zonas_est.index,
+                            'Cantidad': zonas_est.values,
+                            'Porcentaje': (zonas_est.values / max(len(df_est), 1) * 100).round(1)
+                        })
+                        story.append(Paragraph("Distribución por zona geográfica", section_style))
+                        story.append(Spacer(1, 6))
+                        zonas_data_est = [['Zona', 'Cantidad', 'Porcentaje', 'Participación']]
+                        for _, row in df_zonas_est.iterrows():
+                            zonas_data_est.append([str(row['Zona']), str(int(row['Cantidad'])), f"{row['Porcentaje']:.1f}%", "●" * min(int(row['Cantidad']), 10)])
+                        zonas_table_est = Table(zonas_data_est)
+                        zonas_table_est.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c5f2d')),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0, 0), (-1, 0), 10),
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                            ('TOPPADDING', (0, 0), (-1, 0), 4),
+                            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f0f8f0')),
+                            ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#2c5f2d')),
+                            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                            ('FONTSIZE', (0, 1), (-1, -1), 8),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#90EE90')),
+                            ('BOTTOMPADDING', (0, 1), (-1, -1), 3)
+                        ]))
+                        story.append(zonas_table_est)
+                        story.append(Spacer(1, 10))
+
+                        # Principales estados (estación)
+                        story.append(Paragraph("Principales estados participantes", section_style))
+                        story.append(Spacer(1, 6))
+                        estados_est = df_est['Estado'].value_counts()
+                        top_est = estados_est.head(3)
+                        estados_data_est = [['Estado', 'Reportes', 'Porcentaje', 'Participación']]
+                        for estado, cantidad in top_est.items():
+                            if estado and str(estado).strip():
+                                pct = (cantidad / max(len(df_est), 1) * 100)
+                                estados_data_est.append([str(estado), str(int(cantidad)), f"{pct:.1f}%", "●" * min(int(cantidad), 12)])
+                        if len(estados_data_est) > 1:
+                            estados_table_est = Table(estados_data_est)
+                            estados_table_est.setStyle(TableStyle([
+                                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#DC143C')),
+                                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                                ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                                ('TOPPADDING', (0, 0), (-1, 0), 4),
+                                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#FFF0F0')),
+                                ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#DC143C')),
+                                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#FFB6C1')),
+                                ('BOTTOMPADDING', (0, 1), (-1, -1), 3)
+                            ]))
+                            story.append(estados_table_est)
+                            story.append(Spacer(1, 10))
+
+                        # Distribución por sistema (estación)
+                        story.append(Paragraph("Distribución por sistema de radio", section_style))
+                        story.append(Spacer(1, 6))
+                        sistemas_est = df_est['Sistema'].value_counts()
+                        df_sist_est = pd.DataFrame({
+                            'Sistema': sistemas_est.index,
+                            'Cantidad': sistemas_est.values,
+                            'Porcentaje': (sistemas_est.values / max(len(df_est), 1) * 100).round(1)
+                        })
+                        sist_data_est = [['Sistema', 'Cantidad', 'Porcentaje', 'Uso']]
+                        for _, row in df_sist_est.iterrows():
+                            sist_data_est.append([str(row['Sistema']), str(int(row['Cantidad'])), f"{row['Porcentaje']:.1f}%", "●" * min(int(row['Cantidad']), 8)])
+                        sist_table_est = Table(sist_data_est)
+                        sist_table_est.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#8B4513')),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0, 0), (-1, 0), 9),
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+                            ('TOPPADDING', (0, 0), (-1, 0), 4),
+                            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#FFF8DC')),
+                            ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#8B4513')),
+                            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                            ('FONTSIZE', (0, 1), (-1, -1), 8),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#DEB887')),
+                            ('BOTTOMPADDING', (0, 1), (-1, -1), 3)
+                        ]))
+                        story.append(sist_table_est)
+
                 # Pie de página más elegante
                 story.append(Spacer(1, 30))
                 
@@ -2692,6 +2978,12 @@ def show_evento_report():
                 story.append(Paragraph(f"© {datetime.now().year} FMRE - Todos los derechos reservados", footer_style))
 
                 # Agregar página de reporte de actividad en horizontal
+                # Restablecer etiqueta del encabezado a General o a la estación seleccionada
+                if selected_export_station == 'Todas':
+                    header_current_station['label'] = 'General'
+                else:
+                    header_current_station['label'] = selected_export_station
+
                 story.append(PageBreak())
                 story.append(NextPageTemplate('Landscape'))
                 

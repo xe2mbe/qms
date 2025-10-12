@@ -210,14 +210,14 @@ def show_gestion_usuarios():
                                 alphabet = string.ascii_letters + string.digits + string.punctuation
                                 temp_password = ''.join(secrets.choice(alphabet) for i in range(12))
                                 
-                                # Actualizar la contraseña usando el método de la base de datos
-                                # (ahora espera la contraseña en texto plano y se encarga del hashing)
+                                # Actualizar la contraseña (hashing interno) y forzar cambio al siguiente inicio
                                 db.change_password(user['username'], temp_password)
+                                db.set_must_change_password(username=user['username'], value=True)
                                 
                                 # Enviar el correo de bienvenida
                                 if email_service.send_user_credentials(user, temp_password):
                                     st.success(f"✅ Correo de bienvenida reenviado a {user.get('email', '')}")
-                                    st.warning("⚠️ Se generó una nueva contraseña temporal. El usuario deberá cambiarla al iniciar sesión.")
+                                    st.warning("⚠️ Se generó una nueva contraseña temporal y se forzará su cambio al próximo inicio de sesión.")
 
                                 else:
                                     st.error("❌ Error al enviar el correo. Verifica la configuración SMTP.")
@@ -241,25 +241,37 @@ def show_gestion_usuarios():
                     if st.session_state.get(f"editing_user_{user['id']}", False):
                         st.markdown("---")
                         st.subheader("✏️ Editar Usuario")
+                        # Selector de cuenta activa fuera del formulario para refresco inmediato
+                        active_key = f"active_{user['id']}"
+                        st.toggle(
+                            "Cuenta activa",
+                            value=bool(user.get('is_active', 1)),
+                            help="Desactiva para bloquear el acceso de este usuario",
+                            key=active_key
+                        )
+                        # Control de cambio de contraseña fuera del formulario para refresco inmediato (debajo del selector)
+                        change_password_key = f"change_pwd_{user['id']}"
+                        st.checkbox("Cambiar contraseña", key=change_password_key, help="Marca para mostrar campos de nueva contraseña")
                         
                         with st.form(f"edit_user_form_{user['id']}"):
                             edit_full_name = st.text_input("Nombre completo:", value=user.get('full_name', ''))
                             edit_email = st.text_input("Email:", value=user.get('email', ''))
                             edit_role = st.selectbox("Rol:", ["operator", "admin"], 
                                                    index=0 if user.get('role') == 'operator' else 1)
-                            edit_is_active = st.toggle("Cuenta activa", 
-                                                     value=bool(user.get('is_active', 1)),
-                                                     help="Desactiva para bloquear el acceso de este usuario")
+                            # Leer el valor del toggle externo
+                            edit_is_active = st.session_state.get(active_key, bool(user.get('is_active', 1)))
                             
-                            # Opción para cambiar contraseña
-                            change_password = st.checkbox("Cambiar contraseña")
-                            new_password = ""
-                            confirm_new_password = ""
-                            
+                            # Opción para cambiar contraseña (controlada desde fuera del formulario para refresco inmediato)
+                            change_password = st.session_state.get(f"change_pwd_{user['id']}", False)
                             if change_password:
                                 new_password = st.text_input("Nueva contraseña:", type="password", 
-                                                           help="Mínimo 8 caracteres, 1 mayúscula, 1 número, 1 carácter especial")
-                                confirm_new_password = st.text_input("Confirmar nueva contraseña:", type="password")
+                                                           help="Mínimo 8 caracteres, 1 mayúscula, 1 número, 1 carácter especial",
+                                                           key=f"new_password_{user['id']}")
+                                confirm_new_password = st.text_input("Confirmar nueva contraseña:", type="password",
+                                                                     key=f"confirm_new_password_{user['id']}")
+                            else:
+                                new_password = ""
+                                confirm_new_password = ""
                             
                             col_save, col_cancel = st.columns(2)
                             

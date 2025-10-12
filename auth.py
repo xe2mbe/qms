@@ -10,6 +10,42 @@ class AuthManager:
     def show_login(self):
         """Muestra el formulario de inicio de sesión"""
         st.title("🔑 Inicio de Sesión")
+
+        # Flujo de cambio de contraseña forzado antes de permitir el inicio de sesión
+        force_user = st.session_state.get('force_change_user')
+        if force_user:
+            st.warning("Debes cambiar tu contraseña para continuar.")
+            with st.form("force_change_password_form"):
+                new_password = st.text_input("Nueva contraseña", type="password", key="force_new_pwd")
+                confirm_password = st.text_input("Confirmar nueva contraseña", type="password", key="force_confirm_pwd")
+                if st.form_submit_button("Cambiar contraseña"):
+                    if not new_password or not confirm_password:
+                        st.error("Por favor completa ambos campos.")
+                    elif new_password != confirm_password:
+                        st.error("Las contraseñas no coinciden.")
+                    else:
+                        try:
+                            from utils import validate_password
+                            is_valid, message = validate_password(new_password)
+                            if not is_valid:
+                                st.error(message)
+                            else:
+                                # Actualizar contraseña y limpiar bandera
+                                self.db.change_password(force_user, new_password)
+                                self.db.set_must_change_password(username=force_user, value=False)
+                                # Autenticar y entrar
+                                user = self.db.verify_user(force_user, new_password)
+                                if user:
+                                    st.session_state.user = user
+                                    del st.session_state['force_change_user']
+                                    st.success("Contraseña actualizada. Bienvenido.")
+                                    time.sleep(2)
+                                    st.rerun()
+                                else:
+                                    st.error("No fue posible iniciar sesión tras el cambio de contraseña.")
+                        except Exception as e:
+                            st.error(f"Error al actualizar la contraseña: {e}")
+            return
         
         with st.form("login_form"):
             username = st.text_input("Usuario")
@@ -18,10 +54,16 @@ class AuthManager:
             if st.form_submit_button("Iniciar sesión"):
                 user = self.db.verify_user(username, password)
                 if user:
-                    st.session_state.user = user
-                    st.success(f"Bienvenido, {user['full_name']}!")
-                    time.sleep(2)
-                    st.rerun()
+                    # Si el usuario debe cambiar la contraseña, forzar el flujo
+                    if user.get('must_change_password'):
+                        st.session_state['force_change_user'] = username
+                        st.warning("Cambio de contraseña requerido. Por favor establece una nueva contraseña.")
+                        st.rerun()
+                    else:
+                        st.session_state.user = user
+                        st.success(f"Bienvenido, {user['full_name']}!")
+                        time.sleep(2)
+                        st.rerun()
                 else:
                     st.error("Usuario o contraseña incorrectos")
     

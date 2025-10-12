@@ -246,6 +246,7 @@ class FMREDatabase:
                     phone TEXT,
                     role TEXT NOT NULL DEFAULT 'operator',
                     is_active BOOLEAN DEFAULT 1,
+                    must_change_password INTEGER DEFAULT 0,
                     last_login DATETIME,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -281,6 +282,8 @@ class FMREDatabase:
                 cursor.execute('ALTER TABLE users ADD COLUMN swl_ciudad TEXT')
             if 'qrz_station' not in columns:
                 cursor.execute('ALTER TABLE users ADD COLUMN qrz_station TEXT')
+            if 'must_change_password' not in columns:
+                cursor.execute('ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0')
                         
             # Tabla de Radioexperimentadores
             cursor.execute('''
@@ -598,7 +601,7 @@ class FMREDatabase:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT id, username, full_name, email, phone, role, 
-                       last_login, created_at, updated_at, is_active, sistema_preferido, frecuencia, modo, potencia, pre_registro
+                       last_login, created_at, updated_at, is_active, must_change_password, sistema_preferido, frecuencia, modo, potencia, pre_registro
                 FROM users
                 ORDER BY full_name
             ''')
@@ -786,7 +789,7 @@ class FMREDatabase:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT id, username, full_name, email, phone, role, 
-                       last_login, created_at, updated_at, sistema_preferido, 
+                       last_login, created_at, updated_at, is_active, must_change_password, sistema_preferido, 
                        frecuencia, modo, potencia, pre_registro, swl_estado, swl_ciudad, qrz_station
                 FROM users 
                 WHERE id = ?
@@ -800,13 +803,33 @@ class FMREDatabase:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT id, username, password_hash, full_name, email, phone, role, 
-                       last_login, created_at, updated_at, sistema_preferido, 
+                       last_login, created_at, updated_at, is_active, must_change_password, sistema_preferido, 
                        frecuencia, modo, potencia, pre_registro, swl_estado, swl_ciudad, qrz_station
                 FROM users 
                 WHERE username = ?
             ''', (username,))
             row = cursor.fetchone()
             return dict(row) if row else None
+
+    def set_must_change_password(self, user_id=None, username=None, value=True):
+        """Marca o desmarca que el usuario debe cambiar su contraseña al iniciar sesión.
+        Se puede identificar por user_id o por username.
+        """
+        if user_id is None and username is None:
+            raise ValueError("Debe proporcionar user_id o username")
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if user_id is not None:
+                cursor.execute(
+                    'UPDATE users SET must_change_password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                    (1 if value else 0, user_id)
+                )
+            else:
+                cursor.execute(
+                    'UPDATE users SET must_change_password = ?, updated_at = CURRENT_TIMESTAMP WHERE username = ?',
+                    (1 if value else 0, username)
+                )
+            conn.commit()
     
     def get_smtp_settings(self):
         """Obtiene la configuración SMTP"""

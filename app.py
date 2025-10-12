@@ -1951,13 +1951,69 @@ def show_evento_report():
         indicativo_usuario = usuario_actual.get('username', 'Sistema')
         nombre_usuario = usuario_actual.get('full_name', 'Sistema')
 
-        # Botones de exportación
+        # Botones de exportación con filtros
         st.subheader("📤 Exportar Reporte")
+
+        with st.expander("Filtros de exportación", expanded=True):
+            export_estaciones_opciones = ['Todas'] + sorted([e for e in df_estaciones['Estación'].tolist() if e and e != ''])
+            # Opción para usar el mismo filtro de la vista (por defecto activado)
+            export_use_view_station = st.checkbox(
+                "Usar misma estación filtrada en la vista",
+                value=True,
+                key="export_use_view_station"
+            )
+
+            if export_use_view_station:
+                selected_export_station = estacion_sel
+                st.caption(f"Estación para exportar: {selected_export_station}")
+            else:
+                # Preseleccionar la estación actualmente filtrada en la vista cuando no se usa el checkbox
+                try:
+                    export_index = export_estaciones_opciones.index(estacion_sel)
+                except Exception:
+                    export_index = 0
+                export_estacion_sel = st.selectbox(
+                    "Estación a exportar (QRZ Station)",
+                    export_estaciones_opciones,
+                    index=export_index,
+                    key="export_estacion_evento"
+                )
+                selected_export_station = export_estacion_sel
+
+            # Precomputar dataset a exportar y mostrar conteo
+            if selected_export_station != 'Todas':
+                df_export = datos['df_evento'][datos['df_evento']['Estación'] == selected_export_station]
+            else:
+                df_export = datos['df_evento']
+            st.caption(f"Registros a exportar: {len(df_export)}")
 
         col1, col2, col3 = st.columns(3)
 
         with col1:
             if st.button("📊 Excel", use_container_width=True):
+                # Determinar dataset a exportar según filtro
+                if selected_export_station != 'Todas':
+                    df_export = datos['df_evento'][datos['df_evento']['Estación'] == selected_export_station]
+                else:
+                    df_export = datos['df_evento']
+
+                # Recalcular métricas para exportación
+                estaciones_unicas_exp = df_export['Indicativo'].nunique()
+                zona_mas_reportada_exp = (df_export['Zona'].mode().iloc[0] if not df_export['Zona'].mode().empty else "N/A")
+                sistema_mas_usado_exp = (df_export['Sistema'].mode().iloc[0] if not df_export['Sistema'].mode().empty else "N/A")
+                zonas_count_exp = df_export['Zona'].value_counts()
+                df_zonas_exp = pd.DataFrame({
+                    'Zona': zonas_count_exp.index,
+                    'Cantidad': zonas_count_exp.values,
+                    'Porcentaje': (zonas_count_exp.values / max(len(df_export), 1) * 100).round(1)
+                })
+                sistemas_count_exp = df_export['Sistema'].value_counts()
+                df_sistemas_exp = pd.DataFrame({
+                    'Sistema': sistemas_count_exp.index,
+                    'Cantidad': sistemas_count_exp.values,
+                    'Porcentaje': (sistemas_count_exp.values / max(len(df_export), 1) * 100).round(1)
+                })
+
                 # Crear Excel con información detallada
                 buffer = io.BytesIO()
 
@@ -1966,27 +2022,28 @@ def show_evento_report():
                     stats_df = pd.DataFrame({
                         'Métrica': ['Evento', 'Fecha', 'Total Reportes', 'Estaciones Únicas',
                                   'Zona Más Reportada', 'Sistema Más Usado', 'Generado por'],
-                        'Valor': [datos['evento'], datos['fecha'], len(datos['reportes']),
-                                estaciones_unicas, zona_mas_reportada, sistema_mas_usado,
+                        'Valor': [datos['evento'], datos['fecha'], len(df_export),
+                                estaciones_unicas_exp, zona_mas_reportada_exp, sistema_mas_usado_exp,
                                 f"{indicativo_usuario} - {nombre_usuario}"]
                     })
                     stats_df.to_excel(writer, sheet_name='Estadísticas', index=False)
 
                     # Hoja con datos detallados
-                    datos['df_evento'].to_excel(writer, sheet_name='Datos Detallados', index=False)
+                    df_export.to_excel(writer, sheet_name='Datos Detallados', index=False)
 
                     # Hoja con distribución por zona
-                    df_zonas.to_excel(writer, sheet_name='Por Zona', index=False)
+                    df_zonas_exp.to_excel(writer, sheet_name='Por Zona', index=False)
 
                     # Hoja con distribución por sistema
-                    df_sistemas.to_excel(writer, sheet_name='Por Sistema', index=False)
+                    df_sistemas_exp.to_excel(writer, sheet_name='Por Sistema', index=False)
 
                 buffer.seek(0)
 
+                est_suffix = "" if selected_export_station == 'Todas' else f"_{selected_export_station.replace(' ', '_')}"
                 st.download_button(
                     label="⬇️ Descargar Excel",
                     data=buffer,
-                    file_name=f"reporte_{datos['evento']}_{datos['fecha']}.xlsx",
+                    file_name=f"reporte_{datos['evento']}_{datos['fecha']}{est_suffix}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
@@ -1994,11 +2051,12 @@ def show_evento_report():
         with col2:
             if st.button("📄 CSV", use_container_width=True):
                 # Crear CSV con datos principales
-                csv_data = datos['df_evento'].to_csv(index=False, encoding='utf-8')
+                csv_bytes = df_export.to_csv(index=False).encode('utf-8-sig')  # UTF-8 con BOM para Excel
+                est_suffix = "" if selected_export_station == 'Todas' else f"_{selected_export_station.replace(' ', '_')}"
                 st.download_button(
                     label="⬇️ Descargar CSV",
-                    data=csv_data,
-                    file_name=f"reporte_{datos['evento']}_{datos['fecha']}.csv",
+                    data=csv_bytes,
+                    file_name=f"reporte_{datos['evento']}_{datos['fecha']}{est_suffix}.csv",
                     mime="text/csv",
                     use_container_width=True
                 )
@@ -2184,13 +2242,18 @@ def show_evento_report():
                 story.append(Paragraph("Estadísticas del evento", section_style))
                 story.append(Spacer(1, 8))  # Espacio después del título
 
+                estaciones_unicas_pdf = df_export['Indicativo'].nunique()
+                zona_mas_reportada_pdf = (df_export['Zona'].mode().iloc[0] if not df_export['Zona'].mode().empty else "N/A")
+                sistema_mas_usado_pdf = (df_export['Sistema'].mode().iloc[0] if not df_export['Sistema'].mode().empty else "N/A")
+                cobertura_estados_pdf = df_export['Estado'].nunique() if 'Estado' in df_export.columns else 0
+
                 stats_data = [
                     ['Métrica', 'Valor', 'Detalles'],
-                    ['Total de Reportes', str(len(datos['reportes'])), f"Participantes activos: {len(datos['reportes'])}"],
-                    ['Estaciones Únicas', str(estaciones_unicas), f"Diferentes estaciones que reportaron"],
-                    ['Zona Más Reportada', zona_mas_reportada, f"Concentración geográfica principal"],
-                    ['Sistema Más Usado', sistema_mas_usado, f"Tecnología de radio predominante"],
-                    ['Cobertura Geográfica', f"{datos['df_evento']['Estado'].nunique()} estados", f"Alcance territorial del evento"]
+                    ['Total de Reportes', str(len(df_export)), f"Participantes activos: {len(df_export)}"],
+                    ['Estaciones Únicas', str(estaciones_unicas_pdf), f"Diferentes estaciones que reportaron"],
+                    ['Zona Más Reportada', zona_mas_reportada_pdf, f"Concentración geográfica principal"],
+                    ['Sistema Más Usado', sistema_mas_usado_pdf, f"Tecnología de radio predominante"],
+                    ['Cobertura Geográfica', f"{cobertura_estados_pdf} estados", f"Alcance territorial del evento"]
                 ]
 
                 # Crear la tabla directamente con los datos
@@ -2211,12 +2274,27 @@ def show_evento_report():
                     ('BOTTOMPADDING', (0, 1), (-1, -1), 3)  # Espaciado reducido
                 ]))
                 story.append(stats_table)
+
+                # Distribuciones filtradas para PDF
+                zonas_count_pdf = df_export['Zona'].value_counts()
+                df_zonas_pdf = pd.DataFrame({
+                    'Zona': zonas_count_pdf.index,
+                    'Cantidad': zonas_count_pdf.values,
+                    'Porcentaje': (zonas_count_pdf.values / max(len(df_export), 1) * 100).round(1)
+                })
+                sistemas_count_pdf = df_export['Sistema'].value_counts()
+                df_sistemas_pdf = pd.DataFrame({
+                    'Sistema': sistemas_count_pdf.index,
+                    'Cantidad': sistemas_count_pdf.values,
+                    'Porcentaje': (sistemas_count_pdf.values / max(len(df_export), 1) * 100).round(1)
+                })
+
                 # Título con formato de oración
                 story.append(Paragraph("Distribución por zona geográfica", section_style))
                 story.append(Spacer(1, 8))  # Espacio después del título
 
                 zonas_data = [['Zona', 'Cantidad', 'Porcentaje', 'Participación']]
-                for _, row in df_zonas.iterrows():
+                for _, row in df_zonas_pdf.iterrows():
                     zonas_data.append([
                         str(row['Zona']),
                         str(int(row['Cantidad'])),
@@ -2245,14 +2323,14 @@ def show_evento_report():
                 story.append(Paragraph("Principales estados participantes", section_style))
                 story.append(Spacer(1, 8))  # Espacio después del título
 
-                # Calcular los 3 estados con más reportes
-                estados_count = datos['df_evento']['Estado'].value_counts()
+                # Calcular los 3 estados con más reportes (filtrado)
+                estados_count = df_export['Estado'].value_counts()
                 top_estados = estados_count.head(3)
 
                 estados_data = [['Estado', 'Reportes', 'Porcentaje', 'Participación']]
                 for estado, cantidad in top_estados.items():
                     if estado and estado.strip():
-                        porcentaje = (cantidad / len(datos['df_evento']) * 100)
+                        porcentaje = (cantidad / max(len(df_export), 1) * 100)
                         estados_data.append([
                             str(estado),
                             str(int(cantidad)),
@@ -2283,7 +2361,7 @@ def show_evento_report():
                 story.append(Spacer(1, 8))  # Espacio después del título
 
                 sistemas_data = [['Sistema', 'Cantidad', 'Porcentaje', 'Uso']]
-                for _, row in df_sistemas.iterrows():
+                for _, row in df_sistemas_pdf.iterrows():
                     sistemas_data.append([
                         str(row['Sistema']),
                         str(int(row['Cantidad'])),
@@ -2451,11 +2529,11 @@ def show_evento_report():
 
                 stats_data = [
                     ['Métrica', 'Valor', 'Detalles'],
-                    ['Total de Reportes', str(len(datos['reportes'])), f"Participantes activos: {len(datos['reportes'])}"],
-                    ['Estaciones Únicas', str(estaciones_unicas), f"Diferentes estaciones que reportaron"],
-                    ['Zona Más Reportada', zona_mas_reportada, f"Concentración geográfica principal"],
-                    ['Sistema Más Usado', sistema_mas_usado, f"Tecnología de radio predominante"],
-                    ['Cobertura Geográfica', f"{datos['df_evento']['Estado'].nunique()} estados", f"Alcance territorial del evento"]
+                    ['Total de Reportes', str(len(df_export)), f"Participantes activos: {len(df_export)}"],
+                    ['Estaciones Únicas', str(estaciones_unicas_pdf), f"Diferentes estaciones que reportaron"],
+                    ['Zona Más Reportada', zona_mas_reportada_pdf, f"Concentración geográfica principal"],
+                    ['Sistema Más Usado', sistema_mas_usado_pdf, f"Tecnología de radio predominante"],
+                    ['Cobertura Geográfica', f"{(df_export['Estado'].nunique() if 'Estado' in df_export.columns else 0)} estados", f"Alcance territorial del evento"]
                 ]
 
                 stats_table = Table(stats_data)
@@ -2482,7 +2560,7 @@ def show_evento_report():
                 story.append(Spacer(1, 8))  # Espacio después del título
 
                 zonas_data = [['Zona', 'Cantidad', 'Porcentaje', 'Participación']]
-                for _, row in df_zonas.iterrows():
+                for _, row in df_zonas_pdf.iterrows():
                     zonas_data.append([
                         str(row['Zona']),
                         str(int(row['Cantidad'])),
@@ -2513,14 +2591,14 @@ def show_evento_report():
                 story.append(Paragraph("Principales estados participantes", section_style))
                 story.append(Spacer(1, 8))  # Espacio después del título
 
-                # Calcular los 3 estados con más reportes
-                estados_count = datos['df_evento']['Estado'].value_counts()
+                # Calcular los 3 estados con más reportes (filtrado)
+                estados_count = df_export['Estado'].value_counts()
                 top_estados = estados_count.head(3)
 
                 estados_data = [['Estado', 'Reportes', 'Porcentaje', 'Participación']]
                 for estado, cantidad in top_estados.items():
                     if estado and estado.strip():  # Solo incluir estados no vacíos
-                        porcentaje = (cantidad / len(datos['df_evento']) * 100)
+                        porcentaje = (cantidad / max(len(df_export), 1) * 100)
                         estados_data.append([
                             str(estado),
                             str(int(cantidad)),
@@ -2554,7 +2632,7 @@ def show_evento_report():
                 story.append(Spacer(1, 8))  # Espacio después del título
 
                 sistemas_data = [['Sistema', 'Cantidad', 'Porcentaje', 'Uso']]
-                for _, row in df_sistemas.iterrows():
+                for _, row in df_sistemas_pdf.iterrows():
                     sistemas_data.append([
                         str(row['Sistema']),
                         str(int(row['Cantidad'])),
@@ -2621,12 +2699,16 @@ def show_evento_report():
                 story.append(Paragraph("Reporte de Actividad", section_style))
                 story.append(Spacer(1, 12))
                 
-                # Aquí puedes agregar el contenido de la segunda página
-                # Por ejemplo, una tabla con los reportes
-                if len(datos['reportes']) > 0:
+                # Aquí puedes agregar el contenido de la segunda página (filtrado por estación)
+                if selected_export_station != 'Todas':
+                    reportes_export = [r for r in datos['reportes'] if (r.get('qrz_station') or '').strip() == selected_export_station]
+                else:
+                    reportes_export = datos['reportes']
+
+                if len(reportes_export) > 0:
                     # Crear tabla con los reportes
                     reportes_data = [['Indicativo', 'Estado', 'Ciudad', 'Zona', 'Sistema', 'Frecuencia', 'Modo']]
-                    for reporte in datos['reportes']:
+                    for reporte in reportes_export:
                         reportes_data.append([
                             reporte.get('indicativo', ''),
                             reporte.get('estado', ''),
@@ -2672,10 +2754,11 @@ def show_evento_report():
                 buffer.seek(0)
 
                 # Botón de descarga
+                est_suffix = "" if selected_export_station == 'Todas' else f"_{selected_export_station.replace(' ', '_')}"
                 st.download_button(
                     label="⬇️ Descargar PDF",
                     data=buffer,
-                    file_name=f"reporte_{datos['evento']}_{datos['fecha']}.pdf",
+                    file_name=f"reporte_{datos['evento']}_{datos['fecha']}{est_suffix}.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )

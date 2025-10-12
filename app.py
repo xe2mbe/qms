@@ -1890,6 +1890,59 @@ def show_evento_report():
         else:
             df_evento_filtrado = datos['df_evento']
 
+        # Si se filtró por estación, repetir las estadísticas y distribuciones para esa estación
+        if estacion_sel != 'Todas':
+            st.subheader("📊 Estadísticas de la Estación")
+            colf1, colf2, colf3, colf4 = st.columns(4)
+
+            with colf1:
+                st.metric("Total de Reportes", len(df_evento_filtrado))
+
+            with colf2:
+                st.metric("Estaciones Únicas", df_evento_filtrado['Indicativo'].nunique())
+
+            with colf3:
+                zona_mas_reportada_est = (
+                    df_evento_filtrado['Zona'].mode().iloc[0]
+                    if not df_evento_filtrado['Zona'].mode().empty else "N/A"
+                )
+                st.metric("Zona Más Reportada", zona_mas_reportada_est)
+
+            with colf4:
+                sistema_mas_usado_est = (
+                    df_evento_filtrado['Sistema'].mode().iloc[0]
+                    if not df_evento_filtrado['Sistema'].mode().empty else "N/A"
+                )
+                st.metric("Sistema Más Usado", sistema_mas_usado_est)
+
+            # Distribución por zona (estación)
+            st.subheader("📍 Distribución por Zona (Estación)")
+            zonas_count_est = df_evento_filtrado['Zona'].value_counts()
+            df_zonas_est = pd.DataFrame({
+                'Zona': zonas_count_est.index,
+                'Cantidad': zonas_count_est.values,
+                'Porcentaje': (zonas_count_est.values / len(df_evento_filtrado) * 100).round(1)
+            })
+            st.dataframe(
+                df_zonas_est,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            # Distribución por sistema (estación)
+            st.subheader("📡 Distribución por Sistema (Estación)")
+            sistemas_count_est = df_evento_filtrado['Sistema'].value_counts()
+            df_sistemas_est = pd.DataFrame({
+                'Sistema': sistemas_count_est.index,
+                'Cantidad': sistemas_count_est.values,
+                'Porcentaje': (sistemas_count_est.values / len(df_evento_filtrado) * 100).round(1)
+            })
+            st.dataframe(
+                df_sistemas_est,
+                use_container_width=True,
+                hide_index=True
+            )
+
         st.subheader("📄 Detalle de Reportes" + (" - Estación: " + estacion_sel if estacion_sel != 'Todas' else ""))
         st.dataframe(df_evento_filtrado, use_container_width=True, hide_index=True)
 

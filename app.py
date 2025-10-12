@@ -2756,6 +2756,54 @@ def show_settings():
                         st.rerun()
                 except Exception as e:
                     st.error(f"❌ Error al guardar las opciones: {e}")
+
+        st.markdown("---")
+        st.subheader("Plantilla de correo de bienvenida")
+        st.caption("Usa placeholders: {{full_name}}, {{username}}, {{password}}, {{system_url}}")
+
+        # Cargar configuraciones actuales
+        subj_setting = db.get_system_setting('welcome_email_subject')
+        body_setting = db.get_system_setting('welcome_email_body_html')
+
+        default_subject = "Bienvenido al Sistema de Gestión de QSOs"
+        default_body = (
+            "<html><body>"
+            "<h2>Bienvenido al Sistema de Gestión de QSOs de la FMRE A.C.</h2>"
+            "<p>Hola {{full_name}},</p>"
+            "<p>Se ha creado una cuenta para ti en el Sistema de Gestión de QSOs.</p>"
+            "<p><strong>Tus credenciales de acceso son:</strong></p>"
+            "<ul>"
+            "<li><strong>Usuario:</strong> {{username}}</li>"
+            "<li><strong>Contraseña temporal:</strong> {{password}}</li>"
+            "</ul>"
+            "<p>Te recomendamos cambiar tu contraseña después de iniciar sesión por primera vez.</p>"
+            "<p>Puedes acceder al sistema en: {{system_url}}</p>"
+            "<p>Saludos,<br>El equipo de FMRE</p>"
+            "</body></html>"
+        )
+
+        with st.form("welcome_email_template_form"):
+            email_subject = st.text_input(
+                "Asunto",
+                value=(subj_setting.get('value') if subj_setting else default_subject)
+            )
+            email_body = st.text_area(
+                "Cuerpo (HTML)",
+                value=(body_setting.get('value') if body_setting else default_body),
+                height=300
+            )
+            save_tpl = st.form_submit_button("Guardar plantilla")
+
+            if save_tpl:
+                try:
+                    updated_by = st.session_state.user["id"] if "user" in st.session_state and st.session_state.user else None
+                    db.set_system_setting('welcome_email_subject', email_subject or default_subject, updated_by=updated_by)
+                    db.set_system_setting('welcome_email_body_html', email_body or default_body, updated_by=updated_by)
+                    st.success("✅ Plantilla guardada correctamente")
+                    time.sleep(1.2)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Error al guardar la plantilla: {e}")
     
     with tab3:
         st.header("Consulta SQL Directa")

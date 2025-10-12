@@ -123,7 +123,7 @@ def show_sidebar():
         
         # Menú de navegación
         st.markdown("### Menú")
-        menu_options = ["🏠 Inicio", "📝 Toma de Reportes", "📋 Registros", "📊 Reportes"]
+        menu_options = ["🏠 Inicio", "📝 Toma de Reportes", "📋 Registros", "🧾 Reportes", "📊 Estadísticas"]
         
         # Mostrar opciones de administración solo para administradores
         if user['role'] == 'admin':
@@ -138,7 +138,9 @@ def show_sidebar():
             st.session_state.current_page = "toma_reportes"
         elif selected == "📋 Registros":
             st.session_state.current_page = "registros"
-        elif selected == "📊 Reportes":
+        elif selected == "🧾 Reportes":
+            st.session_state.current_page = "reportes"
+        elif selected == "📊 Estadísticas":
             st.session_state.current_page = "reports"
         elif selected == "⚙️ Configuración":
             st.session_state.current_page = "settings"
@@ -707,13 +709,12 @@ def show_reports():
     st.title("📊 Reportes y Análisis")
     tipo_reportes = st.selectbox("Tipo de reportes", ["Tradicional", "Redes Sociales"], index=0, key="reports_tipo")
     if tipo_reportes == "Tradicional":
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "📈 Actividad General",
             "🌍 Análisis Geográfico",
             "📡 Sistemas de Radio",
             "📊 Tendencias",
-            "⚖️ Comparativos",
-            "📅 Reportes por Evento"
+            "⚖️ Comparativos"
         ])
 
         with tab1:
@@ -730,12 +731,15 @@ def show_reports():
 
         with tab5:
             show_comparativos_report()
-
-        with tab6:
-            show_evento_report()
     else:
         show_rs_reports()
  
+def show_reportes():
+    """Muestra la sección de Reportes (por evento)."""
+    st.title("🧾 Reportes")
+    # Reutilizamos el reporte por evento aquí
+    show_evento_report()
+
 def show_rs_reports():
     st.subheader("📱 Reportes de Redes Sociales")
     col1, col2 = st.columns(2)
@@ -1774,7 +1778,7 @@ def show_evento_report():
             reportes_evento = [r for r in reportes if r.get('tipo_reporte') == evento_seleccionado]
 
             if reportes_evento:
-                # Crear dataframe para análisis
+                # Crear dataframe para análisis (incluye Estación QRZ)
                 import pandas as pd
                 df_evento = pd.DataFrame([{
                     'Indicativo': r.get('indicativo', ''),
@@ -1784,7 +1788,8 @@ def show_evento_report():
                     'Estado': r.get('estado', ''),
                     'Ciudad': r.get('ciudad', ''),
                     'Señal': r.get('senal', 0),
-                    'Observaciones': r.get('observaciones', '')
+                    'Observaciones': r.get('observaciones', ''),
+                    'Estación': (r.get('qrz_station') or '').strip() or 'Sin estación'
                 } for r in reportes_evento])
 
                 # Guardar datos en session_state para mantener el estado
@@ -1857,6 +1862,36 @@ def show_evento_report():
             use_container_width=True,
             hide_index=True
         )
+
+        # Desglose por Estación (QRZ Station)
+        st.subheader("🏷️ Desglose por Estación (QRZ Station)")
+        estaciones_count = datos['df_evento']['Estación'].value_counts(dropna=False)
+        df_estaciones = pd.DataFrame({
+            'Estación': estaciones_count.index,
+            'Cantidad': estaciones_count.values,
+            'Porcentaje': (estaciones_count.values / len(datos['df_evento']) * 100).round(1)
+        })
+        st.dataframe(
+            df_estaciones,
+            use_container_width=True,
+            hide_index=True
+        )
+        # Validar suma de desglose por estación
+        total_suma_estaciones = int(df_estaciones['Cantidad'].sum())
+        if total_suma_estaciones != len(datos['df_evento']):
+            st.warning(f"La suma por estación ({total_suma_estaciones}) no coincide con el total del evento ({len(datos['df_evento'])}).")
+
+        # Filtro por estación
+        estaciones_opciones = ['Todas'] + sorted([e for e in df_estaciones['Estación'].tolist() if e and e != ''])
+        estacion_sel = st.selectbox("Filtrar por Estación (QRZ Station)", estaciones_opciones, key="filtro_estacion_evento")
+
+        if estacion_sel != 'Todas':
+            df_evento_filtrado = datos['df_evento'][datos['df_evento']['Estación'] == estacion_sel]
+        else:
+            df_evento_filtrado = datos['df_evento']
+
+        st.subheader("📄 Detalle de Reportes" + (" - Estación: " + estacion_sel if estacion_sel != 'Todas' else ""))
+        st.dataframe(df_evento_filtrado, use_container_width=True, hide_index=True)
 
         # Información del usuario que generó el reporte
         usuario_actual = datos['usuario']
@@ -4539,6 +4574,8 @@ def main():
             show_toma_reportes()
         elif current_page == 'registros':
             show_registros()
+        elif current_page == 'reportes':
+            show_reportes()
         elif current_page == 'reports':
             show_reports()
         elif current_page == 'settings':

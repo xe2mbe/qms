@@ -2998,21 +2998,24 @@ def show_evento_report():
                     reportes_export = datos['reportes']
 
                 if len(reportes_export) > 0:
-                    # Crear tabla con los reportes
-                    reportes_data = [['Indicativo', 'Estado', 'Ciudad', 'Zona', 'Sistema', 'Frecuencia', 'Modo']]
+                    # Crear tabla con los reportes (incluye Estación y Nombre; quita Frecuencia y Modo)
+                    reportes_data = [['Estación', 'Indicativo', 'Nombre', 'Estado', 'Ciudad', 'Zona', 'Sistema']]
                     for reporte in reportes_export:
                         reportes_data.append([
+                            (reporte.get('qrz_station') or ''),
                             reporte.get('indicativo', ''),
+                            reporte.get('nombre', ''),
                             reporte.get('estado', ''),
                             reporte.get('ciudad', ''),
                             reporte.get('zona', ''),
-                            reporte.get('sistema', ''),
-                            reporte.get('frecuencia', ''),
-                            reporte.get('modo', '')
+                            reporte.get('sistema', '')
                         ])
                     
-                    # Crear tabla con los reportes
-                    reportes_table = Table(reportes_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch, 0.8*inch, 1.2*inch, 0.8*inch, 0.8*inch])
+                    # Crear tabla con anchos que caben en Letter con márgenes (6.5")
+                    reportes_table = Table(
+                        reportes_data,
+                        colWidths=[1.0*inch, 1.0*inch, 1.6*inch, 0.9*inch, 1.0*inch, 0.5*inch, 0.5*inch]
+                    )
                     reportes_table.setStyle(TableStyle([
                         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4e79')),
                         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),

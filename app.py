@@ -295,14 +295,9 @@ def show_gestion_usuarios():
                                                 full_name=edit_full_name,
                                                 email=edit_email,
                                                 role=edit_role,
-                                                is_active=edit_is_active
+                                                is_active=edit_is_active,
+                                                password=(new_password if change_password else None)
                                             )
-                                            
-                                            # Cambiar contraseña si se solicitó
-                                            if change_password:
-                                                import hashlib
-                                                password_hash = hashlib.sha256(new_password.encode()).hexdigest()
-                                                db.change_password(user['username'], password_hash)
                                             
                                             st.success("✅ Usuario actualizado exitosamente")
                                             import time

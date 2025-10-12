@@ -1098,13 +1098,23 @@ def show_rs_event_report():
             story.append(Spacer(1, 8))
 
             # Estadísticas
+            m = (est or {}).get('metricas', {})
+            me_gusta_pdf = int(m.get('me_gusta') or 0)
+            comentarios_pdf = int(m.get('comentarios') or 0)
+            compartidos_pdf = int(m.get('compartidos') or 0)
+            reproducciones_pdf = int(m.get('reproducciones') or 0)
+
             stats = [
                 ['Métrica', 'Valor', 'Detalles'],
                 ['Total de Reportes', str(len(df_pdf)), f"Participantes activos: {len(df_pdf)}"],
                 ['Estaciones Únicas', str(estaciones_unicas_pdf), "Diferentes estaciones que reportaron"],
                 ['Zona Más Reportada', zona_mas_pdf, "Concentración geográfica principal"],
                 ['Plataforma Más Usada', plataforma_mas_pdf, "Plataforma predominante"],
-                ['Cobertura Geográfica', f"{cobertura_estados_pdf} estados", "Alcance territorial del período"]
+                ['Cobertura Geográfica', f"{cobertura_estados_pdf} estados", "Alcance territorial del período"],
+                ['Me gusta', str(me_gusta_pdf), "Interacciones de 'me gusta'"],
+                ['Comentarios', str(comentarios_pdf), "Comentarios recibidos"],
+                ['Compartidos', str(compartidos_pdf), "Veces compartido"],
+                ['Reproducciones', str(reproducciones_pdf), "Reproducciones totales"]
             ]
             stats_table = Table(stats)
             stats_table.setStyle(TableStyle([
@@ -1124,7 +1134,7 @@ def show_rs_event_report():
 
             # Distribución por zona
             story.append(Paragraph("Distribución por zona geográfica", section_style))
-            story.append(Spacer(1, 6))
+            story.append(Spacer(1, 10))
             zonas_data = [['Zona', 'Cantidad', 'Porcentaje']]
             for _, row in df_zonas_pdf.iterrows():
                 zonas_data.append([str(row['Zona']), str(int(row['Cantidad'])), f"{row['Porcentaje']:.1f}%"])
@@ -1142,7 +1152,7 @@ def show_rs_event_report():
 
             # Distribución por plataforma
             story.append(Paragraph("Distribución por plataforma", section_style))
-            story.append(Spacer(1, 6))
+            story.append(Spacer(1, 10))
             plat_data = [['Plataforma', 'Cantidad', 'Porcentaje']]
             for _, row in df_plataformas_pdf.iterrows():
                 plat_data.append([str(row['Plataforma']), str(int(row['Cantidad'])), f"{row['Porcentaje']:.1f}%"])

@@ -164,6 +164,24 @@ class FMREDatabase:
                 )
             ''')
             
+            # Tabla de configuración general del sistema
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS system_setting (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    key TEXT NOT NULL UNIQUE,
+                    value TEXT,
+                    description TEXT,
+                    updated_by INTEGER,
+                    updated_by_username TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+                )
+            ''')
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_system_setting_key ON system_setting(key)
+            ''')
+
             # Insertar configuración por defecto si no existe
             cursor.execute('SELECT COUNT(*) FROM smtp_settings')
             if cursor.fetchone()[0] == 0:
@@ -850,6 +868,55 @@ class FMREDatabase:
             ''', (server, port, username, password, 1 if use_tls else 0, from_email))
             conn.commit()
             return True
+
+    # ===============================
+    # System settings (key-value)
+    # ===============================
+    def get_system_setting(self, key: str):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM system_setting WHERE key = ? LIMIT 1', (key,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def set_system_setting(self, key: str, value: str, updated_by: int = None, description: str = None):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Obtener username para redundancia
+            username = None
+            if updated_by is not None:
+                u = cursor.execute('SELECT username FROM users WHERE id = ?', (updated_by,)).fetchone()
+                if u:
+                    username = u['username'] if isinstance(u, sqlite3.Row) else u[0]
+
+            existing = cursor.execute('SELECT id FROM system_setting WHERE key = ?', (key,)).fetchone()
+            if existing:
+                cursor.execute('''
+                    UPDATE system_setting
+                    SET value = ?,
+                        description = COALESCE(?, description),
+                        updated_by = ?,
+                        updated_by_username = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE key = ?
+                ''', (value, description, updated_by, username, key))
+            else:
+                cursor.execute('''
+                    INSERT INTO system_setting (key, value, description, updated_by, updated_by_username)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (key, value, description, updated_by, username))
+            conn.commit()
+            return True
+
+    def get_all_system_settings(self):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM system_setting ORDER BY key')
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_system_url(self):
+        row = self.get_system_setting('system_url')
+        return row['value'] if row and 'value' in row else None
     
     def verify_user(self, username, password):
         """Verifica las credenciales del usuario"""

@@ -2708,7 +2708,54 @@ def show_settings():
     with tab2:
         st.header("Opciones del Sistema")
         st.write("Configuración general del sistema.")
-        # Aquí puedes agregar más opciones de configuración en el futuro
+
+        # URL del sistema (base)
+        current_setting = db.get_system_setting('system_url')
+        current_url = (current_setting.get('value') if current_setting else '') or ''
+
+        # Mostrar metadatos si existen
+        if current_setting:
+            meta_cols = st.columns([2, 2])
+            meta_cols[0].info(f"Última actualización: {current_setting.get('updated_at', '')}")
+            meta_cols[1].info(f"Por: {current_setting.get('updated_by_username', 'N/D')}")
+
+        with st.form("system_options_form"):
+            st.subheader("URL del Sistema")
+            system_url = st.text_input(
+                "URL base (incluye http/https)",
+                value=current_url,
+                help="Ejemplos: https://tudominio.com/qms o http://localhost:8501"
+            )
+
+            # Campo opcional para comentarios/descripcion
+            description = st.text_area(
+                "Descripción (opcional)",
+                value=current_setting.get('description', '') if current_setting else '',
+                help="Notas sobre el uso de esta URL."
+            )
+
+            save_settings = st.form_submit_button("Guardar opciones")
+
+            if save_settings:
+                try:
+                    # Validar URL simple (http/https)
+                    import re as _re
+                    pattern = r'^https?://[^\s]+$'
+                    if system_url and not _re.match(pattern, system_url.strip()):
+                        st.error("La URL debe iniciar con http:// o https:// y no contener espacios.")
+                    else:
+                        updated_by = st.session_state.user["id"] if "user" in st.session_state and st.session_state.user else None
+                        db.set_system_setting(
+                            key='system_url',
+                            value=system_url.strip() if system_url else '',
+                            updated_by=updated_by,
+                            description=description.strip() if description else None
+                        )
+                        st.success("✅ Opciones del sistema guardadas correctamente")
+                        time.sleep(1.5)
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Error al guardar las opciones: {e}")
     
     with tab3:
         st.header("Consulta SQL Directa")

@@ -4956,17 +4956,27 @@ def _show_toma_reportes_tradicional():
             st.info("No hay reportes registrados para el día de hoy.")
 
 def show_registros():
-    """Muestra la sección de registros con pestañas para listar y editar"""
+    """Muestra la sección de registros con pestañas para Tradicional y Redes Sociales"""
     st.title("📋 Registros")
 
-    # Crear pestañas
-    tab1, tab2 = st.tabs(["📋 Lista Registros", "✏️ Editar Registros"])
+    # Pestañas principales: Tradicional y Redes Sociales
+    t1, t2 = st.tabs(["📻 Tradicional", "📱 Redes Sociales"])
 
-    with tab1:
-        show_lista_registros()
+    # Tradicional: Lista y Editar
+    with t1:
+        tab1, tab2 = st.tabs(["📋 Lista", "✏️ Editar"])
+        with tab1:
+            show_lista_registros()
+        with tab2:
+            show_editar_registros()
 
-    with tab2:
-        show_editar_registros()
+    # Redes Sociales: Lista y Editar
+    with t2:
+        tab3, tab4 = st.tabs(["📋 Lista", "✏️ Editar"])
+        with tab3:
+            show_lista_registros_rs()
+        with tab4:
+            show_editar_registros_rs()
 
 def show_lista_registros():
     """Muestra la lista de registros con filtros y búsqueda"""
@@ -5590,6 +5600,419 @@ def _mostrar_formulario_edicion_registro(registro_id):
         if st.button("Volver a la lista", key="volver_lista_error2"):
             if 'editando_registro_id' in st.session_state:
                 del st.session_state.editando_registro_id
+            st.rerun()
+
+def show_lista_registros_rs():
+    """Lista registros de Redes Sociales con filtros y exportación"""
+    st.subheader("📋 Lista de Registros (Redes Sociales)")
+
+    if 'rs_registros_filtros' not in st.session_state:
+        st.session_state.rs_registros_filtros = {
+            'fecha_inicio': None,
+            'fecha_fin': None,
+            'busqueda': ''
+        }
+
+    col1, col2 = st.columns(2)
+    with col1:
+        fecha_inicio = st.date_input(
+            "Fecha inicio",
+            value=st.session_state.rs_registros_filtros['fecha_inicio'],
+            key="rs_fecha_inicio_lista"
+        )
+    with col2:
+        fecha_fin = st.date_input(
+            "Fecha fin",
+            value=st.session_state.rs_registros_filtros['fecha_fin'],
+            key="rs_fecha_fin_lista"
+        )
+
+    busqueda = st.text_input(
+        "🔍 Buscar en todos los campos (insensible a acentos)",
+        value=st.session_state.rs_registros_filtros['busqueda'],
+        placeholder="Indicativo, operador, ciudad, estado, zona, plataforma, capturó...",
+        key="rs_busqueda_lista"
+    )
+
+    c_off, c_buscar, c_limpiar, _ = st.columns([1.2, 2.2, 2.2, 3.4])
+    buscar_clicked = c_buscar.button("🔍 Buscar Registros", type="primary", key="rs_buscar_lista", width='stretch')
+    limpiar_clicked = c_limpiar.button("🧹 Limpiar Filtros", key="rs_limpiar_lista", width='stretch')
+
+    if buscar_clicked:
+        st.session_state.rs_registros_filtros.update({
+            'fecha_inicio': fecha_inicio,
+            'fecha_fin': fecha_fin,
+            'busqueda': busqueda
+        })
+        st.rerun()
+
+    if limpiar_clicked:
+        st.session_state.rs_registros_filtros = {'fecha_inicio': None, 'fecha_fin': None, 'busqueda': ''}
+        st.rerun()
+
+    try:
+        fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d') if fecha_inicio else None
+        fecha_fin_str = fecha_fin.strftime('%Y-%m-%d') if fecha_fin else None
+        reportes, total = db.get_reportes_rs_filtrados(
+            fecha_inicio=fecha_inicio_str,
+            fecha_fin=fecha_fin_str,
+            busqueda=busqueda
+        )
+        st.caption(f"Mostrando {len(reportes)} de {total} registros")
+
+        if reportes:
+            import pandas as pd
+            df = pd.DataFrame([
+                {
+                    'ID': r.get('id'),
+                    'Indicativo': r.get('indicativo', ''),
+                    'Operador': r.get('operador', ''),
+                    'Estado': r.get('estado', ''),
+                    'Ciudad': r.get('ciudad', ''),
+                    'Zona': r.get('zona', ''),
+                    'Señal': r.get('senal', ''),
+                    'Plataforma': r.get('plataforma_nombre', ''),
+                    'Fecha': r.get('fecha_reporte', ''),
+                    'Capturado Por': r.get('qrz_captured_by', ''),
+                    'Operando': r.get('qrz_station', ''),
+                    'Observaciones': r.get('observaciones', '')
+                } for r in reportes
+            ])
+            st.data_editor(
+                df,
+                hide_index=True,
+                use_container_width=True,
+                disabled=True,
+                column_config={
+                    'ID': st.column_config.NumberColumn("ID", width="small"),
+                    'Indicativo': st.column_config.TextColumn("Indicativo", width="medium"),
+                    'Operador': st.column_config.TextColumn("Operador", width="large"),
+                    'Estado': st.column_config.TextColumn("Estado", width="medium"),
+                    'Ciudad': st.column_config.TextColumn("Ciudad", width="medium"),
+                    'Zona': st.column_config.TextColumn("Zona", width="small"),
+                    'Señal': st.column_config.NumberColumn("Señal", width="small"),
+                    'Plataforma': st.column_config.TextColumn("Plataforma", width="medium"),
+                    'Fecha': st.column_config.TextColumn("Fecha", width="medium"),
+                    'Observaciones': st.column_config.TextColumn("Observaciones", width="large"),
+                }
+            )
+
+            # Exportación
+            fecha_inicio_tag = fecha_inicio.strftime('%Y%m%d') if fecha_inicio else "inicio"
+            fecha_fin_tag = fecha_fin.strftime('%Y%m%d') if fecha_fin else "fin"
+            from io import BytesIO
+            output = BytesIO()
+            engine = None
+            try:
+                import importlib
+                if importlib.util.find_spec("xlsxwriter"):
+                    engine = "xlsxwriter"
+            except Exception:
+                engine = None
+            try:
+                with pd.ExcelWriter(output, engine=engine) as writer:
+                    df.to_excel(writer, index=False, sheet_name='RS')
+                    if engine == "xlsxwriter":
+                        wb = writer.book
+                        ws = writer.sheets['RS']
+                        for i, col in enumerate(df.columns):
+                            max_len = max(df[col].astype(str).apply(len).max(), len(col)) + 2
+                            ws.set_column(i, i, max_len)
+                data_bytes = output.getvalue()
+                mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                fname = f"registros_rs_{fecha_inicio_tag}_{fecha_fin_tag}.xlsx"
+            except Exception:
+                data_bytes = df.to_csv(index=False).encode('utf-8-sig')
+                mime = "text/csv"
+                fname = f"registros_rs_{fecha_inicio_tag}_{fecha_fin_tag}.csv"
+
+            st.download_button("📥 Exportar", data=data_bytes, file_name=fname, mime=mime, key="rs_export", width='stretch')
+        else:
+            st.info("No se encontraron registros con los filtros aplicados")
+    except Exception as e:
+        st.error(f"Error al cargar los registros RS: {str(e)}")
+
+def show_editar_registros_rs():
+    """Editar registros de Redes Sociales con selección múltiple y borrado"""
+    st.subheader("✏️ Editar Registros (Redes Sociales)")
+
+    if 'rs_editando_registro_id' not in st.session_state:
+        st.session_state.rs_editando_registro_id = None
+    if 'rs_eliminando_registro_id' not in st.session_state:
+        st.session_state.rs_eliminando_registro_id = None
+
+    if st.session_state.rs_editando_registro_id:
+        _mostrar_formulario_edicion_registro_rs(st.session_state.rs_editando_registro_id)
+        return
+
+    col1, col2 = st.columns(2)
+    with col1:
+        fecha_inicio = st.date_input("Fecha inicio", key="rs_fecha_inicio_editar")
+    with col2:
+        fecha_fin = st.date_input("Fecha fin", key="rs_fecha_fin_editar")
+    busqueda = st.text_input(
+        "🔍 Buscar en todos los campos (insensible a acentos)",
+        key="rs_busqueda_editar",
+        placeholder="Indicativo, operador, ciudad, estado, zona, plataforma..."
+    )
+
+    if st.button("🔍 Buscar Registros", type="primary", key="rs_buscar_editar"):
+        st.session_state.rs_registros_filtros_editar = {
+            'fecha_inicio': fecha_inicio,
+            'fecha_fin': fecha_fin,
+            'busqueda': busqueda
+        }
+        st.rerun()
+
+    try:
+        filtros = getattr(st.session_state, 'rs_registros_filtros_editar', {'fecha_inicio': None, 'fecha_fin': None, 'busqueda': ''})
+        fi = filtros['fecha_inicio'].strftime('%Y-%m-%d') if filtros['fecha_inicio'] else None
+        ff = filtros['fecha_fin'].strftime('%Y-%m-%d') if filtros['fecha_fin'] else None
+        reportes, _ = db.get_reportes_rs_filtrados(fecha_inicio=fi, fecha_fin=ff, busqueda=filtros['busqueda'])
+
+        if 'rs_registros_seleccionados' not in st.session_state:
+            st.session_state.rs_registros_seleccionados = set()
+        if 'rs_eliminando_masivo' not in st.session_state:
+            st.session_state.rs_eliminando_masivo = False
+        if 'rs_show_delete_modal' not in st.session_state:
+            st.session_state.rs_show_delete_modal = False
+
+        if reportes:
+            import pandas as pd
+            seleccionados_actuales = st.session_state.rs_registros_seleccionados or set()
+
+            col_acc1, col_acc2 = st.columns(2)
+            with col_acc1:
+                if st.button("✅ Seleccionar Todos", key="rs_select_all"):
+                    st.session_state.rs_registros_seleccionados = {r['id'] for r in reportes if r.get('id') is not None}
+                    st.session_state.rs_eliminando_masivo = False
+                    st.rerun()
+            with col_acc2:
+                if st.button("🧹 Limpiar Selección", key="rs_clear_selection"):
+                    st.session_state.rs_registros_seleccionados.clear()
+                    st.session_state.rs_eliminando_masivo = False
+                    st.rerun()
+
+            df = pd.DataFrame([
+                {
+                    'ID': r.get('id'),
+                    'Seleccionar': r.get('id') in seleccionados_actuales,
+                    'Indicativo': r.get('indicativo', ''),
+                    'Operador': r.get('operador', ''),
+                    'Estado': r.get('estado', ''),
+                    'Ciudad': r.get('ciudad', ''),
+                    'Zona': r.get('zona', ''),
+                    'Señal': r.get('senal', ''),
+                    'Plataforma': r.get('plataforma_nombre', ''),
+                    'Fecha': r.get('fecha_reporte', ''),
+                    'Observaciones': (r.get('observaciones', '')[:50] + '...') if r.get('observaciones') and len(r.get('observaciones', '')) > 50 else r.get('observaciones', ''),
+                    'Capturado Por': r.get('qrz_captured_by', ''),
+                    'Operando': r.get('qrz_station', ''),
+                } for r in reportes
+            ])
+
+            with st.form("tabla_editar_registros_rs"):
+                edited_df = st.data_editor(
+                    df,
+                    hide_index=True,
+                    width='stretch',
+                    num_rows="fixed",
+                    key=f"tabla_editar_registros_rs_{len(df)}",
+                    column_config={
+                        'Seleccionar': st.column_config.CheckboxColumn("Seleccionar"),
+                        'ID': st.column_config.NumberColumn("ID", width="small"),
+                        'Indicativo': st.column_config.TextColumn("Indicativo", width="medium"),
+                        'Operador': st.column_config.TextColumn("Operador", width="large"),
+                        'Estado': st.column_config.TextColumn("Estado", width="medium"),
+                        'Ciudad': st.column_config.TextColumn("Ciudad", width="medium"),
+                        'Zona': st.column_config.TextColumn("Zona", width="small"),
+                        'Señal': st.column_config.NumberColumn("Señal", min_value=1, max_value=99, step=1, format="%d"),
+                        'Plataforma': st.column_config.TextColumn("Plataforma", width="medium"),
+                        'Fecha': st.column_config.TextColumn("Fecha", width="medium"),
+                        'Observaciones': st.column_config.TextColumn("Observaciones", width="large"),
+                    },
+                    disabled=['ID', 'Indicativo', 'Operador', 'Estado', 'Ciudad', 'Zona', 'Señal', 'Plataforma', 'Fecha', 'Observaciones', 'Capturado Por', 'Operando']
+                )
+
+                c1, c2 = st.columns(2)
+                editar_submit = c1.form_submit_button("✏️ Editar Seleccionado", type="primary")
+                eliminar_submit = c2.form_submit_button("🗑️ Eliminar Seleccionados", type="secondary")
+
+            selected_ids = set()
+            if not edited_df.empty and "Seleccionar" in edited_df.columns:
+                seleccionados_df = edited_df[edited_df["Seleccionar"]]
+                for id_ in seleccionados_df['ID'].tolist():
+                    if pd.notna(id_):
+                        selected_ids.add(int(id_))
+
+            if not eliminar_submit:
+                st.session_state.rs_eliminando_masivo = st.session_state.rs_eliminando_masivo and bool(selected_ids)
+
+            st.session_state.rs_registros_seleccionados = selected_ids
+            if selected_ids:
+                st.caption(f"✅ {len(selected_ids)} registros seleccionados")
+
+            if editar_submit:
+                if len(selected_ids) != 1:
+                    st.warning("Selecciona exactamente un registro para editarlo.")
+                else:
+                    reporte_id = next(iter(selected_ids))
+                    st.session_state.rs_registros_seleccionados = {reporte_id}
+                    st.session_state.rs_editando_registro_id = reporte_id
+                    st.rerun()
+
+            if eliminar_submit:
+                if not selected_ids:
+                    st.warning("Selecciona al menos un registro para eliminar.")
+                else:
+                    st.session_state.rs_eliminando_masivo = True
+                    st.session_state.rs_show_delete_modal = True
+                    st.rerun()
+
+            if st.session_state.rs_eliminando_masivo and st.session_state.rs_show_delete_modal:
+                total = len(st.session_state.rs_registros_seleccionados)
+                with st.container(border=True):
+                    st.warning(f"¿Estás seguro de que quieres eliminar {total} registro{'s' if total != 1 else ''}? Esta acción no se puede deshacer.")
+                    if not seleccionados_df.empty:
+                        st.dataframe(
+                            seleccionados_df.drop(columns=["Seleccionar"], errors="ignore"),
+                            hide_index=True,
+                            width='stretch',
+                        )
+                    cc1, cc2 = st.columns(2)
+                    with cc1:
+                        if st.button("✅ Confirmar", type="primary", key="rs_confirm_bulk_delete"):
+                            try:
+                                eliminados = 0
+                                for rid in st.session_state.rs_registros_seleccionados:
+                                    if db.delete_reporte_rs(rid):
+                                        eliminados += 1
+                                if eliminados:
+                                    st.success(f"✅ {eliminados} registro{'s' if eliminados != 1 else ''} eliminados correctamente")
+                                    st.session_state.rs_registros_seleccionados.clear()
+                                    st.session_state.rs_eliminando_masivo = False
+                                    st.session_state.rs_show_delete_modal = False
+                                    time.sleep(2)
+                                    st.rerun()
+                                else:
+                                    st.error("No se pudo eliminar ningún registro")
+                            except Exception as e:
+                                st.error(f"Error al eliminar registros: {str(e)}")
+                    with cc2:
+                        if st.button("❌ Cancelar", key="rs_cancel_bulk_delete"):
+                            st.session_state.rs_eliminando_masivo = False
+                            st.session_state.rs_show_delete_modal = False
+                            st.rerun()
+        else:
+            st.info("No se encontraron registros con los filtros aplicados")
+    except Exception as e:
+        st.error(f"Error al cargar los registros: {str(e)}")
+
+def _mostrar_formulario_edicion_registro_rs(reporte_id: int):
+    """Formulario de edición para un registro RS"""
+    st.header("✏️ Editar Registro RS")
+    try:
+        reporte = db.get_reporte_rs_por_id(reporte_id)
+        if not reporte:
+            st.error("No se encontró el registro especificado")
+            if st.button("Volver a la lista", key="rs_volver_lista_error"):
+                del st.session_state.rs_editando_registro_id
+                st.rerun()
+            return
+
+        st.info(f"Editando registro RS: {reporte.get('indicativo','')} - {reporte.get('operador') or 'Sin operador'}")
+
+        # Opciones
+        sistemas_options = _get_sistemas_options()
+        if "" not in sistemas_options:
+            sistemas_options = [""] + sistemas_options
+
+        # Plataformas RS
+        plataformas = db.get_rs_entries(active_only=True) or []
+        plat_labels = [f"{p.get('plataforma','')} - {p.get('nombre','')}".strip(" - ") for p in plataformas]
+        plat_ids = [p.get('id') for p in plataformas]
+        try:
+            idx_plat = plat_ids.index(reporte.get('plataforma_id')) if reporte.get('plataforma_id') in plat_ids else 0
+        except Exception:
+            idx_plat = 0
+
+        from datetime import datetime
+        fecha_val = None
+        try:
+            val = reporte.get('fecha_reporte') or ''
+            fecha_val = datetime.strptime(val[:10], '%Y-%m-%d').date()
+        except Exception:
+            fecha_val = None
+
+        with st.form(key=f'editar_registro_rs_form_{reporte_id}'):
+            col1, col2 = st.columns(2)
+            with col1:
+                indicativo = st.text_input("Indicativo", value=reporte.get('indicativo',''))
+                operador = st.text_input("Operador", value=reporte.get('operador') or '')
+                estado = st.selectbox(
+                    "Estado",
+                    options=[""] + [e['estado'] for e in _get_estados_options() if e and 'estado' in e],
+                    index=0 if not reporte.get('estado') else ([""] + [e['estado'] for e in _get_estados_options() if e and 'estado' in e]).index(reporte.get('estado')) if reporte.get('estado') in [e['estado'] for e in _get_estados_options() if e and 'estado' in e] else 0,
+                )
+                ciudad = st.text_input("Ciudad", value=reporte.get('ciudad') or '')
+            with col2:
+                zona = st.selectbox(
+                    "Zona",
+                    options=[""] + [z['zona'] for z in _get_zonas_options() if z and 'zona' in z],
+                    index=0 if not reporte.get('zona') else ([""] + [z['zona'] for z in _get_zonas_options() if z and 'zona' in z]).index(reporte.get('zona')) if reporte.get('zona') in [z['zona'] for z in _get_zonas_options() if z and 'zona' in z] else 0,
+                )
+                senal = st.number_input("Señal", min_value=1, max_value=99, value=int(reporte.get('senal') or 59))
+                fecha = st.date_input("Fecha del Reporte", value=fecha_val)
+
+            plataforma_sel = st.selectbox("Plataforma", options=plat_labels or [""], index=idx_plat)
+            observaciones = st.text_area("Observaciones", value=reporte.get('observaciones') or '')
+
+            c1, c2, c3 = st.columns([1,1,2])
+            with c1:
+                if st.form_submit_button("💾 Guardar Cambios", type="primary"):
+                    if not indicativo:
+                        st.error("El indicativo es obligatorio")
+                    else:
+                        try:
+                            plat_idx = plat_labels.index(plataforma_sel) if plataforma_sel in plat_labels else 0
+                            plat_id = plat_ids[plat_idx] if plat_ids else None
+                            plat_name = plataforma_sel
+                            datos = {
+                                'indicativo': indicativo.upper(),
+                                'operador': operador,
+                                'estado': estado,
+                                'ciudad': ciudad,
+                                'zona': zona,
+                                'senal': senal,
+                                'observaciones': observaciones,
+                                'plataforma_id': plat_id,
+                                'plataforma_nombre': plat_name,
+                                'fecha_reporte': fecha.strftime('%Y-%m-%d') if fecha else None,
+                            }
+                            if db.update_reporte_rs(reporte_id, datos):
+                                st.success("¡Los cambios se guardaron correctamente!")
+                                time.sleep(2)
+                                del st.session_state.rs_editando_registro_id
+                                st.rerun()
+                            else:
+                                st.error("No se pudieron guardar los cambios. Intente nuevamente.")
+                        except Exception as e:
+                            st.error(f"Error al guardar los cambios: {str(e)}")
+            with c2:
+                if st.form_submit_button("❌ Cancelar"):
+                    del st.session_state.rs_editando_registro_id
+                    st.rerun()
+            with c3:
+                if st.form_submit_button("🗑️ Eliminar Registro", type="secondary"):
+                    st.session_state.rs_eliminando_registro_id = reporte_id
+                    st.session_state.rs_volver_a_editar = True
+                    st.rerun()
+
+    except Exception as e:
+        st.error(f"Error al cargar el formulario de edición: {str(e)}")
+        if st.button("Volver a la lista", key="rs_volver_lista_error2"):
+            if 'rs_editando_registro_id' in st.session_state:
+                del st.session_state.rs_editando_registro_id
             st.rerun()
 
 @st.cache_data(ttl=300)  # Cache por 5 minutos

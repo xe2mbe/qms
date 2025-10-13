@@ -2879,6 +2879,101 @@ class FMREDatabase:
             print(f"Error al obtener reporte de redes sociales: {e}")
             return None
 
+    def get_reportes_rs_filtrados(self, fecha_inicio=None, fecha_fin=None, busqueda: str = ''):
+        """
+        Obtiene reportes RS filtrados por fechas y búsqueda textual (sin acentos, insensible a mayúsculas)
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                query_base = 'SELECT * FROM reportes_rs WHERE 1=1'
+                params = []
+
+                if fecha_inicio:
+                    if not fecha_fin:
+                        fecha_fin = fecha_inicio
+                    query_base += ' AND date(fecha_reporte) BETWEEN ? AND ?'
+                    params.extend([str(fecha_inicio), str(fecha_fin)])
+
+                if busqueda:
+                    query_base += ''' AND (
+                        LOWER(remove_accents(indicativo)) LIKE LOWER(remove_accents(?)) OR
+                        LOWER(remove_accents(operador)) LIKE LOWER(remove_accents(?)) OR
+                        LOWER(remove_accents(ciudad)) LIKE LOWER(remove_accents(?)) OR
+                        LOWER(remove_accents(estado)) LIKE LOWER(remove_accents(?)) OR
+                        LOWER(remove_accents(zona)) LIKE LOWER(remove_accents(?)) OR
+                        LOWER(remove_accents(plataforma_nombre)) LIKE LOWER(remove_accents(?)) OR
+                        LOWER(remove_accents(qrz_captured_by)) LIKE LOWER(remove_accents(?)) OR
+                        LOWER(remove_accents(qrz_station)) LIKE LOWER(remove_accents(?))
+                    )'''
+                    search_term = f"%{busqueda}%"
+                    params.extend([search_term] * 8)
+
+                count_query = f'SELECT COUNT(*) FROM ({query_base})'
+                cursor.execute(count_query, params)
+                total_registros = cursor.fetchone()[0]
+
+                query = query_base + ' ORDER BY fecha_reporte DESC, id DESC'
+                cursor.execute(query, params)
+                reportes = [dict(row) for row in cursor.fetchall()]
+
+                return reportes, total_registros
+        except Exception as e:
+            print(f"Error al obtener reportes RS filtrados: {str(e)}")
+            return [], 0
+
+    def update_reporte_rs(self, reporte_id: int, datos_actualizados: dict) -> bool:
+        """Actualiza un registro en la tabla reportes_rs"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Columnas existentes
+                cursor.execute("PRAGMA table_info(reportes_rs)")
+                columnas = {col[1] for col in cursor.fetchall()}
+
+                campos_permitidos = {
+                    'indicativo', 'operador', 'estado', 'ciudad', 'zona',
+                    'senal', 'observaciones', 'qrz_captured_by', 'qrz_station',
+                    'plataforma_id', 'plataforma_nombre', 'fecha_reporte'
+                }
+                campos_actualizables = [c for c in campos_permitidos if c in columnas]
+
+                update_fields = []
+                params = []
+                for campo in campos_actualizables:
+                    if campo in datos_actualizados:
+                        update_fields.append(f"{campo} = ?")
+                        params.append(datos_actualizados[campo])
+
+                if not update_fields:
+                    return False
+
+                # updated_at
+                update_fields.append("updated_at = CURRENT_TIMESTAMP")
+
+                params.append(reporte_id)
+                query = f"UPDATE reportes_rs SET {', '.join(update_fields)} WHERE id = ?"
+                cursor.execute(query, params)
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"Error al actualizar reporte RS: {str(e)}")
+            return False
+
+    def delete_reporte_rs(self, reporte_id: int) -> bool:
+        """Elimina un registro de reportes_rs por ID"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM reportes_rs WHERE id = ?', (reporte_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            print(f"Error al eliminar reporte RS: {str(e)}")
+            return False
+
 if __name__ == "__main__":
     # Crear la base de datos y tablas si no existen
     db = FMREDatabase()

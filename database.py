@@ -149,6 +149,15 @@ class FMREDatabase:
                 CREATE INDEX IF NOT EXISTS idx_estadisticas_rs_plataforma 
                 ON estadisticas_rs(plataforma_id)
             ''')
+            # Índice único para garantizar una captura por fecha y plataforma
+            try:
+                cursor.execute('''
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_estadisticas_rs_unique 
+                    ON estadisticas_rs(fecha_reporte, plataforma_id)
+                ''')
+            except sqlite3.OperationalError as e:
+                # Si existen duplicados previos, este índice fallará; la lógica de UPSERT por servicio cubrirá el caso
+                print(f"Advertencia: no se pudo crear índice único de estadisticas_rs: {e}")
             
             # Tabla de configuración SMTP
             cursor.execute('''
@@ -2667,23 +2676,64 @@ class FMREDatabase:
                     raise ValueError(error_msg)
                 
                 try:
-                    log_debug("\nEjecutando consulta SQL...")
-                    cursor.execute('''
-                        INSERT INTO estadisticas_rs (
-                            plataforma_id, plataforma_nombre, me_gusta, comentarios,
-                            compartidos, reproducciones, alcance, interacciones,
-                            fecha_reporte, captured_by, observaciones, metadata_json
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', params)
-                    
-                    estadistica_id = cursor.lastrowid
-                    conn.commit()
-                    log_debug(f"\nRegistro guardado exitosamente con ID: {estadistica_id}")
-                    log_debug("="*50 + "\n")
-                    return estadistica_id
-                    
+                    log_debug("\nEjecutando UPSERT de estadisticas_rs (fecha, plataforma)...")
+                    # Verificar si ya existe registro para (fecha_reporte, plataforma_id)
+                    cursor.execute(
+                        'SELECT id FROM estadisticas_rs WHERE fecha_reporte = ? AND plataforma_id = ?',
+                        (fecha_reporte, plataforma_id)
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        # UPDATE existente
+                        existing_id = row['id'] if isinstance(row, sqlite3.Row) else row[0]
+                        update_sql = '''
+                            UPDATE estadisticas_rs
+                            SET plataforma_nombre = ?,
+                                me_gusta = ?,
+                                comentarios = ?,
+                                compartidos = ?,
+                                reproducciones = ?,
+                                alcance = ?,
+                                interacciones = ?,
+                                captured_by = ?,
+                                observaciones = ?,
+                                metadata_json = ?,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                        '''
+                        cursor.execute(update_sql, (
+                            plataforma_nombre,
+                            me_gusta,
+                            comentarios,
+                            compartidos,
+                            reproducciones,
+                            alcance,
+                            interacciones,
+                            captured_by,
+                            observaciones,
+                            metadata,
+                            existing_id
+                        ))
+                        conn.commit()
+                        log_debug(f"\nRegistro actualizado exitosamente con ID: {existing_id}")
+                        log_debug("="*50 + "\n")
+                        return existing_id
+                    else:
+                        # INSERT nuevo
+                        cursor.execute('''
+                            INSERT INTO estadisticas_rs (
+                                plataforma_id, plataforma_nombre, me_gusta, comentarios,
+                                compartidos, reproducciones, alcance, interacciones,
+                                fecha_reporte, captured_by, observaciones, metadata_json
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', params)
+                        estadistica_id = cursor.lastrowid
+                        conn.commit()
+                        log_debug(f"\nRegistro guardado exitosamente con ID: {estadistica_id}")
+                        log_debug("="*50 + "\n")
+                        return estadistica_id
                 except sqlite3.Error as e:
-                    error_msg = f"Error al ejecutar la consulta SQL: {str(e)}"
+                    error_msg = f"Error al ejecutar UPSERT en estadisticas_rs: {str(e)}"
                     log_debug(f"ERROR: {error_msg}")
                     raise
                     
@@ -2972,6 +3022,141 @@ class FMREDatabase:
                 return cursor.rowcount > 0
         except Exception as e:
             print(f"Error al eliminar reporte RS: {str(e)}")
+            return False
+
+    def get_estadistica_rs_por_id(self, estadistica_id: int):
+        """Obtiene una interacción (estadística) RS por ID"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT * FROM estadisticas_rs WHERE id = ?', (estadistica_id,))
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            print(f"Error al obtener estadística RS: {str(e)}")
+            return None
+
+    def get_estadistica_rs_por_fecha_plataforma(self, fecha_reporte: str, plataforma_id: int):
+        """Obtiene una estadística RS por combinación (fecha_reporte, plataforma_id)"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    'SELECT * FROM estadisticas_rs WHERE fecha_reporte = ? AND plataforma_id = ? ORDER BY id DESC LIMIT 1',
+                    (str(fecha_reporte), int(plataforma_id))
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            print(f"Error al obtener estadística RS por fecha y plataforma: {str(e)}")
+            return None
+
+    def get_estadisticas_rs_filtradas(self, fecha_inicio=None, fecha_fin=None, busqueda: str = ''):
+        """Obtiene interacciones RS (tabla estadisticas_rs) filtradas por fecha y búsqueda"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                query_base = 'SELECT * FROM estadisticas_rs WHERE 1=1'
+                params = []
+
+                if fecha_inicio:
+                    if not fecha_fin:
+                        fecha_fin = fecha_inicio
+                    query_base += ' AND date(fecha_reporte) BETWEEN ? AND ?'
+                    params.extend([str(fecha_inicio), str(fecha_fin)])
+
+                if busqueda:
+                    query_base += ''' AND (
+                        LOWER(remove_accents(plataforma_nombre)) LIKE LOWER(remove_accents(?)) OR
+                        LOWER(remove_accents(captured_by)) LIKE LOWER(remove_accents(?)) OR
+                        LOWER(remove_accents(observaciones)) LIKE LOWER(remove_accents(?)) OR
+                        LOWER(remove_accents(metadata_json)) LIKE LOWER(remove_accents(?)) OR
+                        CAST(me_gusta AS TEXT) LIKE ? OR
+                        CAST(comentarios AS TEXT) LIKE ? OR
+                        CAST(compartidos AS TEXT) LIKE ? OR
+                        CAST(reproducciones AS TEXT) LIKE ? OR
+                        CAST(alcance AS TEXT) LIKE ? OR
+                        CAST(interacciones AS TEXT) LIKE ?
+                    )'''
+                    search_term = f"%{busqueda}%"
+                    params.extend([search_term] * 10)
+
+                count_query = f'SELECT COUNT(*) FROM ({query_base})'
+                cursor.execute(count_query, params)
+                total = cursor.fetchone()[0]
+
+                query = query_base + ' ORDER BY fecha_reporte DESC, id DESC'
+                cursor.execute(query, params)
+                filas = [dict(row) for row in cursor.fetchall()]
+                return filas, total
+        except Exception as e:
+            print(f"Error al obtener interacciones RS filtradas: {str(e)}")
+            return [], 0
+
+    def update_estadistica_rs(self, estadistica_id: int, datos_actualizados: dict) -> bool:
+        """Actualiza un registro de la tabla estadisticas_rs"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+
+                cursor.execute("PRAGMA table_info(estadisticas_rs)")
+                columnas = {col[1] for col in cursor.fetchall()}
+
+                campos_permitidos = {
+                    'plataforma_id', 'plataforma_nombre', 'me_gusta', 'comentarios',
+                    'compartidos', 'reproducciones', 'alcance', 'interacciones',
+                    'fecha_reporte', 'captured_by', 'observaciones', 'metadata_json'
+                }
+                actualizables = [c for c in campos_permitidos if c in columnas]
+
+                update_fields = []
+                params = []
+
+                # Normalizar metadata_json a string JSON si viene dict/list
+                if 'metadata_json' in datos_actualizados:
+                    try:
+                        val = datos_actualizados.get('metadata_json')
+                        if isinstance(val, (dict, list)):
+                            datos_actualizados['metadata_json'] = json.dumps(val, ensure_ascii=False, default=str)
+                        elif isinstance(val, str):
+                            try:
+                                json.loads(val)
+                            except json.JSONDecodeError:
+                                datos_actualizados['metadata_json'] = json.dumps(val)
+                        else:
+                            datos_actualizados['metadata_json'] = json.dumps(str(val))
+                    except Exception:
+                        datos_actualizados['metadata_json'] = None
+
+                for campo in actualizables:
+                    if campo in datos_actualizados:
+                        update_fields.append(f"{campo} = ?")
+                        params.append(datos_actualizados[campo])
+
+                if not update_fields:
+                    return False
+
+                update_fields.append('updated_at = CURRENT_TIMESTAMP')
+                params.append(estadistica_id)
+                query = f"UPDATE estadisticas_rs SET {', '.join(update_fields)} WHERE id = ?"
+                cursor.execute(query, params)
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"Error al actualizar estadística RS: {str(e)}")
+            return False
+
+    def delete_estadistica_rs(self, estadistica_id: int) -> bool:
+        """Elimina una interacción (estadística) RS por ID"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM estadisticas_rs WHERE id = ?', (estadistica_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            print(f"Error al eliminar estadística RS: {str(e)}")
             return False
 
 if __name__ == "__main__":

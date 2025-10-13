@@ -134,17 +134,64 @@ def show_redes_sociales_form():
         if not st.session_state.parametros_expanded and st.session_state.plataforma_seleccionada:
             st.markdown("---")
             st.markdown("### Métricas de Interacción")
-            
+
+            # Prefill: si ya existe estadística para (fecha, plataforma), precargar y avisar que se sobrescribirá
+            try:
+                fecha_val = st.session_state.fecha_reporte
+                fecha_str = fecha_val.strftime('%Y-%m-%d') if hasattr(fecha_val, 'strftime') else str(fecha_val)
+                plat_nombre = st.session_state.plataforma_seleccionada
+                plat_id = plataforma_map.get(plat_nombre)
+                prefill_key = f"{fecha_str}|{plat_id}"
+                if plat_id and st.session_state.get('rs_prefill_key') != prefill_key:
+                    existente = db.get_estadistica_rs_por_fecha_plataforma(fecha_str, int(plat_id))
+                    if existente:
+                        st.session_state['me_gusta'] = int(existente.get('me_gusta') or 0)
+                        st.session_state['comentarios'] = int(existente.get('comentarios') or 0)
+                        st.session_state['compartidos'] = int(existente.get('compartidos') or 0)
+                        st.session_state['reproducciones'] = int(existente.get('reproducciones') or 0)
+                        st.info(f"Se encontró una estadística existente para esta fecha y plataforma (ID {existente.get('id')}). Al guardar, se actualizará.")
+                        # Cargar y mostrar todas las filas existentes (por si hay duplicados previos)
+                        try:
+                            with db.get_connection() as conn:
+                                cur = conn.cursor()
+                                cur.execute(
+                                    'SELECT id, plataforma_nombre, me_gusta, comentarios, compartidos, reproducciones, interacciones, alcance, fecha_reporte, captured_by, updated_at FROM estadisticas_rs WHERE fecha_reporte = ? AND plataforma_id = ? ORDER BY updated_at DESC, id DESC',
+                                    (fecha_str, int(plat_id))
+                                )
+                                rows = cur.fetchall() or []
+                                if rows:
+                                    st.session_state['rs_existing_rows'] = [dict(r) for r in rows]
+                                    df_exist = pd.DataFrame(st.session_state['rs_existing_rows'])
+                                    st.warning("Ya existen métricas de interacción para esta fecha y plataforma. Revisa y confirma si deseas sobrescribirlas.")
+                                    st.dataframe(df_exist, hide_index=True, width='stretch')
+                                    st.session_state['rs_confirm_overwrite'] = st.checkbox(
+                                        "Sí, deseo sobrescribir estas métricas con los nuevos valores",
+                                        value=bool(st.session_state.get('rs_confirm_overwrite', False)),
+                                        key='rs_confirm_overwrite'
+                                    )
+                                else:
+                                    st.session_state['rs_existing_rows'] = []
+                                    st.session_state['rs_confirm_overwrite'] = False
+                        except Exception:
+                            pass
+                    else:
+                        # No hay registro existente para este par fecha/plataforma
+                        st.session_state['rs_existing_rows'] = []
+                        st.session_state['rs_confirm_overwrite'] = False
+                    st.session_state['rs_prefill_key'] = prefill_key
+            except Exception:
+                pass
+
             # Crear columnas para las métricas
             col1, col2, col3, col4 = st.columns(4)
             with col1:
-                me_gusta = st.number_input("Me gusta", min_value=0, value=0, key='me_gusta')
+                me_gusta = st.number_input("Me gusta", min_value=0, value=int(st.session_state.get('me_gusta', 0) or 0), key='me_gusta')
             with col2:
-                comentarios = st.number_input("Comentarios", min_value=0, value=0, key='comentarios')
+                comentarios = st.number_input("Comentarios", min_value=0, value=int(st.session_state.get('comentarios', 0) or 0), key='comentarios')
             with col3:
-                compartidos = st.number_input("Compartidos", min_value=0, value=0, key='compartidos')
+                compartidos = st.number_input("Compartidos", min_value=0, value=int(st.session_state.get('compartidos', 0) or 0), key='compartidos')
             with col4:
-                reproducciones = st.number_input("Reproducciones", min_value=0, value=0, key='reproducciones')
+                reproducciones = st.number_input("Reproducciones", min_value=0, value=int(st.session_state.get('reproducciones', 0) or 0), key='reproducciones')
             
             # Tercera sección: Pre-Registros de Estaciones
             st.markdown("### Pre-Registros de Estaciones")
@@ -625,6 +672,10 @@ def show_redes_sociales_form():
                                     
                                     # Guardar estadísticas
                                     try:
+                                        # Requiere confirmación de sobrescritura cuando ya existen
+                                        if st.session_state.get('rs_existing_rows') and not st.session_state.get('rs_confirm_overwrite', False):
+                                            st.warning("Ya existen métricas para esta fecha y plataforma. Activa la casilla de sobrescribir para continuar.")
+                                            st.stop()
                                         estadistica_id = db.save_estadistica_rs(estadistica_data)
                                         print(f"\n3. RESULTADO DEL GUARDADO:")
                                         print(f"   - ID de estadística guardada: {estadistica_id}")
@@ -894,6 +945,10 @@ def show_redes_sociales_form():
                             })
                         }
                         try:
+                            # Requiere confirmación de sobrescritura cuando ya existen registros para la fecha/plataforma seleccionada
+                            if st.session_state.get('rs_existing_rows') and not st.session_state.get('rs_confirm_overwrite', False):
+                                st.warning("Ya existen métricas para esta fecha y plataforma. Activa la casilla de sobrescribir para continuar.")
+                                st.stop()
                             db.save_estadistica_rs(estadistica_data)
                         except Exception as e:
                             st.error(f"❌ Error al guardar estadísticas_rs: {str(e)}")

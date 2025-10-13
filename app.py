@@ -891,6 +891,62 @@ def show_rs_event_report():
     st.subheader("📱 Distribución por Plataforma")
     st.dataframe(df_plataformas, hide_index=True, width='stretch')
 
+    # Métricas por Plataforma (como en el PDF)
+    st.subheader("📊 Métricas por Plataforma")
+    try:
+        with db.get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                '''
+                SELECT plataforma_nombre,
+                       SUM(me_gusta) as me_gusta,
+                       SUM(comentarios) as comentarios,
+                       SUM(compartidos) as compartidos,
+                       SUM(reproducciones) as reproducciones
+                FROM estadisticas_rs
+                WHERE fecha_reporte BETWEEN ? AND ?
+                GROUP BY plataforma_nombre
+                ORDER BY plataforma_nombre
+                ''',
+                (fecha_inicio_str, fecha_fin_str)
+            )
+            rows_metrics_ui = cur.fetchall() or []
+    except Exception:
+        rows_metrics_ui = []
+
+    plat_metrics_records_ui = []
+    total_me_gusta_ui = total_comentarios_ui = total_compartidos_ui = total_reproducciones_ui = 0
+    for r in rows_metrics_ui:
+        mg = int(r['me_gusta'] or 0)
+        cm = int(r['comentarios'] or 0)
+        cp = int(r['compartidos'] or 0)
+        rp = int(r['reproducciones'] or 0)
+        plat_metrics_records_ui.append({
+            'Plataforma': str(r['plataforma_nombre'] or ''),
+            'Me gusta': mg,
+            'Comentarios': cm,
+            'Compartidos': cp,
+            'Reproducciones': rp
+        })
+        total_me_gusta_ui += mg
+        total_comentarios_ui += cm
+        total_compartidos_ui += cp
+        total_reproducciones_ui += rp
+
+    if plat_metrics_records_ui:
+        import pandas as pd
+        plat_metrics_records_ui.append({
+            'Plataforma': 'Total',
+            'Me gusta': total_me_gusta_ui,
+            'Comentarios': total_comentarios_ui,
+            'Compartidos': total_compartidos_ui,
+            'Reproducciones': total_reproducciones_ui
+        })
+        df_plat_metrics_ui = pd.DataFrame(plat_metrics_records_ui)
+        st.dataframe(df_plat_metrics_ui, hide_index=True, width='stretch')
+    else:
+        st.info("No hay métricas por plataforma en el período seleccionado.")
+
     # Detalle de reportes (similar a tradicional)
     st.subheader("📄 Detalle de Reportes")
     st.dataframe(df_rs, hide_index=True, width='stretch')
@@ -4970,13 +5026,21 @@ def show_registros():
         with tab2:
             show_editar_registros()
 
-    # Redes Sociales: Lista y Editar
+    # Redes Sociales: seleccionar entre Registros e Interacciones, cada una con Lista/Editar
     with t2:
-        tab3, tab4 = st.tabs(["📋 Lista", "✏️ Editar"])
-        with tab3:
-            show_lista_registros_rs()
-        with tab4:
-            show_editar_registros_rs()
+        rs_tab_reg, rs_tab_inter = st.tabs(["🧾 Registros", "🤝 Interacciones"])
+        with rs_tab_reg:
+            tab3, tab4 = st.tabs(["📋 Lista", "✏️ Editar"])
+            with tab3:
+                show_lista_registros_rs()
+            with tab4:
+                show_editar_registros_rs()
+        with rs_tab_inter:
+            tab5, tab6 = st.tabs(["📋 Lista", "✏️ Editar"])
+            with tab5:
+                show_lista_interacciones_rs()
+            with tab6:
+                show_editar_interacciones_rs()
 
 def show_lista_registros():
     """Muestra la lista de registros con filtros y búsqueda"""
@@ -5681,7 +5745,7 @@ def show_lista_registros_rs():
             st.data_editor(
                 df,
                 hide_index=True,
-                use_container_width=True,
+                width='stretch',
                 disabled=True,
                 column_config={
                     'ID': st.column_config.NumberColumn("ID", width="small"),
@@ -6014,6 +6078,339 @@ def _mostrar_formulario_edicion_registro_rs(reporte_id: int):
             if 'rs_editando_registro_id' in st.session_state:
                 del st.session_state.rs_editando_registro_id
             st.rerun()
+
+def show_lista_interacciones_rs():
+    """Lista interacciones (tabla estadisticas_rs) con filtros y exportación"""
+    st.subheader("📋 Lista de Interacciones (Redes Sociales)")
+
+    if 'rs_inter_filtros' not in st.session_state:
+        st.session_state.rs_inter_filtros = {'fecha_inicio': None, 'fecha_fin': None, 'busqueda': ''}
+
+    col1, col2 = st.columns(2)
+    with col1:
+        fecha_inicio = st.date_input("Fecha inicio", value=st.session_state.rs_inter_filtros['fecha_inicio'], key="rs_inter_fecha_inicio")
+    with col2:
+        fecha_fin = st.date_input("Fecha fin", value=st.session_state.rs_inter_filtros['fecha_fin'], key="rs_inter_fecha_fin")
+    busqueda = st.text_input("🔍 Buscar", value=st.session_state.rs_inter_filtros['busqueda'], key="rs_inter_busqueda", placeholder="Plataforma, usuario, observaciones, valores...")
+
+    b1, b2, _ = st.columns([2,2,6])
+    if b1.button("🔍 Buscar Interacciones", type="primary", key="rs_inter_buscar_btn"):
+        st.session_state.rs_inter_filtros = {'fecha_inicio': fecha_inicio, 'fecha_fin': fecha_fin, 'busqueda': busqueda}
+        st.rerun()
+    if b2.button("🧹 Limpiar Filtros", key="rs_inter_limpiar_btn"):
+        st.session_state.rs_inter_filtros = {'fecha_inicio': None, 'fecha_fin': None, 'busqueda': ''}
+        st.rerun()
+
+    fi = fecha_inicio.strftime('%Y-%m-%d') if fecha_inicio else None
+    ff = fecha_fin.strftime('%Y-%m-%d') if fecha_fin else None
+    interacciones, total = db.get_estadisticas_rs_filtradas(fi, ff, busqueda)
+    st.caption(f"Mostrando {len(interacciones)} de {total} interacciones")
+
+    if interacciones:
+        import pandas as pd
+        df = pd.DataFrame([
+            {
+                'ID': it.get('id'),
+                'Plataforma ID': it.get('plataforma_id'),
+                'Plataforma': it.get('plataforma_nombre', ''),
+                'Me gusta': it.get('me_gusta', 0),
+                'Comentarios': it.get('comentarios', 0),
+                'Compartidos': it.get('compartidos', 0),
+                'Reproducciones': it.get('reproducciones', 0),
+                'Alcance': it.get('alcance', 0),
+                'Interacciones': it.get('interacciones', 0),
+                'Fecha': it.get('fecha_reporte', ''),
+                'Capturado Por': it.get('captured_by', ''),
+                'Observaciones': it.get('observaciones', ''),
+                'Metadata': it.get('metadata_json', ''),
+            } for it in interacciones
+        ])
+        st.data_editor(
+            df,
+            hide_index=True,
+            width='stretch',
+            disabled=True,
+            column_config={
+                'ID': st.column_config.NumberColumn("ID", width="small"),
+                'Plataforma ID': st.column_config.NumberColumn("Plataforma ID", width="small"),
+                'Plataforma': st.column_config.TextColumn("Plataforma", width="medium"),
+                'Me gusta': st.column_config.NumberColumn("Me gusta", width="small"),
+                'Comentarios': st.column_config.NumberColumn("Comentarios", width="small"),
+                'Compartidos': st.column_config.NumberColumn("Compartidos", width="small"),
+                'Reproducciones': st.column_config.NumberColumn("Reproducciones", width="small"),
+                'Alcance': st.column_config.NumberColumn("Alcance", width="small"),
+                'Interacciones': st.column_config.NumberColumn("Interacciones", width="small"),
+                'Fecha': st.column_config.TextColumn("Fecha", width="medium"),
+                'Capturado Por': st.column_config.TextColumn("Capturado Por", width="medium"),
+                'Observaciones': st.column_config.TextColumn("Observaciones", width="large"),
+                'Metadata': st.column_config.TextColumn("Metadata", width="large"),
+            }
+        )
+
+        # Exportación
+        from io import BytesIO
+        output = BytesIO()
+        try:
+            import pandas as pd
+            with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+                df.to_excel(writer, index=False, sheet_name='Interacciones')
+                wb = writer.book
+                ws = writer.sheets['Interacciones']
+                for i, col in enumerate(df.columns):
+                    max_len = max(df[col].astype(str).apply(len).max(), len(col)) + 2
+                    ws.set_column(i, i, max_len)
+            data_bytes = output.getvalue()
+            mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            fname = "interacciones_rs.xlsx"
+        except Exception:
+            data_bytes = df.to_csv(index=False).encode('utf-8-sig')
+            mime = "text/csv"
+            fname = "interacciones_rs.csv"
+        st.download_button("📥 Exportar", data=data_bytes, file_name=fname, mime=mime, key="rs_inter_export", width='stretch')
+    else:
+        st.info("No se encontraron interacciones con los filtros aplicados")
+
+def show_editar_interacciones_rs():
+    """Editar interacciones (estadisticas_rs) con selección múltiple y borrado"""
+    st.subheader("✏️ Editar Interacciones (Redes Sociales)")
+
+    if 'rs_inter_editando_id' not in st.session_state:
+        st.session_state.rs_inter_editando_id = None
+    if 'rs_inter_eliminando_masivo' not in st.session_state:
+        st.session_state.rs_inter_eliminando_masivo = False
+    if 'rs_inter_show_delete_modal' not in st.session_state:
+        st.session_state.rs_inter_show_delete_modal = False
+
+    if st.session_state.rs_inter_editando_id:
+        _mostrar_formulario_edicion_interaccion_rs(st.session_state.rs_inter_editando_id)
+        return
+
+    col1, col2 = st.columns(2)
+    with col1:
+        fecha_inicio = st.date_input("Fecha inicio", key="rs_inter_fecha_inicio_editar")
+    with col2:
+        fecha_fin = st.date_input("Fecha fin", key="rs_inter_fecha_fin_editar")
+    busqueda = st.text_input("🔍 Buscar", key="rs_inter_buscar_editar")
+
+    if st.button("🔍 Buscar Interacciones", type="primary", key="rs_inter_buscar_btn_editar"):
+        st.session_state.rs_inter_filtros_editar = {'fecha_inicio': fecha_inicio, 'fecha_fin': fecha_fin, 'busqueda': busqueda}
+        st.rerun()
+
+    filtros = getattr(st.session_state, 'rs_inter_filtros_editar', {'fecha_inicio': None, 'fecha_fin': None, 'busqueda': ''})
+    fi = filtros['fecha_inicio'].strftime('%Y-%m-%d') if filtros['fecha_inicio'] else None
+    ff = filtros['fecha_fin'].strftime('%Y-%m-%d') if filtros['fecha_fin'] else None
+    filas, _ = db.get_estadisticas_rs_filtradas(fi, ff, filtros['busqueda'])
+
+    if 'rs_inter_seleccionados' not in st.session_state:
+        st.session_state.rs_inter_seleccionados = set()
+
+    if filas:
+        import pandas as pd
+        seleccionados_actuales = st.session_state.rs_inter_seleccionados or set()
+
+        col_acc1, col_acc2 = st.columns(2)
+        with col_acc1:
+            if st.button("✅ Seleccionar Todos", key="rs_inter_select_all"):
+                st.session_state.rs_inter_seleccionados = {f['id'] for f in filas if f.get('id') is not None}
+                st.session_state.rs_inter_eliminando_masivo = False
+                st.rerun()
+        with col_acc2:
+            if st.button("🧹 Limpiar Selección", key="rs_inter_clear_selection"):
+                st.session_state.rs_inter_seleccionados.clear()
+                st.session_state.rs_inter_eliminando_masivo = False
+                st.rerun()
+
+        df = pd.DataFrame([
+            {
+                'ID': f.get('id'),
+                'Seleccionar': f.get('id') in seleccionados_actuales,
+                'Plataforma': f.get('plataforma_nombre', ''),
+                'Fecha': f.get('fecha_reporte', ''),
+                'Me gusta': f.get('me_gusta', 0),
+                'Comentarios': f.get('comentarios', 0),
+                'Compartidos': f.get('compartidos', 0),
+                'Reproducciones': f.get('reproducciones', 0),
+                'Alcance': f.get('alcance', 0),
+                'Interacciones': f.get('interacciones', 0),
+                'Capturado Por': f.get('captured_by', ''),
+                'Observaciones': (f.get('observaciones', '')[:50] + '...') if f.get('observaciones') and len(f.get('observaciones', '')) > 50 else f.get('observaciones', ''),
+            } for f in filas
+        ])
+
+        with st.form("tabla_editar_interacciones_rs"):
+            edited_df = st.data_editor(
+                df,
+                hide_index=True,
+                width='stretch',
+                num_rows="fixed",
+                key=f"tabla_editar_interacciones_rs_{len(df)}",
+                column_config={
+                    'Seleccionar': st.column_config.CheckboxColumn("Seleccionar"),
+                    'ID': st.column_config.NumberColumn("ID", width="small"),
+                    'Plataforma': st.column_config.TextColumn("Plataforma", width="medium"),
+                    'Fecha': st.column_config.TextColumn("Fecha", width="medium"),
+                    'Me gusta': st.column_config.NumberColumn("Me gusta", width="small"),
+                    'Comentarios': st.column_config.NumberColumn("Comentarios", width="small"),
+                    'Compartidos': st.column_config.NumberColumn("Compartidos", width="small"),
+                    'Reproducciones': st.column_config.NumberColumn("Reproducciones", width="small"),
+                    'Alcance': st.column_config.NumberColumn("Alcance", width="small"),
+                    'Interacciones': st.column_config.NumberColumn("Interacciones", width="small"),
+                    'Observaciones': st.column_config.TextColumn("Observaciones", width="large"),
+                },
+                disabled=['ID', 'Plataforma', 'Fecha', 'Me gusta', 'Comentarios', 'Compartidos', 'Reproducciones', 'Alcance', 'Interacciones', 'Observaciones', 'Capturado Por']
+            )
+
+            c1, c2 = st.columns(2)
+            editar_submit = c1.form_submit_button("✏️ Editar Seleccionado", type="primary")
+            eliminar_submit = c2.form_submit_button("🗑️ Eliminar Seleccionados", type="secondary")
+
+        selected_ids = set()
+        if not edited_df.empty and "Seleccionar" in edited_df.columns:
+            seleccionados_df = edited_df[edited_df["Seleccionar"]]
+            for id_ in seleccionados_df['ID'].tolist():
+                if pd.notna(id_):
+                    selected_ids.add(int(id_))
+
+        if editar_submit:
+            if len(selected_ids) != 1:
+                st.warning("Selecciona exactamente un registro para editarlo.")
+            else:
+                st.session_state.rs_inter_editando_id = next(iter(selected_ids))
+                st.rerun()
+
+        if eliminar_submit:
+            if not selected_ids:
+                st.warning("Selecciona al menos un registro para eliminar.")
+            else:
+                st.session_state.rs_inter_seleccionados = selected_ids
+                st.session_state.rs_inter_eliminando_masivo = True
+                st.session_state.rs_inter_show_delete_modal = True
+                st.rerun()
+
+        if st.session_state.rs_inter_eliminando_masivo and st.session_state.rs_inter_show_delete_modal:
+            total = len(st.session_state.rs_inter_seleccionados)
+            with st.container(border=True):
+                st.warning(f"¿Eliminar {total} interacción(es)? Esta acción no se puede deshacer.")
+                if not seleccionados_df.empty:
+                    st.dataframe(
+                        seleccionados_df.drop(columns=["Seleccionar"], errors="ignore"),
+                        hide_index=True,
+                        width='stretch',
+                    )
+                cc1, cc2 = st.columns(2)
+                with cc1:
+                    if st.button("✅ Confirmar", type="primary", key="rs_inter_confirm_bulk_delete"):
+                        try:
+                            eliminados = 0
+                            for rid in st.session_state.rs_inter_seleccionados:
+                                if db.delete_estadistica_rs(rid):
+                                    eliminados += 1
+                            if eliminados:
+                                st.success(f"✅ {eliminados} interacción(es) eliminadas")
+                                st.session_state.rs_inter_seleccionados.clear()
+                                st.session_state.rs_inter_eliminando_masivo = False
+                                st.session_state.rs_inter_show_delete_modal = False
+                                time.sleep(2)
+                                st.rerun()
+                            else:
+                                st.error("No se pudo eliminar ningún registro")
+                        except Exception as e:
+                            st.error(f"Error al eliminar: {str(e)}")
+                with cc2:
+                    if st.button("❌ Cancelar", key="rs_inter_cancel_bulk_delete"):
+                        st.session_state.rs_inter_eliminando_masivo = False
+                        st.session_state.rs_inter_show_delete_modal = False
+                        st.rerun()
+    else:
+        st.info("No se encontraron interacciones con los filtros aplicados")
+
+def _mostrar_formulario_edicion_interaccion_rs(estadistica_id: int):
+    """Formulario para editar una interacción (estadisticas_rs)"""
+    st.header("✏️ Editar Interacción RS")
+    try:
+        fila = db.get_estadistica_rs_por_id(estadistica_id)
+        if not fila:
+            st.error("No se encontró la interacción especificada")
+            if st.button("Volver a la lista", key="rs_inter_volver_lista_error"):
+                st.session_state.rs_inter_editando_id = None
+                st.rerun()
+            return
+
+        plataformas = db.get_rs_entries(active_only=True) or []
+        plat_labels = [f"{p.get('plataforma','')} - {p.get('nombre','')}".strip(" - ") for p in plataformas]
+        plat_ids = [p.get('id') for p in plataformas]
+        try:
+            idx_plat = plat_ids.index(fila.get('plataforma_id')) if fila.get('plataforma_id') in plat_ids else 0
+        except Exception:
+            idx_plat = 0
+
+        from datetime import datetime
+        fecha_val = None
+        try:
+            val = fila.get('fecha_reporte') or ''
+            fecha_val = datetime.strptime(val[:10], '%Y-%m-%d').date()
+        except Exception:
+            fecha_val = None
+
+        with st.form(key=f'editar_interaccion_rs_form_{estadistica_id}'):
+            col1, col2 = st.columns(2)
+            with col1:
+                plataforma_sel = st.selectbox("Plataforma", options=plat_labels or [""], index=idx_plat)
+                me_gusta = st.number_input("Me gusta", min_value=0, value=int(fila.get('me_gusta') or 0))
+                comentarios = st.number_input("Comentarios", min_value=0, value=int(fila.get('comentarios') or 0))
+                compartidos = st.number_input("Compartidos", min_value=0, value=int(fila.get('compartidos') or 0))
+            with col2:
+                reproducciones = st.number_input("Reproducciones", min_value=0, value=int(fila.get('reproducciones') or 0))
+                alcance = st.number_input("Alcance", min_value=0, value=int(fila.get('alcance') or 0))
+                fecha = st.date_input("Fecha del Reporte", value=fecha_val)
+
+            captured_by = st.text_input("Capturado Por", value=fila.get('captured_by') or '')
+            observaciones = st.text_area("Observaciones", value=fila.get('observaciones') or '')
+            metadata = st.text_area("Metadata (JSON)", value=fila.get('metadata_json') or '')
+
+            c1, c2, c3 = st.columns([1,1,2])
+            with c1:
+                if st.form_submit_button("💾 Guardar Cambios", type="primary"):
+                    try:
+                        plat_idx = plat_labels.index(plataforma_sel) if plataforma_sel in plat_labels else 0
+                        plat_id = plat_ids[plat_idx] if plat_ids else None
+                        interacciones = int(me_gusta) + int(comentarios) + int(compartidos)
+                        datos = {
+                            'plataforma_id': plat_id,
+                            'plataforma_nombre': plataforma_sel,
+                            'me_gusta': int(me_gusta),
+                            'comentarios': int(comentarios),
+                            'compartidos': int(compartidos),
+                            'reproducciones': int(reproducciones),
+                            'alcance': int(alcance),
+                            'interacciones': int(interacciones),
+                            'fecha_reporte': fecha.strftime('%Y-%m-%d') if fecha else None,
+                            'captured_by': captured_by,
+                            'observaciones': observaciones,
+                            'metadata_json': metadata,
+                        }
+                        if db.update_estadistica_rs(estadistica_id, datos):
+                            st.success("¡Los cambios se guardaron correctamente!")
+                            time.sleep(2)
+                            st.session_state.rs_inter_editando_id = None
+                            st.rerun()
+                        else:
+                            st.error("No se pudieron guardar los cambios. Intente nuevamente.")
+                    except Exception as e:
+                        st.error(f"Error al guardar: {str(e)}")
+            with c2:
+                if st.form_submit_button("❌ Cancelar"):
+                    st.session_state.rs_inter_editando_id = None
+                    st.rerun()
+            with c3:
+                if st.form_submit_button("🗑️ Eliminar Interacción", type="secondary"):
+                    # Usar flujo de eliminación masiva para confirmar, con un solo elemento
+                    st.session_state.rs_inter_seleccionados = {estadistica_id}
+                    st.session_state.rs_inter_eliminando_masivo = True
+                    st.session_state.rs_inter_show_delete_modal = True
+                    st.rerun()
+    except Exception as e:
+        st.error(f"Error al cargar el formulario: {str(e)}")
 
 @st.cache_data(ttl=300)  # Cache por 5 minutos
 def _get_estados_options():

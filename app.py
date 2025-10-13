@@ -778,7 +778,7 @@ def show_rs_reports():
     if plataformas_top:
         import pandas as pd
         df_plat = pd.DataFrame(plataformas_top)
-        st.dataframe(df_plat, hide_index=True, use_container_width=True)
+        st.dataframe(df_plat, hide_index=True, width='stretch')
 
     if reportes_rs:
         import pandas as pd
@@ -798,7 +798,7 @@ def show_rs_reports():
             }
             for r in reportes_rs
         ])
-        st.dataframe(df, hide_index=True, use_container_width=True)
+        st.dataframe(df, hide_index=True, width='stretch')
 
         datos_por_dia = (est or {}).get('datos_por_dia', []) or []
         if datos_por_dia:
@@ -886,14 +886,14 @@ def show_rs_event_report():
     colm4.metric("Plataforma Más Usada", plataforma_mas_usada)
 
     st.subheader("📍 Distribución por Zona")
-    st.dataframe(df_zonas, hide_index=True, use_container_width=True)
+    st.dataframe(df_zonas, hide_index=True, width='stretch')
 
     st.subheader("📱 Distribución por Plataforma")
-    st.dataframe(df_plataformas, hide_index=True, use_container_width=True)
+    st.dataframe(df_plataformas, hide_index=True, width='stretch')
 
     # Detalle de reportes (similar a tradicional)
     st.subheader("📄 Detalle de Reportes")
-    st.dataframe(df_rs, hide_index=True, use_container_width=True)
+    st.dataframe(df_rs, hide_index=True, width='stretch')
 
     # Información del usuario para leyendas
     usuario = st.session_state.user if 'user' in st.session_state and st.session_state.user else {}
@@ -914,7 +914,7 @@ def show_rs_event_report():
     colx, coly, colz = st.columns(3)
     # Excel
     with colx:
-        if st.button("📊 Excel", key="rs_btn_excel", use_container_width=True):
+        if st.button("📊 Excel", key="rs_btn_excel", width='stretch'):
             buffer = io.BytesIO()
             # Recalcular distribuciones sobre export
             zonas_count_exp = df_export['Zona'].value_counts()
@@ -1022,12 +1022,12 @@ def show_rs_event_report():
                 data=buffer,
                 file_name=f"reporte_rs_{fecha_inicio_str}_a_{fecha_fin_str}{est_suffix}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
+                width='stretch'
             )
 
     # CSV
     with coly:
-        if st.button("📄 CSV", key="rs_btn_csv", use_container_width=True):
+        if st.button("📄 CSV", key="rs_btn_csv", width='stretch'):
             csv_bytes = df_export.to_csv(index=False).encode('utf-8-sig')
             est_suffix = "" if export_plat_sel == 'Todas' else f"_{str(export_plat_sel).replace(' ', '_')}"
             st.download_button(
@@ -1035,11 +1035,11 @@ def show_rs_event_report():
                 data=csv_bytes,
                 file_name=f"reporte_rs_{fecha_inicio_str}_a_{fecha_fin_str}{est_suffix}.csv",
                 mime="text/csv",
-                use_container_width=True
+                width='stretch'
             )
 
         # CSV de métricas por plataforma
-        if st.button("📄 CSV Métricas", key="rs_btn_csv_metrics", use_container_width=True):
+        if st.button("📄 CSV Métricas", key="rs_btn_csv_metrics", width='stretch'):
             try:
                 with db.get_connection() as conn:
                     cur = conn.cursor()
@@ -1111,12 +1111,12 @@ def show_rs_event_report():
                 data=csv_bytes_metrics,
                 file_name=f"reporte_rs_metricas_{fecha_inicio_str}_a_{fecha_fin_str}{est_suffix}.csv",
                 mime="text/csv",
-                use_container_width=True
+                width='stretch'
             )
 
     # PDF
     with colz:
-        if st.button("📋 PDF", key="rs_btn_pdf", use_container_width=True):
+        if st.button("📋 PDF", key="rs_btn_pdf", width='stretch'):
             from reportlab.lib import colors
             from reportlab.lib.pagesizes import letter
             from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image, HRFlowable
@@ -1516,7 +1516,7 @@ def show_rs_event_report():
                 data=buffer,
                 file_name=f"reporte_rs_{fecha_inicio_str}_a_{fecha_fin_str}{est_suffix}.pdf",
                 mime="application/pdf",
-                use_container_width=True
+                width='stretch'
             )
 
 def show_actividad_general_report():
@@ -1860,7 +1860,7 @@ def show_geografico_report():
                                 height=600
                             )
 
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, width='stretch')
 
                             if not unmatched_states.empty:
                                 st.caption(
@@ -1903,7 +1903,7 @@ def show_geografico_report():
                                 margin=dict(l=0, r=0, t=0, b=0)
                             )
 
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, width='stretch')
 
                 estados_sin_coordenadas = conteo_por_estado[conteo_por_estado[['lat', 'lon']].isna().any(axis=1)]
                 if not estados_sin_coordenadas.empty:
@@ -1979,7 +1979,7 @@ def show_geografico_report():
                                 conteo_estados = df_zona_filtrado['Estado'].value_counts()
                                 st.dataframe(
                                     conteo_estados.rename('Reportes'),
-                                    use_container_width=True,
+                                    width='stretch',
                                     height=min(300, 50 + len(conteo_estados) * 35)
                                 )
                     else:
@@ -2006,7 +2006,7 @@ def show_geografico_report():
                     'Porcentaje': 'Porcentaje'
                 },
                 hide_index=True,
-                use_container_width=True
+                width='stretch'
             )
             
             # Sección de Gráficos de Barras
@@ -2045,7 +2045,7 @@ def show_geografico_report():
                     )
                     
                     # Mostrar el gráfico
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                 else:
                     st.info("No hay datos de zonas para mostrar")
             
@@ -2088,7 +2088,7 @@ def show_geografico_report():
                     )
                     
                     # Mostrar el gráfico
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                 else:
                     st.info("No hay datos de estados para mostrar")
 
@@ -2560,7 +2560,7 @@ def show_evento_report():
 
         st.dataframe(
             df_zonas,
-            use_container_width=True,
+            width='stretch',
             hide_index=True
         )
 
@@ -2575,7 +2575,7 @@ def show_evento_report():
 
         st.dataframe(
             df_sistemas,
-            use_container_width=True,
+            width='stretch',
             hide_index=True
         )
 
@@ -2589,7 +2589,7 @@ def show_evento_report():
         })
         st.dataframe(
             df_estaciones,
-            use_container_width=True,
+            width='stretch',
             hide_index=True
         )
         # Validar suma de desglose por estación
@@ -2641,7 +2641,7 @@ def show_evento_report():
             })
             st.dataframe(
                 df_zonas_est,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True
             )
 
@@ -2655,12 +2655,12 @@ def show_evento_report():
             })
             st.dataframe(
                 df_sistemas_est,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True
             )
 
         st.subheader("📄 Detalle de Reportes" + (" - Estación: " + estacion_sel if estacion_sel != 'Todas' else ""))
-        st.dataframe(df_evento_filtrado, use_container_width=True, hide_index=True)
+        st.dataframe(df_evento_filtrado, width='stretch', hide_index=True)
 
         # Información del usuario que generó el reporte
         usuario_actual = datos['usuario']
@@ -2706,7 +2706,7 @@ def show_evento_report():
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            if st.button("📊 Excel", use_container_width=True):
+            if st.button("📊 Excel", width='stretch'):
                 # Determinar dataset a exportar según filtro
                 if selected_export_station != 'Todas':
                     df_export = datos['df_evento'][datos['df_evento']['Estación'] == selected_export_station]
@@ -2761,11 +2761,11 @@ def show_evento_report():
                     data=buffer,
                     file_name=f"reporte_{datos['evento']}_{datos['fecha']}{est_suffix}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
+                    width='stretch'
                 )
 
         with col2:
-            if st.button("📄 CSV", use_container_width=True):
+            if st.button("📄 CSV", width='stretch'):
                 # Crear CSV con datos principales
                 csv_bytes = df_export.to_csv(index=False).encode('utf-8-sig')  # UTF-8 con BOM para Excel
                 est_suffix = "" if selected_export_station == 'Todas' else f"_{selected_export_station.replace(' ', '_')}"
@@ -2774,11 +2774,11 @@ def show_evento_report():
                     data=csv_bytes,
                     file_name=f"reporte_{datos['evento']}_{datos['fecha']}{est_suffix}.csv",
                     mime="text/csv",
-                    use_container_width=True
+                    width='stretch'
                 )
 
         with col3:
-            if st.button("📋 PDF", use_container_width=True):
+            if st.button("📋 PDF", width='stretch'):
                 # Generar PDF con información detallada
                 from reportlab.lib import colors
                 from reportlab.lib.pagesizes import letter, A4, landscape
@@ -3771,7 +3771,7 @@ def show_evento_report():
                     data=buffer,
                     file_name=f"reporte_{datos['evento']}_{datos['fecha']}{est_suffix}.pdf",
                     mime="application/pdf",
-                    use_container_width=True
+                    width='stretch'
                 )
 
         # Información adicional
@@ -4337,9 +4337,9 @@ def _show_toma_reportes_tradicional():
             # Botones
             cb1, cb2 = st.columns(2)
             with cb1:
-                guardar = st.form_submit_button("💾 Guardar Parámetros", type="primary", use_container_width=True)
+                guardar = st.form_submit_button("💾 Guardar Parámetros", type="primary", width='stretch')
             with cb2:
-                cancelar = st.form_submit_button("❌ Cancelar", type="secondary", use_container_width=True)
+                cancelar = st.form_submit_button("❌ Cancelar", type="secondary", width='stretch')
 
         # Acciones del form de parámetros
         if guardar:
@@ -4430,7 +4430,7 @@ def _show_toma_reportes_tradicional():
                         key=_pre_form_key(f"sistema_{i}"),
                     )
 
-            pre_guardar = st.form_submit_button("📋 Pre-Registrar Todos", type="primary", use_container_width=True)
+            pre_guardar = st.form_submit_button("📋 Pre-Registrar Todos", type="primary", width='stretch')
 
         # Procesar el pre-registro
         if pre_guardar:
@@ -4631,7 +4631,7 @@ def _show_toma_reportes_tradicional():
             df_para_tabla,
             column_config=column_config,
             hide_index=True,
-            use_container_width=True,
+            width='stretch',
             key="editable_table"
         )
 
@@ -4704,7 +4704,7 @@ def _show_toma_reportes_tradicional():
         # Botones Guardar / Deshacer / Limpiar
         c1, c2, c3 = st.columns([2,1,1])
         with c1:
-            if st.button("💾 Guardar en Base de Datos", type="primary", use_container_width=True):
+            if st.button("💾 Guardar en Base de Datos", type="primary", width='stretch'):
                 # Guardar en BD
                 guardados = 0
                 pr = st.session_state.parametros_reporte
@@ -4779,7 +4779,7 @@ def _show_toma_reportes_tradicional():
 
         with c2:
             if st.session_state.get("registros_editados", False):
-                if st.button("↩️ Deshacer Cambios", use_container_width=True):
+                if st.button("↩️ Deshacer Cambios", width='stretch'):
                     st.session_state.registros_editados = False
                     st.session_state.tabla_editada = False
                     # Restaurar el estado original
@@ -4792,7 +4792,7 @@ def _show_toma_reportes_tradicional():
                     st.rerun()
 
         with c3:
-            if st.button("🗑️ Limpiar registros", use_container_width=True):
+            if st.button("🗑️ Limpiar registros", width='stretch'):
                 st.session_state.registros = []
                 st.session_state.registros_editados = False
                 st.session_state.tabla_editada = False
@@ -4950,7 +4950,7 @@ def _show_toma_reportes_tradicional():
                     'Hora': st.column_config.TextColumn("Hora")
                 },
                 hide_index=True,
-                use_container_width=True
+                width='stretch'
             )
         else:
             st.info("No hay reportes registrados para el día de hoy.")
@@ -5140,7 +5140,7 @@ def show_lista_registros():
                 file_name=file_name,
                 mime=mime_type,
                 key="descargar_excel_lista",
-                use_container_width=True
+                width='stretch'
             )
 
         else:
@@ -5267,7 +5267,7 @@ def show_editar_registros():
                 edited_df = st.data_editor(
                     df_registros,
                     hide_index=True,
-                    use_container_width=True,
+                    width='stretch',
                     num_rows="fixed",
                     key=f"tabla_editar_registros_{len(df_registros)}",
                     column_config={
@@ -5354,7 +5354,7 @@ def show_editar_registros():
                         st.dataframe(
                             seleccionados_df.drop(columns=["Seleccionar"], errors="ignore"),
                             hide_index=True,
-                            use_container_width=True,
+                            width='stretch',
                         )
 
                     col_conf1, col_conf2 = st.columns(2)
@@ -5867,7 +5867,7 @@ def _show_lista_zonas():
                         col1, col2 = st.columns(2)
                         
                         with col1:
-                            if st.form_submit_button("💾 Guardar cambios", use_container_width=True):
+                            if st.form_submit_button("💾 Guardar cambios", width='stretch'):
                                 if not zona_valor or not nombre:
                                     st.error("La zona y el nombre son campos obligatorios")
                                 else:

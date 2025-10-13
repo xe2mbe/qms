@@ -445,7 +445,7 @@ def _show_crear_estacion():
         # Botón para volver a la lista - con key único
         if st.button("⬅️ Volver a la lista sin guardar", 
                     key=f"btn_volver_editar_{estacion_id}",
-                    use_container_width=True,
+                    width='stretch',
                     help="Volver a la lista sin guardar cambios"):
             del st.session_state['editar_estacion_id']
             st.rerun()
@@ -457,7 +457,7 @@ def _show_crear_estacion():
         # Botón para volver a la lista - con key único para creación
         if st.button("⬅️ Volver a la lista sin guardar", 
                     key="btn_volver_crear",
-                    use_container_width=True,
+                    width='stretch',
                     help="Volver a la lista sin guardar cambios"):
             if 'editar_estacion_id' in st.session_state:
                 del st.session_state['editar_estacion_id']
@@ -581,7 +581,7 @@ def _show_lista_estaciones():
                     # Botón para editar estación
                     if st.button(f"✏️ Editar", 
                               key=f"edit_{estacion['id']}",
-                              use_container_width=True):
+                              width='stretch'):
                         # Alternar el estado de edición
                         current_state = st.session_state.get(f"editing_estacion_{estacion['id']}", False)
                         st.session_state[f"editing_estacion_{estacion['id']}"] = not current_state
@@ -590,7 +590,7 @@ def _show_lista_estaciones():
                     # Botón para eliminar estación
                     if st.button(f"🗑️ Eliminar",
                               key=f"del_{estacion['id']}",
-                              use_container_width=True):
+                              width='stretch'):
                         if _eliminar_estacion(estacion['id']):
                             st.success(f"Estación {estacion['qrz']} eliminada correctamente")
                             time.sleep(2)

@@ -429,7 +429,7 @@ def show_redes_sociales_form():
                         # Mover el botón de submit fuera del if para que el formulario funcione correctamente
                         submit_button = st.form_submit_button("💾 Guardar Registros", 
                                                           type="primary", 
-                                                          use_container_width=True,
+                                                          width='stretch',
                                                           help="Guarda los registros de las estaciones")
                     
                     # Procesar el formulario cuando se envía
@@ -719,7 +719,7 @@ def show_redes_sociales_form():
                         # Mostrar la tabla de resumen
                         st.dataframe(
                             df_resumen,
-                            use_container_width=True,
+                            width='stretch',
                             hide_index=True,
                             column_config={
                                 'Indicativo': 'Indicativo',
@@ -830,7 +830,7 @@ def show_redes_sociales_form():
                 
                 # Botón para guardar registros
                 st.markdown("---")  # Separador visual
-                guardar_registros = st.form_submit_button("💾 Guardar Registros", type="primary", use_container_width=True)
+                guardar_registros = st.form_submit_button("💾 Guardar Registros", type="primary", width='stretch')
                 if guardar_registros:
                     # Validar que haya datos para guardar
                     if not registros:
@@ -922,7 +922,7 @@ def show_redes_sociales_form():
                             # Mostrar tabla con estilo
                             st.dataframe(
                                 df_resumen,
-                                use_container_width=True,
+                                width='stretch',
                                 hide_index=True,
                                 column_config={
                                     'Indicativo': 'Indicativo',
@@ -1281,7 +1281,7 @@ def show_redes_sociales_form():
                     'Capturado por': 'Capturado por'
                 },
                 hide_index=True,
-                use_container_width=True
+                width='stretch'
             )
             
             # Mostrar total de registros

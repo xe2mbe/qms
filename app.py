@@ -930,6 +930,73 @@ def show_rs_event_report():
                 'Porcentaje': (plataformas_count_exp.values / max(len(df_export), 1) * 100).round(1)
             })
 
+            # Métricas por plataforma (Me gusta, Comentarios, Compartidos, Reproducciones)
+            try:
+                with db.get_connection() as conn:
+                    cur = conn.cursor()
+                    if export_plat_sel != 'Todas':
+                        cur.execute(
+                            '''
+                            SELECT plataforma_nombre,
+                                   SUM(me_gusta) as me_gusta,
+                                   SUM(comentarios) as comentarios,
+                                   SUM(compartidos) as compartidos,
+                                   SUM(reproducciones) as reproducciones
+                            FROM estadisticas_rs
+                            WHERE plataforma_nombre = ? AND fecha_reporte BETWEEN ? AND ?
+                            GROUP BY plataforma_nombre
+                            ORDER BY plataforma_nombre
+                            ''',
+                            (export_plat_sel, fecha_inicio_str, fecha_fin_str)
+                        )
+                    else:
+                        cur.execute(
+                            '''
+                            SELECT plataforma_nombre,
+                                   SUM(me_gusta) as me_gusta,
+                                   SUM(comentarios) as comentarios,
+                                   SUM(compartidos) as compartidos,
+                                   SUM(reproducciones) as reproducciones
+                            FROM estadisticas_rs
+                            WHERE fecha_reporte BETWEEN ? AND ?
+                            GROUP BY plataforma_nombre
+                            ORDER BY plataforma_nombre
+                            ''',
+                            (fecha_inicio_str, fecha_fin_str)
+                        )
+                    rows_metrics = cur.fetchall() or []
+            except Exception:
+                rows_metrics = []
+
+            total_me_gusta = total_comentarios = total_compartidos = total_reproducciones = 0
+            plat_metrics_records = []
+            for r in rows_metrics:
+                mg = int(r['me_gusta'] or 0)
+                cm = int(r['comentarios'] or 0)
+                cp = int(r['compartidos'] or 0)
+                rp = int(r['reproducciones'] or 0)
+                plat_metrics_records.append({
+                    'Plataforma': str(r['plataforma_nombre'] or ''),
+                    'Me gusta': mg,
+                    'Comentarios': cm,
+                    'Compartidos': cp,
+                    'Reproducciones': rp
+                })
+                total_me_gusta += mg
+                total_comentarios += cm
+                total_compartidos += cp
+                total_reproducciones += rp
+
+            # Totales
+            plat_metrics_records.append({
+                'Plataforma': 'Total',
+                'Me gusta': total_me_gusta,
+                'Comentarios': total_comentarios,
+                'Compartidos': total_compartidos,
+                'Reproducciones': total_reproducciones
+            })
+            df_plat_metrics = pd.DataFrame(plat_metrics_records)
+
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 stats_df = pd.DataFrame({
                     'Métrica': ['Reporte', 'Período', 'Total Reportes', 'Estaciones Únicas', 'Zona Más Reportada', 'Plataforma Más Usada', 'Generado por'],
@@ -939,10 +1006,9 @@ def show_rs_event_report():
                               f"{indicativo_usuario} - {nombre_usuario}"]
                 })
                 stats_df.to_excel(writer, sheet_name='Estadísticas', index=False)
-                # Interacciones
+                # Métricas por Plataforma
                 try:
-                    m = (est or {}).get('metricas', {})
-                    pd.DataFrame([m]).to_excel(writer, sheet_name='Interacciones', index=False)
+                    df_plat_metrics.to_excel(writer, sheet_name='Métricas por Plataforma', index=False)
                 except Exception:
                     pass
                 df_export.to_excel(writer, sheet_name='Datos Detallados', index=False)
@@ -968,6 +1034,82 @@ def show_rs_event_report():
                 label="⬇️ Descargar CSV",
                 data=csv_bytes,
                 file_name=f"reporte_rs_{fecha_inicio_str}_a_{fecha_fin_str}{est_suffix}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+        # CSV de métricas por plataforma
+        if st.button("📄 CSV Métricas", key="rs_btn_csv_metrics", use_container_width=True):
+            try:
+                with db.get_connection() as conn:
+                    cur = conn.cursor()
+                    if export_plat_sel != 'Todas':
+                        cur.execute(
+                            '''
+                            SELECT plataforma_nombre,
+                                   SUM(me_gusta) as me_gusta,
+                                   SUM(comentarios) as comentarios,
+                                   SUM(compartidos) as compartidos,
+                                   SUM(reproducciones) as reproducciones
+                            FROM estadisticas_rs
+                            WHERE plataforma_nombre = ? AND fecha_reporte BETWEEN ? AND ?
+                            GROUP BY plataforma_nombre
+                            ORDER BY plataforma_nombre
+                            ''',
+                            (export_plat_sel, fecha_inicio_str, fecha_fin_str)
+                        )
+                    else:
+                        cur.execute(
+                            '''
+                            SELECT plataforma_nombre,
+                                   SUM(me_gusta) as me_gusta,
+                                   SUM(comentarios) as comentarios,
+                                   SUM(compartidos) as compartidos,
+                                   SUM(reproducciones) as reproducciones
+                            FROM estadisticas_rs
+                            WHERE fecha_reporte BETWEEN ? AND ?
+                            GROUP BY plataforma_nombre
+                            ORDER BY plataforma_nombre
+                            ''',
+                            (fecha_inicio_str, fecha_fin_str)
+                        )
+                    rows_metrics_csv = cur.fetchall() or []
+            except Exception:
+                rows_metrics_csv = []
+
+            total_me_gusta = total_comentarios = total_compartidos = total_reproducciones = 0
+            plat_metrics_records_csv = []
+            for r in rows_metrics_csv:
+                mg = int(r['me_gusta'] or 0)
+                cm = int(r['comentarios'] or 0)
+                cp = int(r['compartidos'] or 0)
+                rp = int(r['reproducciones'] or 0)
+                plat_metrics_records_csv.append({
+                    'Plataforma': str(r['plataforma_nombre'] or ''),
+                    'Me gusta': mg,
+                    'Comentarios': cm,
+                    'Compartidos': cp,
+                    'Reproducciones': rp
+                })
+                total_me_gusta += mg
+                total_comentarios += cm
+                total_compartidos += cp
+                total_reproducciones += rp
+
+            plat_metrics_records_csv.append({
+                'Plataforma': 'Total',
+                'Me gusta': total_me_gusta,
+                'Comentarios': total_comentarios,
+                'Compartidos': total_compartidos,
+                'Reproducciones': total_reproducciones
+            })
+            df_plat_metrics_csv = pd.DataFrame(plat_metrics_records_csv)
+            csv_bytes_metrics = df_plat_metrics_csv.to_csv(index=False).encode('utf-8-sig')
+            est_suffix = "" if export_plat_sel == 'Todas' else f"_{str(export_plat_sel).replace(' ', '_')}"
+            st.download_button(
+                label="⬇️ Descargar CSV (Métricas por Plataforma)",
+                data=csv_bytes_metrics,
+                file_name=f"reporte_rs_metricas_{fecha_inicio_str}_a_{fecha_fin_str}{est_suffix}.csv",
                 mime="text/csv",
                 use_container_width=True
             )

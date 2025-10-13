@@ -1097,24 +1097,14 @@ def show_rs_event_report():
             story.append(Paragraph("Estadísticas del evento", section_style))
             story.append(Spacer(1, 8))
 
-            # Estadísticas
-            m = (est or {}).get('metricas', {})
-            me_gusta_pdf = int(m.get('me_gusta') or 0)
-            comentarios_pdf = int(m.get('comentarios') or 0)
-            compartidos_pdf = int(m.get('compartidos') or 0)
-            reproducciones_pdf = int(m.get('reproducciones') or 0)
-
+            # Estadísticas (generales, sin interacciones)
             stats = [
                 ['Métrica', 'Valor', 'Detalles'],
                 ['Total de Reportes', str(len(df_pdf)), f"Participantes activos: {len(df_pdf)}"],
                 ['Estaciones Únicas', str(estaciones_unicas_pdf), "Diferentes estaciones que reportaron"],
                 ['Zona Más Reportada', zona_mas_pdf, "Concentración geográfica principal"],
                 ['Plataforma Más Usada', plataforma_mas_pdf, "Plataforma predominante"],
-                ['Cobertura Geográfica', f"{cobertura_estados_pdf} estados", "Alcance territorial del período"],
-                ['Me gusta', str(me_gusta_pdf), "Interacciones de 'me gusta'"],
-                ['Comentarios', str(comentarios_pdf), "Comentarios recibidos"],
-                ['Compartidos', str(compartidos_pdf), "Veces compartido"],
-                ['Reproducciones', str(reproducciones_pdf), "Reproducciones totales"]
+                ['Cobertura Geográfica', f"{cobertura_estados_pdf} estados", "Alcance territorial del período"]
             ]
             stats_table = Table(stats)
             stats_table.setStyle(TableStyle([
@@ -1131,6 +1121,84 @@ def show_rs_event_report():
             ]))
             story.append(stats_table)
             story.append(Spacer(1, 8))
+
+            # Métricas por plataforma (Me gusta, Comentarios, Compartidos, Reproducciones)
+            story.append(Paragraph("Métricas por plataforma", section_style))
+            story.append(Spacer(1, 8))
+            plat_metrics_data = [['Plataforma', 'Me gusta', 'Comentarios', 'Compartidos', 'Reproducciones']]
+            try:
+                with db.get_connection() as conn:
+                    cur = conn.cursor()
+                    if export_plat_sel != 'Todas':
+                        cur.execute(
+                            '''
+                            SELECT plataforma_nombre,
+                                   SUM(me_gusta) as me_gusta,
+                                   SUM(comentarios) as comentarios,
+                                   SUM(compartidos) as compartidos,
+                                   SUM(reproducciones) as reproducciones
+                            FROM estadisticas_rs
+                            WHERE plataforma_nombre = ? AND fecha_reporte BETWEEN ? AND ?
+                            GROUP BY plataforma_nombre
+                            ORDER BY plataforma_nombre
+                            ''',
+                            (export_plat_sel, fecha_inicio_str, fecha_fin_str)
+                        )
+                    else:
+                        cur.execute(
+                            '''
+                            SELECT plataforma_nombre,
+                                   SUM(me_gusta) as me_gusta,
+                                   SUM(comentarios) as comentarios,
+                                   SUM(compartidos) as compartidos,
+                                   SUM(reproducciones) as reproducciones
+                            FROM estadisticas_rs
+                            WHERE fecha_reporte BETWEEN ? AND ?
+                            GROUP BY plataforma_nombre
+                            ORDER BY plataforma_nombre
+                            ''',
+                            (fecha_inicio_str, fecha_fin_str)
+                        )
+                    rows = cur.fetchall() or []
+            except Exception:
+                rows = []
+
+            total_me_gusta = total_comentarios = total_compartidos = total_reproducciones = 0
+            for r in rows:
+                mg = int(r['me_gusta'] or 0)
+                cm = int(r['comentarios'] or 0)
+                cp = int(r['compartidos'] or 0)
+                rp = int(r['reproducciones'] or 0)
+                plat_metrics_data.append([
+                    str(r['plataforma_nombre'] or ''), str(mg), str(cm), str(cp), str(rp)
+                ])
+                total_me_gusta += mg
+                total_comentarios += cm
+                total_compartidos += cp
+                total_reproducciones += rp
+
+            # Fila de totales
+            plat_metrics_data.append([
+                'Total', str(total_me_gusta), str(total_comentarios), str(total_compartidos), str(total_reproducciones)
+            ])
+
+            plat_metrics_table = Table(plat_metrics_data)
+            plat_metrics_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4e79')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BACKGROUND', (0, 1), (-1, -2), colors.HexColor('#f8f9fa')),
+                ('TEXTCOLOR', (0, 1), (-1, -2), colors.HexColor('#333333')),
+                ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -2), 8),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e9ecef')),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6'))
+            ]))
+            story.append(plat_metrics_table)
+            story.append(Spacer(1, 10))
 
             # Distribución por zona
             story.append(Paragraph("Distribución por zona geográfica", section_style))

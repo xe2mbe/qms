@@ -903,10 +903,10 @@ def show_rs_event_report():
     # Exportación
     st.subheader("📤 Exportar Reporte")
     with st.expander("Filtros de exportación", expanded=True):
-        export_estaciones = ['Todas'] + sorted([e for e in df_rs['Estación'].dropna().unique().tolist() if str(e).strip()])
-        export_est_sel = st.selectbox("Estación a exportar (QRZ Station)", export_estaciones, key="rs_export_est_sel")
-        if export_est_sel != 'Todas':
-            df_export = df_rs[df_rs['Estación'] == export_est_sel]
+        export_plataformas = ['Todas'] + sorted([p for p in df_rs['Plataforma'].dropna().unique().tolist() if str(p).strip()])
+        export_plat_sel = st.selectbox("Plataforma a exportar", export_plataformas, key="rs_export_plat_sel")
+        if export_plat_sel != 'Todas':
+            df_export = df_rs[df_rs['Plataforma'] == export_plat_sel]
         else:
             df_export = df_rs
         st.caption(f"Registros a exportar: {len(df_export)}")
@@ -950,7 +950,7 @@ def show_rs_event_report():
                 df_plataformas_exp.to_excel(writer, sheet_name='Por Plataforma', index=False)
 
             buffer.seek(0)
-            est_suffix = "" if export_est_sel == 'Todas' else f"_{str(export_est_sel).replace(' ', '_')}"
+            est_suffix = "" if export_plat_sel == 'Todas' else f"_{str(export_plat_sel).replace(' ', '_')}"
             st.download_button(
                 label="⬇️ Descargar Excel",
                 data=buffer,
@@ -963,7 +963,7 @@ def show_rs_event_report():
     with coly:
         if st.button("📄 CSV", key="rs_btn_csv", use_container_width=True):
             csv_bytes = df_export.to_csv(index=False).encode('utf-8-sig')
-            est_suffix = "" if export_est_sel == 'Todas' else f"_{str(export_est_sel).replace(' ', '_')}"
+            est_suffix = "" if export_plat_sel == 'Todas' else f"_{str(export_plat_sel).replace(' ', '_')}"
             st.download_button(
                 label="⬇️ Descargar CSV",
                 data=csv_bytes,
@@ -986,8 +986,8 @@ def show_rs_event_report():
             buffer = io.BytesIO()
 
             # Etiqueta dinámica de encabezado por sección
-            header_current_station = {
-                'label': (export_est_sel if export_est_sel != 'Todas' else 'General')
+            header_current_platform = {
+                'label': (export_plat_sel if export_plat_sel != 'Todas' else 'Todas las Plataformas')
             }
 
             # Preparar variables de fecha y título como en Tradicional
@@ -996,13 +996,13 @@ def show_rs_event_report():
             fecha_formateada = fi_fmt if fecha_inicio_str == fecha_fin_str else f"{fi_fmt} - {ff_fmt}"
             evento_nombre = "Redes Sociales"
 
-            # Encabezado y pie de página idénticos al Tradicional (ajustando variables locales)
+            # Encabezado y pie de página (adaptado a Plataforma)
             def add_header_footer(canvas, doc):
                 canvas.saveState()
                 canvas.setFont('Helvetica', 4)
                 canvas.setFillColor(colors.HexColor('#333333'))
                 evento = (evento_nombre[:12] + '...') if len(evento_nombre) > 15 else evento_nombre
-                header_text = f"{evento} | {fecha_formateada} | Estación: {header_current_station['label']} | Página {canvas.getPageNumber()}"
+                header_text = f"{evento} | {fecha_formateada} | Plataforma: {header_current_platform['label']} | Página {canvas.getPageNumber()}"
                 # Encabezado: parte superior del área de contenido
                 canvas.drawString(doc.leftMargin, doc.height + doc.bottomMargin + 5, header_text)
                 # Pie: línea divisoria inferior
@@ -1167,16 +1167,18 @@ def show_rs_event_report():
             ]))
             story.append(plat_table)
 
-            # Página de detalle
+            # Página de detalle (Total)
             story.append(PageBreak())
-            story.append(Paragraph("Reporte de Actividad", section_style))
-            reportes_data = [['Estación', 'Indicativo', 'Nombre', 'Estado', 'Ciudad', 'Zona', 'Plataforma']]
+            story.append(Paragraph("Reporte de Actividad (Total)", section_style))
+            story.append(Spacer(1, 10))
+            reportes_data = [['Indicativo', 'Nombre', 'Estado', 'Ciudad', 'Zona', 'Plataforma']]
             for _, row in df_pdf.iterrows():
                 reportes_data.append([
-                    row.get('Estación', ''), row.get('Indicativo', ''), row.get('Nombre', ''),
+                    row.get('Indicativo', ''), row.get('Nombre', ''),
                     row.get('Estado', ''), row.get('Ciudad', ''), row.get('Zona', ''), row.get('Plataforma', '')
                 ])
-            reportes_table = Table(reportes_data, colWidths=[1.0*inch, 1.0*inch, 1.6*inch, 0.9*inch, 1.0*inch, 0.5*inch, 0.5*inch])
+            # Dar más espacio a 'Plataforma' y ajustar anchos totales a 6.5"
+            reportes_table = Table(reportes_data, colWidths=[1.0*inch, 1.5*inch, 0.9*inch, 1.0*inch, 0.5*inch, 1.6*inch])
             reportes_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4e79')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -1191,9 +1193,114 @@ def show_rs_event_report():
             ]))
             story.append(reportes_table)
 
+            # Desglose por plataforma
+            plataformas_list = [p for p in df_pdf['Plataforma'].dropna().unique().tolist() if str(p).strip()]
+            for plat in sorted(plataformas_list):
+                df_p = df_pdf[df_pdf['Plataforma'] == plat]
+                if df_p.empty:
+                    continue
+                story.append(PageBreak())
+                story.append(Paragraph(f"Plataforma: {plat}", section_style))
+                story.append(Spacer(1, 8))
+                # Métricas individuales por plataforma
+                try:
+                    with db.get_connection() as conn:
+                        cur = conn.cursor()
+                        cur.execute(
+                            '''
+                            SELECT 
+                                SUM(me_gusta) as me_gusta,
+                                SUM(comentarios) as comentarios,
+                                SUM(compartidos) as compartidos,
+                                SUM(reproducciones) as reproducciones
+                            FROM estadisticas_rs
+                            WHERE plataforma_nombre = ? AND fecha_reporte BETWEEN ? AND ?
+                            ''',
+                            (plat, fecha_inicio_str, fecha_fin_str)
+                        )
+                        row = cur.fetchone()
+                        me_gusta_p = int((row['me_gusta'] if row and row['me_gusta'] is not None else 0))
+                        comentarios_p = int((row['comentarios'] if row and row['comentarios'] is not None else 0))
+                        compartidos_p = int((row['compartidos'] if row and row['compartidos'] is not None else 0))
+                        reproducciones_p = int((row['reproducciones'] if row and row['reproducciones'] is not None else 0))
+                except Exception:
+                    me_gusta_p = comentarios_p = compartidos_p = reproducciones_p = 0
+
+                estaciones_unicas_p = df_p['Indicativo'].nunique()
+                zona_mas_p = (df_p['Zona'].mode().iloc[0] if not df_p['Zona'].mode().empty else "N/A")
+                cobertura_estados_p = df_p['Estado'].nunique() if 'Estado' in df_p.columns else 0
+
+                stats_p = [
+                    ['Métrica', 'Valor', 'Detalles'],
+                    ['Total de Reportes', str(len(df_p)), f"Participantes activos: {len(df_p)}"],
+                    ['Estaciones Únicas', str(estaciones_unicas_p), "Diferentes estaciones que reportaron"],
+                    ['Zona Más Reportada', zona_mas_p, "Concentración geográfica principal"],
+                    ['Cobertura Geográfica', f"{cobertura_estados_p} estados", "Alcance territorial del período"],
+                    ['Me gusta', str(me_gusta_p), "Interacciones de 'me gusta'"],
+                    ['Comentarios', str(comentarios_p), "Comentarios recibidos"],
+                    ['Compartidos', str(compartidos_p), "Veces compartido"],
+                    ['Reproducciones', str(reproducciones_p), "Reproducciones totales"]
+                ]
+                stats_table_p = Table(stats_p)
+                stats_table_p.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4e79')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8f9fa')),
+                    ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#333333')),
+                    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                    ('FONTSIZE', (0, 1), (-1, -1), 8),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6'))
+                ]))
+                story.append(stats_table_p)
+                story.append(Spacer(1, 8))
+                # Distribución por zona (plataforma)
+                zonas_count_p = df_p['Zona'].value_counts()
+                df_zonas_p = pd.DataFrame({'Zona': zonas_count_p.index, 'Cantidad': zonas_count_p.values, 'Porcentaje': (zonas_count_p.values / max(len(df_p), 1) * 100).round(1)})
+                zonas_data_p = [['Zona', 'Cantidad', 'Porcentaje']]
+                for _, row in df_zonas_p.iterrows():
+                    zonas_data_p.append([str(row['Zona']), str(int(row['Cantidad'])), f"{row['Porcentaje']:.1f}%"])
+                zonas_table_p = Table(zonas_data_p)
+                zonas_table_p.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c5f2d')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#90EE90'))
+                ]))
+                story.append(zonas_table_p)
+                story.append(Spacer(1, 8))
+                # Detalle por plataforma
+                story.append(Paragraph("Detalle de Reportes", section_style))
+                story.append(Spacer(1, 6))
+                reportes_p = [['Indicativo', 'Nombre', 'Estado', 'Ciudad', 'Zona']]
+                for _, row in df_p.iterrows():
+                    reportes_p.append([
+                        row.get('Indicativo', ''), row.get('Nombre', ''),
+                        row.get('Estado', ''), row.get('Ciudad', ''), row.get('Zona', '')
+                    ])
+                # Ajustar anchos para 5 columnas a 6.5"
+                reportes_table_p = Table(reportes_p, colWidths=[1.0*inch, 2.0*inch, 1.2*inch, 1.8*inch, 0.5*inch])
+                reportes_table_p.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f4e79')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 8),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8f9fa')),
+                    ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#333333')),
+                    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                    ('FONTSIZE', (0, 1), (-1, -1), 7),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#dee2e6'))
+                ]))
+                story.append(reportes_table_p)
+
             doc.build(story, onFirstPage=add_header_footer, onLaterPages=add_header_footer)
             buffer.seek(0)
-            est_suffix = "" if export_est_sel == 'Todas' else f"_{str(export_est_sel).replace(' ', '_')}"
+            est_suffix = "" if export_plat_sel == 'Todas' else f"_{str(export_plat_sel).replace(' ', '_')}"
             st.download_button(
                 label="⬇️ Descargar PDF",
                 data=buffer,

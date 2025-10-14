@@ -124,6 +124,9 @@ def show_redes_sociales_form():
                 else:
                     # Cerrar el expander
                     st.session_state.parametros_expanded = False
+                    # Forzar un prefill de métricas en el siguiente render de la sección
+                    st.session_state['rs_last_prefill_key'] = None
+                    st.session_state['rs_existing_rows'] = []
                     st.rerun()  # Actualizar la interfaz
         
         # Mostrar mensaje de éxito si los parámetros están guardados
@@ -135,63 +138,120 @@ def show_redes_sociales_form():
             st.markdown("---")
             st.markdown("### Métricas de Interacción")
 
-            # Prefill: si ya existe estadística para (fecha, plataforma), precargar y avisar que se sobrescribirá
+            # Prefill: consultar métricas existentes SOLO cuando cambia (fecha, plataforma)
             try:
                 fecha_val = st.session_state.fecha_reporte
                 fecha_str = fecha_val.strftime('%Y-%m-%d') if hasattr(fecha_val, 'strftime') else str(fecha_val)
                 plat_nombre = st.session_state.plataforma_seleccionada
                 plat_id = plataforma_map.get(plat_nombre)
                 prefill_key = f"{fecha_str}|{plat_id}"
-                if plat_id and st.session_state.get('rs_prefill_key') != prefill_key:
+                last_key = st.session_state.get('rs_last_prefill_key')
+                if plat_id and prefill_key != last_key:
                     existente = db.get_estadistica_rs_por_fecha_plataforma(fecha_str, int(plat_id))
                     if existente:
                         st.session_state['me_gusta'] = int(existente.get('me_gusta') or 0)
                         st.session_state['comentarios'] = int(existente.get('comentarios') or 0)
                         st.session_state['compartidos'] = int(existente.get('compartidos') or 0)
                         st.session_state['reproducciones'] = int(existente.get('reproducciones') or 0)
-                        st.info(f"Se encontró una estadística existente para esta fecha y plataforma (ID {existente.get('id')}). Al guardar, se actualizará.")
-                        # Cargar y mostrar todas las filas existentes (por si hay duplicados previos)
-                        try:
-                            with db.get_connection() as conn:
-                                cur = conn.cursor()
-                                cur.execute(
-                                    'SELECT id, plataforma_nombre, me_gusta, comentarios, compartidos, reproducciones, interacciones, alcance, fecha_reporte, captured_by, updated_at FROM estadisticas_rs WHERE fecha_reporte = ? AND plataforma_id = ? ORDER BY updated_at DESC, id DESC',
-                                    (fecha_str, int(plat_id))
-                                )
-                                rows = cur.fetchall() or []
-                                if rows:
-                                    st.session_state['rs_existing_rows'] = [dict(r) for r in rows]
-                                    df_exist = pd.DataFrame(st.session_state['rs_existing_rows'])
-                                    st.warning("Ya existen métricas de interacción para esta fecha y plataforma. Revisa y confirma si deseas sobrescribirlas.")
-                                    st.dataframe(df_exist, hide_index=True, width='stretch')
-                                    st.session_state['rs_confirm_overwrite'] = st.checkbox(
-                                        "Sí, deseo sobrescribir estas métricas con los nuevos valores",
-                                        value=bool(st.session_state.get('rs_confirm_overwrite', False)),
-                                        key='rs_confirm_overwrite'
-                                    )
-                                else:
-                                    st.session_state['rs_existing_rows'] = []
-                                    st.session_state['rs_confirm_overwrite'] = False
-                        except Exception:
-                            pass
+                        st.session_state['rs_existing_rows'] = [dict(existente)]
                     else:
-                        # No hay registro existente para este par fecha/plataforma
                         st.session_state['rs_existing_rows'] = []
-                        st.session_state['rs_confirm_overwrite'] = False
-                    st.session_state['rs_prefill_key'] = prefill_key
+                        # No clobber valores editados; solo asegurar que existan
+                        for _k in ('me_gusta', 'comentarios', 'compartidos', 'reproducciones'):
+                            if _k not in st.session_state or st.session_state.get(_k) is None:
+                                st.session_state[_k] = 0
+                    st.session_state['rs_last_prefill_key'] = prefill_key
             except Exception:
                 pass
 
             # Crear columnas para las métricas
+            # Asegurar defaults en session_state para evitar conflicto con 'value'
+            for _k in ('me_gusta', 'comentarios', 'compartidos', 'reproducciones'):
+                if _k not in st.session_state or st.session_state.get(_k) is None:
+                    st.session_state[_k] = 0
             col1, col2, col3, col4 = st.columns(4)
             with col1:
-                me_gusta = st.number_input("Me gusta", min_value=0, value=int(st.session_state.get('me_gusta', 0) or 0), key='me_gusta')
+                me_gusta = st.number_input("Me gusta", min_value=0, key='me_gusta')
             with col2:
-                comentarios = st.number_input("Comentarios", min_value=0, value=int(st.session_state.get('comentarios', 0) or 0), key='comentarios')
+                comentarios = st.number_input("Comentarios", min_value=0, key='comentarios')
             with col3:
-                compartidos = st.number_input("Compartidos", min_value=0, value=int(st.session_state.get('compartidos', 0) or 0), key='compartidos')
+                compartidos = st.number_input("Compartidos", min_value=0, key='compartidos')
             with col4:
-                reproducciones = st.number_input("Reproducciones", min_value=0, value=int(st.session_state.get('reproducciones', 0) or 0), key='reproducciones')
+                reproducciones = st.number_input("Reproducciones", min_value=0, key='reproducciones')
+            
+            # Botón dedicado para guardar/actualizar interacciones (estadisticas_rs)
+            try:
+                plat_nombre_btn = st.session_state.plataforma_seleccionada
+                plat_id_btn = plataforma_map.get(plat_nombre_btn)
+                fecha_btn_val = st.session_state.fecha_reporte
+                fecha_btn_str = fecha_btn_val.strftime('%Y-%m-%d') if hasattr(fecha_btn_val, 'strftime') else str(fecha_btn_val)
+                existen_metricas = False
+                if plat_id_btn:
+                    with db.get_connection() as conn:
+                        cur = conn.cursor()
+                        cur.execute('SELECT COUNT(*) FROM estadisticas_rs WHERE fecha_reporte = ? AND plataforma_id = ?', (fecha_btn_str, int(plat_id_btn)))
+                        rowc = cur.fetchone()
+                        existen_metricas = bool(rowc[0] if rowc is not None else 0)
+            except Exception:
+                existen_metricas = bool(st.session_state.get('rs_existing_rows'))
+            btn_label = "🔄 Actualizar métricas" if existen_metricas else "💾 Guardar métricas"
+            accion_metricas = st.form_submit_button(btn_label, type="primary", width='content', key='btn_metricas_rs')
+            
+            if accion_metricas:
+                try:
+                    # Preparar payload de estadísticas para UPSERT
+                    plataforma_nombre = st.session_state.plataforma_seleccionada
+                    plataforma_id = plataforma_map.get(plataforma_nombre)
+                    if not plataforma_id:
+                        st.error("❌ No se pudo determinar el ID de la plataforma seleccionada para guardar interacciones.")
+                        st.stop()
+
+                    # Fecha como string YYYY-MM-DD
+                    fecha_val = st.session_state.fecha_reporte
+                    fecha_str = fecha_val.strftime('%Y-%m-%d') if hasattr(fecha_val, 'strftime') else str(fecha_val)
+
+                    # Usuario
+                    captured_by_username = st.session_state.user.get('username', 'sistema') if 'user' in st.session_state else 'sistema'
+
+                    # Valores actuales
+                    me_gusta_val = int(st.session_state.get('me_gusta', 0) or 0)
+                    comentarios_val = int(st.session_state.get('comentarios', 0) or 0)
+                    compartidos_val = int(st.session_state.get('compartidos', 0) or 0)
+                    reproducciones_val = int(st.session_state.get('reproducciones', 0) or 0)
+                    interacciones_val = me_gusta_val + comentarios_val + compartidos_val
+
+                    estadistica_data = {
+                        'plataforma_id': int(plataforma_id),
+                        'plataforma_nombre': str(plataforma_nombre),
+                        'me_gusta': me_gusta_val,
+                        'comentarios': comentarios_val,
+                        'compartidos': compartidos_val,
+                        'reproducciones': reproducciones_val,
+                        'alcance': 0,
+                        'interacciones': interacciones_val,
+                        'fecha_reporte': fecha_str,
+                        'captured_by': captured_by_username,
+                        'observaciones': f"Reporte de {plataforma_nombre}",
+                        'metadata_json': json.dumps({
+                            'tipo': 'reporte_redes_sociales',
+                            'fecha_captura': datetime.now().isoformat(),
+                            'usuario': captured_by_username,
+                            'plataforma': plataforma_nombre
+                        })
+                    }
+
+                    # Guardar (INSERT) o Actualizar (UPDATE) según exista
+                    db.save_estadistica_rs(estadistica_data)
+                    if existen_metricas:
+                        st.success("✅ Métricas actualizadas correctamente")
+                    else:
+                        st.success("✅ Métricas guardadas correctamente")
+                    # Forzar recarga de valores desde BD en el próximo render para reflejar lo guardado
+                    st.session_state['rs_existing_rows'] = []
+                    st.session_state['rs_last_prefill_key'] = None
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Error al guardar/actualizar métricas: {str(e)}")
             
             # Tercera sección: Pre-Registros de Estaciones
             st.markdown("### Pre-Registros de Estaciones")
@@ -464,20 +524,16 @@ def show_redes_sociales_form():
                                 # No need to manually update here
                     
                     # Los cambios se guardan automáticamente al hacer submit del formulario
+                    # Botón para guardar los registros (tamaño estándar)
+                    print("\n" + "="*80)
+                    print("DEPURACIÓN - BOTÓN DE GUARDADO")
+                    print("Se hizo clic en el botón de Guardar Registros")
+                    print("="*80 + "\n")
                     
-                    # Botón para guardar los registros (más pequeño y centrado)
-                    col1, col2, col3 = st.columns([1,2,1])
-                    with col2:
-                        print("\n" + "="*80)
-                        print("DEPURACIÓN - BOTÓN DE GUARDADO")
-                        print("Se hizo clic en el botón de Guardar Registros")
-                        print("="*80 + "\n")
-                        
-                        # Mover el botón de submit fuera del if para que el formulario funcione correctamente
-                        submit_button = st.form_submit_button("💾 Guardar Registros", 
-                                                          type="primary", 
-                                                          width='stretch',
-                                                          help="Guarda los registros de las estaciones")
+                    submit_button = st.form_submit_button("💾 Guardar Registros", 
+                                                      type="primary", 
+                                                      width='content',
+                                                      help="Guarda los registros de las estaciones")
                     
                     # Procesar el formulario cuando se envía
                     if submit_button and 'confirmado' not in st.session_state:
@@ -576,63 +632,13 @@ def show_redes_sociales_form():
                                         'qrz_captured_by': st.session_state.user.get('username', '')
                                     })
                                 
-                                # Preparar datos para estadísticas (solo un registro por plataforma/fecha)
-                                try:
-                                    # Obtener el valor de observaciones si existe, o usar un valor por defecto
-                                    observaciones_texto = observaciones if 'observaciones' in locals() and observaciones else f"Reporte de {plataforma_nombre}"
-                                    
-                                    # Depuración: Mostrar el ID de la plataforma
-                                    print(f"\n=== DEPURACIÓN ===")
-                                    print(f"Plataforma seleccionada: {st.session_state.plataforma_seleccionada}")
-                                    print(f"ID de plataforma obtenido: {plataforma_id}")
-                                    print(f"Tipo de ID: {type(plataforma_id).__name__ if plataforma_id is not None else 'None'}")
-                                    
-                                    # Verificar que el ID de la plataforma sea válido
-                                    if not plataforma_id:
-                                        st.error("Error: No se pudo obtener un ID de plataforma válido. Por favor, verifica que la plataforma exista en la base de datos.")
-                                        return
-                                    
-                                    # Crear el diccionario con todos los campos requeridos
-                                    estadistica_data = {
-                                        'plataforma_id': int(plataforma_id),
-                                        'plataforma_nombre': str(plataforma_nombre) if plataforma_nombre else 'Desconocida',
-                                        'me_gusta': int(me_gusta) if me_gusta else 0,
-                                        'comentarios': int(comentarios) if comentarios else 0,
-                                        'compartidos': int(compartidos) if compartidos else 0,
-                                        'reproducciones': int(reproducciones) if reproducciones else 0,
-                                        'alcance': 0,  # Valor por defecto para alcance
-                                        'interacciones': 0,  # Valor por defecto para interacciones
-                                        'fecha_reporte': fecha_reporte.strftime('%Y-%m-%d') if hasattr(fecha_reporte, 'strftime') else str(fecha_reporte),
-                                        'captured_by': captured_by_username,
-                                        'observaciones': observaciones_texto,
-                                        'metadata_json': json.dumps({
-                                            'tipo': 'reporte_redes_sociales',
-                                            'fecha_captura': datetime.now().isoformat(),
-                                            'usuario': captured_by_username,
-                                            'plataforma': plataforma_nombre if plataforma_nombre else 'Desconocida'
-                                        })
-                                    }
-                                    
-                                    # Depuración: Mostrar los datos que se van a guardar
-                                    print("\n" + "="*80)
-                                    print("DATOS PARA ESTADÍSTICAS:")
-                                    for key, value in estadistica_data.items():
-                                        print(f"{key}: {value} (tipo: {type(value).__name__})")
-                                    print("="*80 + "\n")
-                                    
-                                except Exception as e:
-                                    print(f"Error al preparar estadistica_data: {str(e)}")
-                                    raise
+                                
                                 
                                 # Insertar en la tabla reportes_rs para cada estación
                                 for registro in registros:
                                     reporte_data = {
                                         'plataforma_id': plataforma_id,
                                         'plataforma_nombre': plataforma_nombre,
-                                        'me_gusta': int(me_gusta) if me_gusta else 0,
-                                        'comentarios': int(comentarios) if comentarios else 0,
-                                        'compartidos': int(compartidos) if compartidos else 0,
-                                        'reproducciones': int(reproducciones) if reproducciones else 0,
                                         'fecha_reporte': fecha_reporte.strftime('%Y-%m-%d') if hasattr(fecha_reporte, 'strftime') else str(fecha_reporte),
                                         'created_by': created_by_id,
                                         'indicativo': registro['indicativo'],
@@ -648,72 +654,12 @@ def show_redes_sociales_form():
                                     # Guardar el reporte de la estación
                                     db.save_reporte_rs(reporte_data)
                                 
-                                # Guardar las estadísticas generales
-                                try:
-                                    print("\n" + "="*80)
-                                    print("DEBUG - INICIO DE GUARDADO DE ESTADÍSTICAS")
-                                    print("-"*80)
-                                    print(f"1. Datos a guardar en estadisticas_rs:")
-                                    for key, value in estadistica_data.items():
-                                        print(f"   - {key}: {value} (tipo: {type(value).__name__})")
-                                    
-                                    # Validar campos requeridos
-                                    campos_requeridos = ['plataforma_id', 'plataforma_nombre', 'me_gusta', 'comentarios', 
-                                                       'compartidos', 'reproducciones', 'alcance', 'interacciones',
-                                                       'fecha_reporte', 'captured_by', 'observaciones', 'metadata_json']
-                                    
-                                    faltantes = [campo for campo in campos_requeridos if campo not in estadistica_data]
-                                    if faltantes:
-                                        print(f"\n¡ERROR! Faltan campos requeridos: {faltantes}")
-                                    else:
-                                        print("   ✓ Todos los campos requeridos están presentes")
-                                    
-                                    print("\n2. Llamando a db.save_estadistica_rs()...")
-                                    
-                                    # Guardar estadísticas
-                                    try:
-                                        # Requiere confirmación de sobrescritura cuando ya existen
-                                        if st.session_state.get('rs_existing_rows') and not st.session_state.get('rs_confirm_overwrite', False):
-                                            st.warning("Ya existen métricas para esta fecha y plataforma. Activa la casilla de sobrescribir para continuar.")
-                                            st.stop()
-                                        estadistica_id = db.save_estadistica_rs(estadistica_data)
-                                        print(f"\n3. RESULTADO DEL GUARDADO:")
-                                        print(f"   - ID de estadística guardada: {estadistica_id}")
-                                        print(f"   - Tipo de ID devuelto: {type(estadistica_id).__name__ if estadistica_id is not None else 'None'}")
-                                        
-                                        if not estadistica_id:
-                                            print("   ¡ADVERTENCIA! La función save_estadistica_rs devolvió None")
-                                        else:
-                                            print("   ✓ Estadísticas guardadas correctamente")
-                                        
-                                        # Mostrar mensaje de éxito
-                                        st.toast("✅ ¡Los registros se han guardado correctamente!", icon="✅")
-                                        st.success(f"✅ **¡Registros guardados exitosamente!**  \n"
-                                                f"• **Plataforma:** {plataforma_nombre}  \n"
-                                                f"• **Fecha del reporte:** {fecha_reporte.strftime('%Y-%m-%d') if hasattr(fecha_reporte, 'strftime') else str(fecha_reporte)}  \n"
-                                                f"• **Total de estaciones:** {len(registros)}")
-                                        st.balloons()
-                                        
-                                    except Exception as db_error:
-                                        print(f"\n¡ERROR en save_estadistica_rs!")
-                                        print(f"Tipo de error: {type(db_error).__name__}")
-                                        print(f"Mensaje: {str(db_error)}")
-                                        import traceback
-                                        print("\nTraceback completo:")
-                                        print(traceback.format_exc())
-                                        raise
-                                    
-                                    print("="*80 + "\n")
-                                    
-                                except Exception as e:
-                                    print("\n" + "!"*80)
-                                    print(f"ERROR al guardar estadística: {str(e)}")
-                                    print("!"*80 + "\n")
-                                    raise
-                                
-                                # Mostrar notificación de éxito
-                                st.balloons()
-                                st.success("✅ ¡Registros guardados exitosamente!")
+                                # Mostrar notificación de éxito (solo registros de estaciones)
+                                st.toast("✅ ¡Registros de estaciones guardados!", icon="✅")
+                                st.success(f"✅ **¡Registros guardados exitosamente!**  \n"
+                                        f"• **Plataforma:** {plataforma_nombre}  \n"
+                                        f"• **Fecha del reporte:** {fecha_reporte.strftime('%Y-%m-%d') if hasattr(fecha_reporte, 'strftime') else str(fecha_reporte)}  \n"
+                                        f"• **Total de estaciones:** {len(registros)}")
                                 
                                 # Limpiar el formulario después de guardar exitosamente
                                 st.session_state.parametros_expanded = True
@@ -881,7 +827,7 @@ def show_redes_sociales_form():
                 
                 # Botón para guardar registros
                 st.markdown("---")  # Separador visual
-                guardar_registros = st.form_submit_button("💾 Guardar Registros", type="primary", width='stretch')
+                guardar_registros = st.form_submit_button("💾 Guardar Registros", type="primary", width='content')
                 if guardar_registros:
                     # Validar que haya datos para guardar
                     if not registros:
@@ -912,46 +858,7 @@ def show_redes_sociales_form():
                             }
                             db.save_reporte_rs(reporte_data)
                         
-                        # Guardar una fila de estadísticas_rs con las métricas del formulario
-                        plataforma_nombre = st.session_state.plataforma_seleccionada
-                        plataforma_id = plataforma_map.get(plataforma_nombre)
-                        if not plataforma_id:
-                            st.error("❌ No se pudo determinar el ID de la plataforma seleccionada para guardar estadísticas.")
-                            st.stop()
-
-                        me_gusta_val = int(st.session_state.get('me_gusta', 0) or 0)
-                        comentarios_val = int(st.session_state.get('comentarios', 0) or 0)
-                        compartidos_val = int(st.session_state.get('compartidos', 0) or 0)
-                        reproducciones_val = int(st.session_state.get('reproducciones', 0) or 0)
-                        interacciones_val = me_gusta_val + comentarios_val + compartidos_val
-
-                        estadistica_data = {
-                            'plataforma_id': int(plataforma_id),
-                            'plataforma_nombre': str(plataforma_nombre),
-                            'me_gusta': me_gusta_val,
-                            'comentarios': comentarios_val,
-                            'compartidos': compartidos_val,
-                            'reproducciones': reproducciones_val,
-                            'alcance': 0,
-                            'interacciones': interacciones_val,
-                            'fecha_reporte': st.session_state.fecha_reporte.strftime('%Y-%m-%d'),
-                            'captured_by': captured_by_username,
-                            'observaciones': f"Reporte de {plataforma_nombre}",
-                            'metadata_json': json.dumps({
-                                'tipo': 'reporte_redes_sociales',
-                                'fecha_captura': datetime.now().isoformat(),
-                                'usuario': captured_by_username,
-                                'plataforma': plataforma_nombre
-                            })
-                        }
-                        try:
-                            # Requiere confirmación de sobrescritura cuando ya existen registros para la fecha/plataforma seleccionada
-                            if st.session_state.get('rs_existing_rows') and not st.session_state.get('rs_confirm_overwrite', False):
-                                st.warning("Ya existen métricas para esta fecha y plataforma. Activa la casilla de sobrescribir para continuar.")
-                                st.stop()
-                            db.save_estadistica_rs(estadistica_data)
-                        except Exception as e:
-                            st.error(f"❌ Error al guardar estadísticas_rs: {str(e)}")
+                        # No guardar métricas de interacción aquí; eso se hace solo con el botón dedicado
 
                         st.success("✅ Registros guardados exitosamente")
                         

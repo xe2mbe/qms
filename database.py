@@ -1,4 +1,6 @@
 import sqlite3
+import threading
+import time
 import hashlib
 import secrets
 import string
@@ -6,10 +8,20 @@ import json
 from datetime import datetime
 
 class FMREDatabase:
+    _init_lock = threading.Lock()
+    _initialized = False
+    _zona_ensured = False
+
     def __init__(self, db_path="qms.db"):
         self.db_path = db_path
-        self.init_database()
-        self.ensure_zona_column_exists()
+        # Evitar inicializaciones concurrentes que producen "database is locked"
+        with FMREDatabase._init_lock:
+            if not FMREDatabase._initialized:
+                self.init_database()
+                FMREDatabase._initialized = True
+            if not FMREDatabase._zona_ensured:
+                self.ensure_zona_column_exists()
+                FMREDatabase._zona_ensured = True
     def _check_password(self, password, hashed_password):
         """
         Verifica si la contraseña coincide con el hash almacenado
@@ -33,9 +45,8 @@ class FMREDatabase:
             isolation_level=None,  # Deshabilitar el modo de transacción automática
             check_same_thread=False  # Permitir acceso desde múltiples hilos
         )
-        # Habilitar WAL (Write-Ahead Logging) para mejor concurrencia
-        conn.execute('PRAGMA journal_mode=WAL')
-        conn.execute('PRAGMA busy_timeout=5000')  # 5 segundos de timeout
+        # Configuración de timeout y sincronización por conexión
+        conn.execute('PRAGMA busy_timeout=15000')  # 15 segundos de timeout
         conn.execute('PRAGMA synchronous=NORMAL')
         conn.row_factory = sqlite3.Row
 
@@ -58,6 +69,11 @@ class FMREDatabase:
         """Inicializa la base de datos con las tablas necesarias"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            # Establecer WAL una sola vez al iniciar, evita cambiar el modo en cada conexión (reduce locks)
+            try:
+                cursor.execute('PRAGMA journal_mode=WAL')
+            except Exception:
+                pass
             
             # Tabla de eventos
             cursor.execute('''
@@ -413,8 +429,31 @@ class FMREDatabase:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_reportes_sistema ON reportes(sistema)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_reportes_tipo_reporte ON reportes(tipo_reporte)')
             
-            # Insertar datos iniciales
-            self._insert_initial_data(cursor)
+            # Asegurar tablas auxiliares requeridas por la carga inicial
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS qth (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    estado TEXT UNIQUE,
+                    abreviatura TEXT
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS zonas (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    zona TEXT UNIQUE,
+                    nombre TEXT
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS sistemas (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    codigo TEXT UNIQUE,
+                    nombre TEXT
+                )
+            ''')
+
+            # Insertar datos iniciales con reintentos para evitar "database is locked"
+            self._seed_with_retry(cursor)
             
             conn.commit()
     
@@ -460,97 +499,151 @@ class FMREDatabase:
             return False
 
     def _insert_initial_data(self, cursor):
-        """Inserta los datos iniciales en las tablas"""
-        # Normalizar datos existentes primero
-        self._normalizar_datos_existentes(cursor)
-        
-        # Insertar estados de México
-        estados_mexico = [
-            ('Aguascalientes', 'AGS'), ('Baja California', 'BC'), 
-            ('Baja California Sur', 'BCS'), ('Campeche', 'CAMP'),
-            ('Chiapas', 'CHIS'), ('Chihuahua', 'CHIH'),
-            ('Ciudad De México', 'CDMX'), ('Coahuila', 'COAH'),
-            ('Colima', 'COL'), ('Durango', 'DGO'),
-            ('Estado De México', 'EDOMEX'), ('Guanajuato', 'GTO'),
-            ('Guerrero', 'GRO'), ('Hidalgo', 'HGO'),
-            ('Jalisco', 'JAL'), ('Michoacán', 'MICH'),
-            ('Morelos', 'MOR'), ('Nayarit', 'NAY'),
-            ('Nuevo León', 'NL'), ('Oaxaca', 'OAX'),
-            ('Puebla', 'PUE'), ('Querétaro', 'QRO'),
-            ('Quintana Roo', 'QROO'), ('San Luis Potosí', 'SLP'),
-            ('Sinaloa', 'SIN'), ('Sonora', 'SON'),
-            ('Tabasco', 'TAB'), ('Tamaulipas', 'TAMPS'),
-            ('Tlaxcala', 'TLAX'), ('Veracruz', 'VER'),
-            ('Yucatán', 'YUC'), ('Zacatecas', 'ZAC'),
-            ('Extranjero', 'EXT')
-        ]
-        
-        cursor.executemany(
-            'INSERT OR IGNORE INTO qth (estado, abreviatura) VALUES (?, ?)',
-            estados_mexico
-        )
-        
-        # Insertar zonas
-        zonas = [
-            ('XE1', 'Zona XE1'),
-            ('XE2', 'Zona XE2'),
-            ('XE3', 'Zona XE3'),
-            ('EXT', 'Zona Extranjera')
-        ]
-        
-        cursor.executemany(
-            'INSERT OR IGNORE INTO zonas (zona, nombre) VALUES (?, ?)',
-            zonas
-        )
-        
-        # Insertar sistemas
-        sistemas = [
-            ('HF', 'High Frequency'),
-            ('ASL', 'All Star Link'),
-            ('IRLP', 'Internet Radio Link Project'),
-            ('DMR', 'DMR'),
-            ('Fusion', 'Yaesu C4FM'),
-            ('D-Star', 'Icom D-Star'),
-            ('P25', 'P25'),
-            ('M17', 'M17')
-        ]
-        
-        cursor.executemany(
-            'INSERT OR IGNORE INTO sistemas (codigo, nombre) VALUES (?, ?)',
-            sistemas
-        )
-        
-        # Insertar eventos iniciales si no existen
-        eventos_iniciales = [
-            ('Boletín', 'Boletín informativo semanal'),
-            ('Retransmisión', 'Retransmisión del boletín en el Centro de Retransmisión'),
-            ('RNE 40', 'Prácticas de la RNE en la banda de 40 metros'),
-            ('RNE 80', 'Prácticas de la RNE en la banda de 80 metros'),
-            ('Facebook', 'Transmisión en vivo por Facebook'),
-            ('Otro', 'Otros eventos no especificados')
-        ]
-        
-        cursor.execute('SELECT COUNT(*) as count FROM eventos')
-        if cursor.fetchone()['count'] == 0:
-            cursor.executemany('''
-                INSERT INTO eventos (tipo, descripcion)
-                VALUES (?, ?)
-            ''', eventos_iniciales)
-        
-        # Crear usuario admin por defecto si no existe
-        admin_exists = cursor.execute(
-            'SELECT id FROM users WHERE username = ?', 
-            ('admin',)
-        ).fetchone()
-        
-        if not admin_exists:
-            self.create_user(
-                username='admin',
-                password='admin123',  # Se debe cambiar en producción
-                full_name='Administrador del Sistema',
-                email='admin@example.com',
-                role='admin'
-            )
+        """Inserta los datos iniciales en las tablas, minimizando escrituras concurrentes"""
+        # En autocommit, iniciar transacción explícita para tomar el lock de escritura una sola vez
+        try:
+            cursor.execute('BEGIN IMMEDIATE')
+        except Exception:
+            pass
+        # 1) Normalizar datos existentes SOLO una vez (bandera en system_setting)
+        try:
+            flag = cursor.execute(
+                "SELECT value FROM system_setting WHERE key = ?",
+                ('data_normalized_v1',)
+            ).fetchone()
+            if not flag or (flag['value'] if isinstance(flag, sqlite3.Row) else flag[0]) != '1':
+                self._normalizar_datos_existentes(cursor)
+                cursor.execute(
+                    "INSERT OR REPLACE INTO system_setting (key, value, description, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                    ('data_normalized_v1', '1', 'Normalización inicial de datos aplicada')
+                )
+        except sqlite3.Error as e:
+            print(f"Error al normalizar datos existentes: {e}")
+
+        # 2) Insertar estados de México solo si la tabla está vacía
+        try:
+            row = cursor.execute('SELECT COUNT(*) as c FROM qth').fetchone()
+            count_qth = row['c'] if isinstance(row, sqlite3.Row) else row[0]
+            if count_qth == 0:
+                estados_mexico = [
+                    ('Aguascalientes', 'AGS'), ('Baja California', 'BC'), 
+                    ('Baja California Sur', 'BCS'), ('Campeche', 'CAMP'),
+                    ('Chiapas', 'CHIS'), ('Chihuahua', 'CHIH'),
+                    ('Ciudad De México', 'CDMX'), ('Coahuila', 'COAH'),
+                    ('Colima', 'COL'), ('Durango', 'DGO'),
+                    ('Estado De México', 'EDOMEX'), ('Guanajuato', 'GTO'),
+                    ('Guerrero', 'GRO'), ('Hidalgo', 'HGO'),
+                    ('Jalisco', 'JAL'), ('Michoacán', 'MICH'),
+                    ('Morelos', 'MOR'), ('Nayarit', 'NAY'),
+                    ('Nuevo León', 'NL'), ('Oaxaca', 'OAX'),
+                    ('Puebla', 'PUE'), ('Querétaro', 'QRO'),
+                    ('Quintana Roo', 'QROO'), ('San Luis Potosí', 'SLP'),
+                    ('Sinaloa', 'SIN'), ('Sonora', 'SON'),
+                    ('Tabasco', 'TAB'), ('Tamaulipas', 'TAMPS'),
+                    ('Tlaxcala', 'TLAX'), ('Veracruz', 'VER'),
+                    ('Yucatán', 'YUC'), ('Zacatecas', 'ZAC'),
+                    ('Extranjero', 'EXT')
+                ]
+                cursor.executemany(
+                    'INSERT OR IGNORE INTO qth (estado, abreviatura) VALUES (?, ?)',
+                    estados_mexico
+                )
+        except sqlite3.Error as e:
+            print(f"Error al insertar QTH: {e}")
+
+        # 3) Insertar zonas solo si la tabla está vacía
+        try:
+            row = cursor.execute('SELECT COUNT(*) as c FROM zonas').fetchone()
+            count_zonas = row['c'] if isinstance(row, sqlite3.Row) else row[0]
+            if count_zonas == 0:
+                zonas = [
+                    ('XE1', 'Zona XE1'),
+                    ('XE2', 'Zona XE2'),
+                    ('XE3', 'Zona XE3'),
+                    ('EXT', 'Zona Extranjera')
+                ]
+                cursor.executemany(
+                    'INSERT OR IGNORE INTO zonas (zona, nombre) VALUES (?, ?)',
+                    zonas
+                )
+        except sqlite3.Error as e:
+            print(f"Error al insertar zonas: {e}")
+
+        # 4) Insertar sistemas solo si la tabla está vacía
+        try:
+            row = cursor.execute('SELECT COUNT(*) as c FROM sistemas').fetchone()
+            count_sist = row['c'] if isinstance(row, sqlite3.Row) else row[0]
+            if count_sist == 0:
+                sistemas = [
+                    ('HF', 'High Frequency'),
+                    ('ASL', 'All Star Link'),
+                    ('IRLP', 'Internet Radio Link Project'),
+                    ('DMR', 'DMR'),
+                    ('Fusion', 'Yaesu C4FM'),
+                    ('D-Star', 'Icom D-Star'),
+                    ('P25', 'P25'),
+                    ('M17', 'M17')
+                ]
+                cursor.executemany(
+                    'INSERT OR IGNORE INTO sistemas (codigo, nombre) VALUES (?, ?)',
+                    sistemas
+                )
+        except sqlite3.Error as e:
+            print(f"Error al insertar sistemas: {e}")
+
+        # 5) Insertar eventos iniciales si no existen
+        try:
+            cursor.execute('SELECT COUNT(*) as count FROM eventos')
+            if cursor.fetchone()['count'] == 0:
+                eventos_iniciales = [
+                    ('Boletín', 'Boletín informativo semanal'),
+                    ('Retransmisión', 'Retransmisión del boletín en el Centro de Retransmisión'),
+                    ('RNE 40', 'Prácticas de la RNE en la banda de 40 metros'),
+                    ('RNE 80', 'Prácticas de la RNE en la banda de 80 metros'),
+                    ('Facebook', 'Transmisión en vivo por Facebook'),
+                    ('Otro', 'Otros eventos no especificados')
+                ]
+                cursor.executemany('''
+                    INSERT INTO eventos (tipo, descripcion)
+                    VALUES (?, ?)
+                ''', eventos_iniciales)
+        except sqlite3.Error as e:
+            print(f"Error al insertar eventos iniciales: {e}")
+
+        # 6) Crear usuario admin por defecto si no existe
+        try:
+            admin_exists = cursor.execute(
+                'SELECT id FROM users WHERE username = ?', 
+                ('admin',)
+            ).fetchone()
+            if not admin_exists:
+                self.create_user(
+                    username='admin',
+                    password='admin123',  # Se debe cambiar en producción
+                    full_name='Administrador del Sistema',
+                    email='admin@example.com',
+                    role='admin'
+                )
+        except sqlite3.Error as e:
+            print(f"Error al crear usuario admin: {e}")
+
+    def _seed_with_retry(self, cursor, retries: int = 5, base_delay: float = 0.6):
+        """Envuelve _insert_initial_data con reintentos exponenciales si la DB está bloqueada"""
+        last_err = None
+        for attempt in range(1, retries + 1):
+            try:
+                self._insert_initial_data(cursor)
+                return
+            except sqlite3.OperationalError as e:
+                last_err = e
+                msg = str(e).lower()
+                if 'locked' in msg or 'database is locked' in msg:
+                    time.sleep(base_delay * attempt)
+                    continue
+                raise
+        # Si no se pudo después de reintentos, relanzar el último error
+        if last_err:
+            raise last_err
     
     def _hash_password(self, password):
         """Genera un hash seguro de la contraseña"""

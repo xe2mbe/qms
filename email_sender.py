@@ -1,7 +1,9 @@
 import smtplib
 import re
+import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.image import MIMEImage
 from database import FMREDatabase
 
 class EmailSender:
@@ -116,14 +118,37 @@ class EmailSender:
             outer['To'] = ', '.join(to_emails)
             outer['Subject'] = subject
 
-            # Parte alternativa (texto + html)
+            # Parte alternativa (texto + html). Si hay imágenes inline, usar multipart/related
             alt = MIMEMultipart('alternative')
             if is_html:
                 text_version = body or ''
                 text_version = re.sub(r'<a\s+[^>]*href="([^"]+)"[^>]*>(.*?)</a>', r'\2 (\1)', text_version, flags=re.IGNORECASE)
                 text_version = re.sub(r'<[^>]+>', '', text_version)
                 alt.attach(MIMEText(text_version, 'plain'))
-                alt.attach(MIMEText(body or '', 'html'))
+
+                # Detectar imagen inline del logo
+                needs_logo = ('cid:logo_fmre_small' in (body or ''))
+                if needs_logo:
+                    related = MIMEMultipart('related')
+                    related.attach(MIMEText(body or '', 'html'))
+                    try:
+                        assets_path = os.path.join(os.path.dirname(__file__), 'assets', 'LogoFMRE_small.png')
+                        if os.path.exists(assets_path):
+                            with open(assets_path, 'rb') as f:
+                                img_data = f.read()
+                            img = MIMEImage(img_data, _subtype='png')
+                            img.add_header('Content-ID', '<logo_fmre_small>')
+                            img.add_header('Content-Disposition', 'inline', filename='LogoFMRE_small.png')
+                            related.attach(img)
+                        else:
+                            # Si no existe, adjuntar sin inline (omitir)
+                            pass
+                    except Exception:
+                        # En caso de error, simplemente enviar sin imagen inline
+                        pass
+                    alt.attach(related)
+                else:
+                    alt.attach(MIMEText(body or '', 'html'))
             else:
                 alt.attach(MIMEText(body or '', 'plain'))
 

@@ -2888,6 +2888,7 @@ def show_evento_report():
                                     items.append(f"<li><strong>{est_name}</strong><ul><li>Distribución por Zona:{z_block}</li><li>Distribución por Sistema:{s_block}</li></ul></li>")
                                 per_station_html = "<p><strong>Detalle por Estación (top 5):</strong></p><ul>" + "".join(items) + "</ul>"
                             default_body = (
+                                f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:8px;'><img src='cid:logo_fmre_small' alt='FMRE' style='height:40px'/><div style='font-family:Arial, sans-serif; font-size:16px; font-weight:700; color:#1f4e79;'>Federación Mexicana de Radioexperimentadores A.C.</div></div><hr/>"
                                 f"<p>Se adjunta el reporte <strong>{datos['evento']}</strong> correspondiente al <strong>{datos['fecha']}</strong>.</p>"
                                 f"<p><strong>Enviado por:</strong> {indicativo_usuario} - {nombre_usuario}</p>"
                                 f"<p><strong>Resumen de estadísticas:</strong></p>"
@@ -2906,6 +2907,9 @@ def show_evento_report():
                             )
                             col_l, col_r = st.columns([2, 1])
                             with col_r:
+                                users_list = db.get_all_users() or []
+                                user_emails = sorted({u.get('email') for u in users_list if (u.get('email') and (u.get('is_active', 1) == 1))})
+                                selected_users = st.multiselect("Destinatarios (usuarios)", options=user_emails, key="dlg_trad_excel_users")
                                 to_d = st.text_input("Correos (separados por coma)", key="dlg_trad_excel_to")
                                 body_d = st.text_area("Cuerpo del correo (HTML permitido)", value=default_body, key="dlg_trad_excel_body", height=240)
                                 send_d = st.button("📨 Enviar", type="primary", use_container_width=True, key="dlg_trad_excel_send")
@@ -2913,7 +2917,9 @@ def show_evento_report():
                                 st.subheader("Vista previa")
                                 st.markdown(st.session_state.get('dlg_trad_excel_body') or default_body, unsafe_allow_html=True)
                             if send_d:
-                                emails = [p.strip() for p in (to_d or "").replace(";", ",").split(",") if p.strip()]
+                                typed = [p.strip() for p in (to_d or "").replace(";", ",").split(",") if p.strip()]
+                                from_users = [e for e in (selected_users or []) if e]
+                                emails = sorted(set(typed + from_users))
                                 if not emails:
                                     st.error("Ingrese al menos un destinatario")
                                 elif not ex_loc:
@@ -3007,13 +3013,14 @@ def show_evento_report():
                                     if 'Zona' in df_s.columns and sz > 0:
                                         vc_zs = df_s['Zona'].fillna('N/D').astype(str).value_counts()
                                         z_block = "<ul>" + "".join([f"<li>{z}: {int(c)} ({(c/sz)*100:.1f}%)</li>" for z, c in vc_zs.items()]) + "</ul>"
-                                    s_block = ""
+                                    s_block = "" 
                                     if 'Sistema' in df_s.columns and sz > 0:
                                         vc_ss = df_s['Sistema'].fillna('N/D').astype(str).value_counts()
                                         s_block = "<ul>" + "".join([f"<li>{s}: {int(c)} ({(c/sz)*100:.1f}%)</li>" for s, c in vc_ss.items()]) + "</ul>"
                                     items.append(f"<li><strong>{est_name}</strong><ul><li>Distribución por Zona:{z_block}</li><li>Distribución por Sistema:{s_block}</li></ul></li>")
                                 per_station_html = "<p><strong>Detalle por Estación (top 5):</strong></p><ul>" + "".join(items) + "</ul>"
                             default_body = (
+                                f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:8px;'><img src='cid:logo_fmre_small' alt='FMRE' style='height:40px'/><div style='font-family:Arial, sans-serif; font-size:16px; font-weight:700; color:#1f4e79;'>Federación Mexicana de Radioexperimentadores A.C.</div></div><hr/>"
                                 f"<p>Se adjunta el reporte <strong>{datos['evento']}</strong> correspondiente al <strong>{datos['fecha']}</strong>.</p>"
                                 f"<p><strong>Enviado por:</strong> {indicativo_usuario} - {nombre_usuario}</p>"
                                 f"<p><strong>Resumen de estadísticas:</strong></p>"
@@ -3032,6 +3039,9 @@ def show_evento_report():
                             )
                             col_l, col_r = st.columns([2, 1])
                             with col_r:
+                                users_list = db.get_all_users() or []
+                                user_emails = sorted({u.get('email') for u in users_list if (u.get('email') and (u.get('is_active', 1) == 1))})
+                                selected_users = st.multiselect("Destinatarios (usuarios)", options=user_emails, key="dlg_trad_csv_users")
                                 to_d = st.text_input("Correos (separados por coma)", key="dlg_trad_csv_to")
                                 body_d = st.text_area("Cuerpo del correo (HTML permitido)", value=default_body, key="dlg_trad_csv_body", height=240)
                                 send_d = st.button("📨 Enviar", type="primary", use_container_width=True, key="dlg_trad_csv_send")
@@ -3039,7 +3049,9 @@ def show_evento_report():
                                 st.subheader("Vista previa")
                                 st.markdown(st.session_state.get('dlg_trad_csv_body') or default_body, unsafe_allow_html=True)
                             if send_d:
-                                emails = [p.strip() for p in (to_d or "").replace(";", ",").split(",") if p.strip()]
+                                typed = [p.strip() for p in (to_d or "").replace(";", ",").split(",") if p.strip()]
+                                from_users = [e for e in (selected_users or []) if e]
+                                emails = sorted(set(typed + from_users))
                                 if not emails:
                                     st.error("Ingrese al menos un destinatario")
                                 elif not cv_loc:
@@ -4124,6 +4136,7 @@ def show_evento_report():
                                     items.append(f"<li><strong>{est_name}</strong><ul><li>Distribución por Zona:{z_block}</li><li>Distribución por Sistema:{s_block}</li></ul></li>")
                                 per_station_html = "<p><strong>Detalle por Estación (top 5):</strong></p><ul>" + "".join(items) + "</ul>"
                             default_body = (
+                                f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:8px;'><img src='cid:logo_fmre_small' alt='FMRE' style='height:40px'/><div style='font-family:Arial, sans-serif; font-size:16px; font-weight:700; color:#1f4e79;'>Federación Mexicana de Radioexperimentadores A.C.</div></div><hr/>"
                                 f"<p>Se adjunta el reporte <strong>{datos['evento']}</strong> correspondiente al <strong>{datos['fecha']}</strong>.</p>"
                                 f"<p><strong>Enviado por:</strong> {indicativo_usuario} - {nombre_usuario}</p>"
                                 f"<p><strong>Resumen de estadísticas:</strong></p>"
@@ -4142,6 +4155,9 @@ def show_evento_report():
                             )
                             col_l, col_r = st.columns([2, 1])
                             with col_r:
+                                users_list = db.get_all_users() or []
+                                user_emails = sorted({u.get('email') for u in users_list if (u.get('email') and (u.get('is_active', 1) == 1))})
+                                selected_users = st.multiselect("Destinatarios (usuarios)", options=user_emails, key="dlg_trad_pdf_users")
                                 to_d = st.text_input("Correos (separados por coma)", key="dlg_trad_pdf_to")
                                 body_d = st.text_area("Cuerpo del correo (HTML permitido)", value=default_body, key="dlg_trad_pdf_body", height=240)
                                 send_d = st.button("📨 Enviar", type="primary", use_container_width=True, key="dlg_trad_pdf_send")
@@ -4149,7 +4165,9 @@ def show_evento_report():
                                 st.subheader("Vista previa")
                                 st.markdown(st.session_state.get('dlg_trad_pdf_body') or default_body, unsafe_allow_html=True)
                             if send_d:
-                                emails = [p.strip() for p in (to_d or "").replace(";", ",").split(",") if p.strip()]
+                                typed = [p.strip() for p in (to_d or "").replace(";", ",").split(",") if p.strip()]
+                                from_users = [e for e in (selected_users or []) if e]
+                                emails = sorted(set(typed + from_users))
                                 if not emails:
                                     st.error("Ingrese al menos un destinatario")
                                 elif not pv_loc:

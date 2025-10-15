@@ -442,7 +442,7 @@ def show_gestion():
         show_gestion_eventos()
     elif st.session_state.active_tab == "📍 Zonas":
         show_gestion_zonas()
-    elif st.session_state.active_tab == "📻 Radioexperimentadores":
+    elif st.session_state.active_tab in ("📻 HAMs", "📻 Radioexperimentadores"):
         show_gestion_radioexperimentadores()
     elif st.session_state.active_tab == "🏢 Estaciones":
         show_gestion_estaciones()

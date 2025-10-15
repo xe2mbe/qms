@@ -30,39 +30,11 @@ class EmailSender:
             raise Exception(f"Error al conectar con el servidor SMTP: {str(e)}")
     
     def send_email(self, to_email, subject, body, is_html=False):
-        """Envía un correo electrónico con compatibilidad HTML/Texto (multipart/alternative)"""
+        """Envía un correo electrónico simple (sin adjuntos)"""
         try:
-            server, from_email = self.get_smtp_connection()
-
-            # Crear mensaje multipart/alternative (primero texto, luego HTML)
-            msg = MIMEMultipart('alternative')
-            msg['From'] = from_email
-            msg['To'] = to_email
-            msg['Subject'] = subject
-
-            # Generar partes
-            if is_html:
-                # Convertir HTML a texto simple básico
-                text_version = body or ''
-                # Reemplazar enlaces <a href="url">texto</a> por 'texto (url)'
-                text_version = re.sub(r'<a\s+[^>]*href="([^"]+)"[^>]*>(.*?)</a>', r'\2 (\1)', text_version, flags=re.IGNORECASE)
-                # Quitar el resto de etiquetas HTML
-                text_version = re.sub(r'<[^>]+>', '', text_version)
-
-                part_text = MIMEText(text_version, 'plain')
-                part_html = MIMEText(body or '', 'html')
-
-                msg.attach(part_text)
-                msg.attach(part_html)
-            else:
-                part_text = MIMEText(body or '', 'plain')
-                msg.attach(part_text)
-
-            # Enviar correo
-            server.send_message(msg)
-            server.quit()
-            return True
-
+            return self.send_email_with_attachments(
+                to_emails=[to_email], subject=subject, body=body, attachments=[], is_html=is_html
+            )
         except Exception as e:
             raise Exception(f"Error al enviar el correo: {str(e)}")
     
@@ -129,3 +101,47 @@ class EmailSender:
             body = re.sub(r"(?<!href=')(https?://[^\s<>\'\"]+)", r'<a href="\1" target="_blank">\1</a>', body)
 
         return self.send_email(user['email'], subject, body, is_html=True)
+
+    def send_email_with_attachments(self, to_emails, subject, body, attachments, is_html=False):
+        """
+        Envía un correo a múltiples destinatarios con adjuntos.
+        attachments: List[Tuple[filename, bytes, mime_type]]
+        """
+        try:
+            server, from_email = self.get_smtp_connection()
+
+            # Mensaje contenedor (mixed para permitir adjuntos)
+            outer = MIMEMultipart('mixed')
+            outer['From'] = from_email
+            outer['To'] = ', '.join(to_emails)
+            outer['Subject'] = subject
+
+            # Parte alternativa (texto + html)
+            alt = MIMEMultipart('alternative')
+            if is_html:
+                text_version = body or ''
+                text_version = re.sub(r'<a\s+[^>]*href="([^"]+)"[^>]*>(.*?)</a>', r'\2 (\1)', text_version, flags=re.IGNORECASE)
+                text_version = re.sub(r'<[^>]+>', '', text_version)
+                alt.attach(MIMEText(text_version, 'plain'))
+                alt.attach(MIMEText(body or '', 'html'))
+            else:
+                alt.attach(MIMEText(body or '', 'plain'))
+
+            outer.attach(alt)
+
+            # Adjuntos
+            from email.mime.base import MIMEBase
+            from email import encoders
+            for fname, blob, mime in attachments or []:
+                maintype, subtype = (mime.split('/', 1) + ['octet-stream'])[:2]
+                part = MIMEBase(maintype, subtype)
+                part.set_payload(blob)
+                encoders.encode_base64(part)
+                part.add_header('Content-Disposition', 'attachment', filename=fname)
+                outer.attach(part)
+
+            server.send_message(outer)
+            server.quit()
+            return True
+        except Exception as e:
+            raise Exception(f"Error al enviar correo con adjuntos: {str(e)}")

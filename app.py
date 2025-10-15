@@ -123,7 +123,7 @@ def show_sidebar():
         
         # Menú de navegación
         st.markdown("### Menú")
-        menu_options = ["🏠 Inicio", "📝 Toma de Reportes", "📋 Registros", "🧾 Reportes", "📊 Estadísticas"]
+        menu_options = ["🏠 Inicio", "📝 Toma de Reportes", "📋 Registros", "🧾 Reportes", "📊 Estadísticas", "📧 Enviar Reportes"]
         
         # Mostrar opciones de administración solo para administradores
         if user['role'] == 'admin':
@@ -142,6 +142,8 @@ def show_sidebar():
             st.session_state.current_page = "reportes"
         elif selected == "📊 Estadísticas":
             st.session_state.current_page = "reports"
+        elif selected == "📧 Enviar Reportes":
+            st.session_state.current_page = "send_reports"
         elif selected == "⚙️ Configuración":
             st.session_state.current_page = "settings"
         else:
@@ -6547,6 +6549,12 @@ def main():
             show_reports()
         elif current_page == 'settings':
             show_settings()
+        elif current_page == 'send_reports':
+            try:
+                from enviar_reportes import show_enviar_reportes
+                show_enviar_reportes()
+            except Exception as e:
+                st.error(f"❌ Error al cargar la página de envío de reportes: {e}")
         # Mantener compatibilidad con la navegación antigua
         elif current_page == 'users':
             st.session_state.current_page = 'gestion'

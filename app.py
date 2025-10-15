@@ -2814,26 +2814,253 @@ def show_evento_report():
                 buffer.seek(0)
 
                 est_suffix = "" if selected_export_station == 'Todas' else f"_{selected_export_station.replace(' ', '_')}"
+                excel_bytes = buffer.getvalue()
+                st.session_state['trad_excel'] = {
+                    'bytes': excel_bytes,
+                    'file_name': f"reporte_{datos['evento']}_{datos['fecha']}{est_suffix}.xlsx",
+                    'mime': "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                }
+                st.session_state['trad_excel_df_preview'] = df_export.copy()
+
+            if st.session_state.get('trad_excel'):
+                ex = st.session_state['trad_excel']
                 st.download_button(
                     label="⬇️ Descargar Excel",
-                    data=buffer,
-                    file_name=f"reporte_{datos['evento']}_{datos['fecha']}{est_suffix}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    data=ex['bytes'],
+                    file_name=ex['file_name'],
+                    mime=ex['mime'],
+                    key="trad_excel_download_persist",
                     width='stretch'
                 )
+                open_excel_modal = st.button("📧 Enviar por Correo", key="open_trad_excel_dialog", use_container_width=True)
+                if open_excel_modal:
+                    if hasattr(st, "dialog"):
+                        @st.dialog("Enviar reporte (Excel)")
+                        def _trad_excel_dialog():
+                            st.markdown(
+                                """
+                                <style>
+                                div[role='dialog'] { width: min(95vw, 1200px) !important; }
+                                div[role='dialog'] > div { width: 100% !important; }
+                                @media (max-width: 900px) {
+                                  div[role='dialog'] [data-testid='column'] { flex: 0 0 100% !important; width: 100% !important; min-width: 100% !important; }
+                                }
+                                </style>
+                                """,
+                                unsafe_allow_html=True
+                            )
+                            ex_loc = st.session_state.get('trad_excel')
+                            df_loc = st.session_state.get('trad_excel_df_preview')
+                            if df_loc is None:
+                                df_loc = df_export
+                            total = int(len(df_loc)) if isinstance(df_loc, pd.DataFrame) else 0
+                            ests = int(df_loc['Indicativo'].nunique()) if isinstance(df_loc, pd.DataFrame) and 'Indicativo' in df_loc.columns else 0
+                            zona_m = (df_loc['Zona'].mode().iloc[0] if isinstance(df_loc, pd.DataFrame) and 'Zona' in df_loc.columns and not df_loc['Zona'].mode().empty else "N/A")
+                            sist_m = (df_loc['Sistema'].mode().iloc[0] if isinstance(df_loc, pd.DataFrame) and 'Sistema' in df_loc.columns and not df_loc['Sistema'].mode().empty else "N/A")
+                            ests_geo = int(df_loc['Estado'].nunique()) if isinstance(df_loc, pd.DataFrame) and 'Estado' in df_loc.columns else 0
+                            zonas_html = ""
+                            if isinstance(df_loc, pd.DataFrame) and 'Zona' in df_loc.columns and total > 0:
+                                vc_z = df_loc['Zona'].fillna('N/D').astype(str).value_counts()
+                                zonas_html = "<p><strong>Distribución por Zona:</strong></p><ul>" + "".join([f"<li>{z}: {int(c)} ({(c/total)*100:.1f}%)</li>" for z, c in vc_z.items()]) + "</ul>"
+                            sistemas_html = ""
+                            if isinstance(df_loc, pd.DataFrame) and 'Sistema' in df_loc.columns and total > 0:
+                                vc_s = df_loc['Sistema'].fillna('N/D').astype(str).value_counts()
+                                sistemas_html = "<p><strong>Distribución por Sistema:</strong></p><ul>" + "".join([f"<li>{s}: {int(c)} ({(c/total)*100:.1f}%)</li>" for s, c in vc_s.items()]) + "</ul>"
+                            estaciones_html = ""
+                            if isinstance(df_loc, pd.DataFrame) and 'Estación' in df_loc.columns and total > 0:
+                                vc_e = df_loc['Estación'].fillna('Sin estación').astype(str).value_counts()
+                                estaciones_html = "<p><strong>Desglose por Estación (top 10):</strong></p><ul>" + "".join([f"<li>{e}: {int(c)} ({(c/total)*100:.1f}%)</li>" for e, c in vc_e.head(10).items()]) + "</ul>"
+                            per_station_html = ""
+                            if isinstance(df_loc, pd.DataFrame) and 'Estación' in df_loc.columns and total > 0:
+                                top_e = vc_e.head(5) if 'vc_e' in locals() else df_loc['Estación'].fillna('Sin estación').astype(str).value_counts().head(5)
+                                items = []
+                                for est_name, _cnt in top_e.items():
+                                    df_s = df_loc[df_loc['Estación'].fillna('Sin estación').astype(str) == est_name]
+                                    sz = len(df_s)
+                                    z_block = ""
+                                    if 'Zona' in df_s.columns and sz > 0:
+                                        vc_zs = df_s['Zona'].fillna('N/D').astype(str).value_counts()
+                                        z_block = "<ul>" + "".join([f"<li>{z}: {int(c)} ({(c/sz)*100:.1f}%)</li>" for z, c in vc_zs.items()]) + "</ul>"
+                                    s_block = ""
+                                    if 'Sistema' in df_s.columns and sz > 0:
+                                        vc_ss = df_s['Sistema'].fillna('N/D').astype(str).value_counts()
+                                        s_block = "<ul>" + "".join([f"<li>{s}: {int(c)} ({(c/sz)*100:.1f}%)</li>" for s, c in vc_ss.items()]) + "</ul>"
+                                    items.append(f"<li><strong>{est_name}</strong><ul><li>Distribución por Zona:{z_block}</li><li>Distribución por Sistema:{s_block}</li></ul></li>")
+                                per_station_html = "<p><strong>Detalle por Estación (top 5):</strong></p><ul>" + "".join(items) + "</ul>"
+                            default_body = (
+                                f"<p>Se adjunta el reporte <strong>{datos['evento']}</strong> correspondiente al <strong>{datos['fecha']}</strong>.</p>"
+                                f"<p><strong>Enviado por:</strong> {indicativo_usuario} - {nombre_usuario}</p>"
+                                f"<p><strong>Resumen de estadísticas:</strong></p>"
+                                f"<ul>"
+                                f"<li>Total de reportes: {total}</li>"
+                                f"<li>Estaciones únicas: {ests}</li>"
+                                f"<li>Zona más reportada: {zona_m}</li>"
+                                f"<li>Sistema más usado: {sist_m}</li>"
+                                f"<li>Cobertura geográfica: {ests_geo} estados</li>"
+                                f"</ul>"
+                                f"{zonas_html}"
+                                f"{sistemas_html}"
+                                f"{estaciones_html}"
+                                f"{per_station_html}"
+                                f"<p>El adjunto incluye el detalle de registros y distribuciones por zona y sistema.</p>"
+                            )
+                            col_l, col_r = st.columns([2, 1])
+                            with col_r:
+                                to_d = st.text_input("Correos (separados por coma)", key="dlg_trad_excel_to")
+                                body_d = st.text_area("Cuerpo del correo (HTML permitido)", value=default_body, key="dlg_trad_excel_body", height=240)
+                                send_d = st.button("📨 Enviar", type="primary", use_container_width=True, key="dlg_trad_excel_send")
+                            with col_l:
+                                st.subheader("Vista previa")
+                                st.markdown(st.session_state.get('dlg_trad_excel_body') or default_body, unsafe_allow_html=True)
+                            if send_d:
+                                emails = [p.strip() for p in (to_d or "").replace(";", ",").split(",") if p.strip()]
+                                if not emails:
+                                    st.error("Ingrese al menos un destinatario")
+                                elif not ex_loc:
+                                    st.error("Genere el adjunto antes de enviar")
+                                else:
+                                    mailer = EmailSender(db)
+                                    ok = mailer.send_email_with_attachments(
+                                        to_emails=emails,
+                                        subject=f"Reporte Tradicional {datos['evento']} - {datos['fecha']}",
+                                        body=(st.session_state.get('dlg_trad_excel_body') or default_body),
+                                        attachments=[(ex_loc['file_name'], ex_loc['bytes'], ex_loc['mime'])],
+                                        is_html=True
+                                    )
+                                    if ok:
+                                        st.success("✅ Correo enviado")
+                                        st.balloons()
+                                    else:
+                                        st.error("No se pudo enviar el correo")
+                        _trad_excel_dialog()
+                    if not hasattr(st, "dialog"):
+                        st.info("Tu versión de Streamlit no soporta ventanas modales (st.dialog). Actualiza Streamlit para usar 'Enviar por Correo'.")
 
         with col2:
             if st.button("📄 CSV", width='stretch'):
                 # Crear CSV con datos principales
                 csv_bytes = df_export.to_csv(index=False).encode('utf-8-sig')  # UTF-8 con BOM para Excel
                 est_suffix = "" if selected_export_station == 'Todas' else f"_{selected_export_station.replace(' ', '_')}"
+                st.session_state['trad_csv'] = {
+                    'bytes': csv_bytes,
+                    'file_name': f"reporte_{datos['evento']}_{datos['fecha']}{est_suffix}.csv",
+                    'mime': "text/csv"
+                }
+                st.session_state['trad_csv_df_preview'] = df_export.copy()
+
+            if st.session_state.get('trad_csv'):
+                cv = st.session_state['trad_csv']
                 st.download_button(
                     label="⬇️ Descargar CSV",
-                    data=csv_bytes,
-                    file_name=f"reporte_{datos['evento']}_{datos['fecha']}{est_suffix}.csv",
-                    mime="text/csv",
+                    data=cv['bytes'],
+                    file_name=cv['file_name'],
+                    mime=cv['mime'],
+                    key="trad_csv_download_persist",
                     width='stretch'
                 )
+                open_csv_modal = st.button("📧 Enviar por Correo", key="open_trad_csv_dialog", use_container_width=True)
+                if open_csv_modal:
+                    if hasattr(st, "dialog"):
+                        @st.dialog("Enviar reporte (CSV)")
+                        def _trad_csv_dialog():
+                            st.markdown(
+                                """
+                                <style>
+                                div[role='dialog'] { width: min(95vw, 1200px) !important; }
+                                div[role='dialog'] > div { width: 100% !important; }
+                                @media (max-width: 900px) {
+                                  div[role='dialog'] [data-testid='column'] { flex: 0 0 100% !important; width: 100% !important; min-width: 100% !important; }
+                                }
+                                </style>
+                                """,
+                                unsafe_allow_html=True
+                            )
+                            cv_loc = st.session_state.get('trad_csv')
+                            df_loc = st.session_state.get('trad_csv_df_preview')
+                            if df_loc is None:
+                                df_loc = df_export
+                            total = int(len(df_loc)) if isinstance(df_loc, pd.DataFrame) else 0
+                            ests = int(df_loc['Indicativo'].nunique()) if isinstance(df_loc, pd.DataFrame) and 'Indicativo' in df_loc.columns else 0
+                            zona_m = (df_loc['Zona'].mode().iloc[0] if isinstance(df_loc, pd.DataFrame) and 'Zona' in df_loc.columns and not df_loc['Zona'].mode().empty else "N/A")
+                            sist_m = (df_loc['Sistema'].mode().iloc[0] if isinstance(df_loc, pd.DataFrame) and 'Sistema' in df_loc.columns and not df_loc['Sistema'].mode().empty else "N/A")
+                            ests_geo = int(df_loc['Estado'].nunique()) if isinstance(df_loc, pd.DataFrame) and 'Estado' in df_loc.columns else 0
+                            zonas_html = ""
+                            if isinstance(df_loc, pd.DataFrame) and 'Zona' in df_loc.columns and total > 0:
+                                vc_z = df_loc['Zona'].fillna('N/D').astype(str).value_counts()
+                                zonas_html = "<p><strong>Distribución por Zona:</strong></p><ul>" + "".join([f"<li>{z}: {int(c)} ({(c/total)*100:.1f}%)</li>" for z, c in vc_z.items()]) + "</ul>"
+                            sistemas_html = ""
+                            if isinstance(df_loc, pd.DataFrame) and 'Sistema' in df_loc.columns and total > 0:
+                                vc_s = df_loc['Sistema'].fillna('N/D').astype(str).value_counts()
+                                sistemas_html = "<p><strong>Distribución por Sistema:</strong></p><ul>" + "".join([f"<li>{s}: {int(c)} ({(c/total)*100:.1f}%)</li>" for s, c in vc_s.items()]) + "</ul>"
+                            estaciones_html = ""
+                            if isinstance(df_loc, pd.DataFrame) and 'Estación' in df_loc.columns and total > 0:
+                                vc_e = df_loc['Estación'].fillna('Sin estación').astype(str).value_counts()
+                                estaciones_html = "<p><strong>Desglose por Estación (top 10):</strong></p><ul>" + "".join([f"<li>{e}: {int(c)} ({(c/total)*100:.1f}%)</li>" for e, c in vc_e.head(10).items()]) + "</ul>"
+                            per_station_html = ""
+                            if isinstance(df_loc, pd.DataFrame) and 'Estación' in df_loc.columns and total > 0:
+                                top_e = vc_e.head(5) if 'vc_e' in locals() else df_loc['Estación'].fillna('Sin estación').astype(str).value_counts().head(5)
+                                items = []
+                                for est_name, _cnt in top_e.items():
+                                    df_s = df_loc[df_loc['Estación'].fillna('Sin estación').astype(str) == est_name]
+                                    sz = len(df_s)
+                                    z_block = ""
+                                    if 'Zona' in df_s.columns and sz > 0:
+                                        vc_zs = df_s['Zona'].fillna('N/D').astype(str).value_counts()
+                                        z_block = "<ul>" + "".join([f"<li>{z}: {int(c)} ({(c/sz)*100:.1f}%)</li>" for z, c in vc_zs.items()]) + "</ul>"
+                                    s_block = ""
+                                    if 'Sistema' in df_s.columns and sz > 0:
+                                        vc_ss = df_s['Sistema'].fillna('N/D').astype(str).value_counts()
+                                        s_block = "<ul>" + "".join([f"<li>{s}: {int(c)} ({(c/sz)*100:.1f}%)</li>" for s, c in vc_ss.items()]) + "</ul>"
+                                    items.append(f"<li><strong>{est_name}</strong><ul><li>Distribución por Zona:{z_block}</li><li>Distribución por Sistema:{s_block}</li></ul></li>")
+                                per_station_html = "<p><strong>Detalle por Estación (top 5):</strong></p><ul>" + "".join(items) + "</ul>"
+                            default_body = (
+                                f"<p>Se adjunta el reporte <strong>{datos['evento']}</strong> correspondiente al <strong>{datos['fecha']}</strong>.</p>"
+                                f"<p><strong>Enviado por:</strong> {indicativo_usuario} - {nombre_usuario}</p>"
+                                f"<p><strong>Resumen de estadísticas:</strong></p>"
+                                f"<ul>"
+                                f"<li>Total de reportes: {total}</li>"
+                                f"<li>Estaciones únicas: {ests}</li>"
+                                f"<li>Zona más reportada: {zona_m}</li>"
+                                f"<li>Sistema más usado: {sist_m}</li>"
+                                f"<li>Cobertura geográfica: {ests_geo} estados</li>"
+                                f"</ul>"
+                                f"{zonas_html}"
+                                f"{sistemas_html}"
+                                f"{estaciones_html}"
+                                f"{per_station_html}"
+                                f"<p>El adjunto incluye el detalle de registros y distribuciones por zona y sistema.</p>"
+                            )
+                            col_l, col_r = st.columns([2, 1])
+                            with col_r:
+                                to_d = st.text_input("Correos (separados por coma)", key="dlg_trad_csv_to")
+                                body_d = st.text_area("Cuerpo del correo (HTML permitido)", value=default_body, key="dlg_trad_csv_body", height=240)
+                                send_d = st.button("📨 Enviar", type="primary", use_container_width=True, key="dlg_trad_csv_send")
+                            with col_l:
+                                st.subheader("Vista previa")
+                                st.markdown(st.session_state.get('dlg_trad_csv_body') or default_body, unsafe_allow_html=True)
+                            if send_d:
+                                emails = [p.strip() for p in (to_d or "").replace(";", ",").split(",") if p.strip()]
+                                if not emails:
+                                    st.error("Ingrese al menos un destinatario")
+                                elif not cv_loc:
+                                    st.error("Genere el adjunto antes de enviar")
+                                else:
+                                    mailer = EmailSender(db)
+                                    ok = mailer.send_email_with_attachments(
+                                        to_emails=emails,
+                                        subject=f"Reporte Tradicional {datos['evento']} - {datos['fecha']}",
+                                        body=(st.session_state.get('dlg_trad_csv_body') or default_body),
+                                        attachments=[(cv_loc['file_name'], cv_loc['bytes'], cv_loc['mime'])],
+                                        is_html=True
+                                    )
+                                    if ok:
+                                        st.success("✅ Correo enviado")
+                                        st.balloons()
+                                    else:
+                                        st.error("No se pudo enviar el correo")
+                        _trad_csv_dialog()
+                    if not hasattr(st, "dialog"):
+                        st.info("Tu versión de Streamlit no soporta ventanas modales (st.dialog). Actualiza Streamlit para usar 'Enviar por Correo'.")
 
         with col3:
             if st.button("📋 PDF", width='stretch'):
@@ -3125,17 +3352,19 @@ def show_evento_report():
                         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
                         ('FONTSIZE', (0, 0), (-1, 0), 10),  # Tamaño de fuente reducido
-                        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),  # Espaciado reducido
-                        ('TOPPADDING', (0, 0), (-1, 0), 4),  # Espaciado superior añadido
+                        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),  # Reducido de 10 a 6
+                        ('TOPPADDING', (0, 0), (-1, 0), 4),  # Añadido padding superior
                         ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#FFF0F0')),
                         ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#DC143C')),
                         ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                        ('FONTSIZE', (0, 1), (-1, -1), 8),  # Tamaño de fuente reducido
+                        ('FONTSIZE', (0, 1), (-1, -1), 9),  # Mantenido en 9
                         ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#FFB6C1')),
-                        ('BOTTOMPADDING', (0, 1), (-1, -1), 3)  # Espaciado reducido
+                        ('BOTTOMPADDING', (0, 1), (-1, -1), 4)  # Reducido de 6 a 4
                     ]))
                     story.append(estados_table)
-    # Título con formato de oración
+                    story.append(Spacer(1, 20))
+
+                # Distribución por sistema de radio
                 story.append(Paragraph("Distribución por sistema de radio", section_style))
                 story.append(Spacer(1, 8))  # Espacio después del título
 
@@ -3154,15 +3383,15 @@ def show_evento_report():
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0, 0), (-1, 0), 9),  # Tamaño de fuente reducido a 9pt
-                    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),  # Espaciado reducido
-                    ('TOPPADDING', (0, 0), (-1, 0), 4),  # Espaciado superior añadido
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),  # Reducido de 12 a 10
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 6),  # Reducido de 10 a 6
+                    ('TOPPADDING', (0, 0), (-1, 0), 4),  # Añadido padding superior
                     ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#FFF8DC')),
                     ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#8B4513')),
                     ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                    ('FONTSIZE', (0, 1), (-1, -1), 8),  # Tamaño de fuente reducido
+                    ('FONTSIZE', (0, 1), (-1, -1), 9),  # Mantenido en 9
                     ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#DEB887')),
-                    ('BOTTOMPADDING', (0, 1), (-1, -1), 3)  # Espaciado reducido
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 4)  # Reducido de 6 a 4
                 ]))
                 story.append(sistemas_table)
 
@@ -3824,13 +4053,124 @@ def show_evento_report():
 
                 # Botón de descarga
                 est_suffix = "" if selected_export_station == 'Todas' else f"_{selected_export_station.replace(' ', '_')}"
+                pdf_bytes = buffer.getvalue()
+                st.session_state['trad_pdf'] = {
+                    'bytes': pdf_bytes,
+                    'file_name': f"reporte_{datos['evento']}_{datos['fecha']}{est_suffix}.pdf",
+                    'mime': "application/pdf"
+                }
+
+            if st.session_state.get('trad_pdf'):
+                pv = st.session_state['trad_pdf']
                 st.download_button(
                     label="⬇️ Descargar PDF",
-                    data=buffer,
-                    file_name=f"reporte_{datos['evento']}_{datos['fecha']}{est_suffix}.pdf",
-                    mime="application/pdf",
+                    data=pv['bytes'],
+                    file_name=pv['file_name'],
+                    mime=pv['mime'],
+                    key="trad_pdf_download_persist",
                     width='stretch'
                 )
+                open_pdf_modal = st.button("📧 Enviar por Correo", key="open_trad_pdf_dialog", use_container_width=True)
+                if open_pdf_modal:
+                    if hasattr(st, "dialog"):
+                        @st.dialog("Enviar reporte (PDF)")
+                        def _trad_pdf_dialog():
+                            st.markdown(
+                                """
+                                <style>
+                                div[role='dialog'] { width: min(95vw, 1200px) !important; }
+                                div[role='dialog'] > div { width: 100% !important; }
+                                @media (max-width: 900px) {
+                                  div[role='dialog'] [data-testid='column'] { flex: 0 0 100% !important; width: 100% !important; min-width: 100% !important; }
+                                }
+                                </style>
+                                """,
+                                unsafe_allow_html=True
+                            )
+                            pv_loc = st.session_state.get('trad_pdf')
+                            df_loc = df_export
+                            total = int(len(df_loc)) if isinstance(df_loc, pd.DataFrame) else 0
+                            ests = int(df_loc['Indicativo'].nunique()) if isinstance(df_loc, pd.DataFrame) and 'Indicativo' in df_loc.columns else 0
+                            zona_m = (df_loc['Zona'].mode().iloc[0] if isinstance(df_loc, pd.DataFrame) and 'Zona' in df_loc.columns and not df_loc['Zona'].mode().empty else "N/A")
+                            sist_m = (df_loc['Sistema'].mode().iloc[0] if isinstance(df_loc, pd.DataFrame) and 'Sistema' in df_loc.columns and not df_loc['Sistema'].mode().empty else "N/A")
+                            ests_geo = int(df_loc['Estado'].nunique()) if isinstance(df_loc, pd.DataFrame) and 'Estado' in df_loc.columns else 0
+                            zonas_html = ""
+                            if isinstance(df_loc, pd.DataFrame) and 'Zona' in df_loc.columns and total > 0:
+                                vc_z = df_loc['Zona'].fillna('N/D').astype(str).value_counts()
+                                zonas_html = "<p><strong>Distribución por Zona:</strong></p><ul>" + "".join([f"<li>{z}: {int(c)} ({(c/total)*100:.1f}%)</li>" for z, c in vc_z.items()]) + "</ul>"
+                            sistemas_html = ""
+                            if isinstance(df_loc, pd.DataFrame) and 'Sistema' in df_loc.columns and total > 0:
+                                vc_s = df_loc['Sistema'].fillna('N/D').astype(str).value_counts()
+                                sistemas_html = "<p><strong>Distribución por Sistema:</strong></p><ul>" + "".join([f"<li>{s}: {int(c)} ({(c/total)*100:.1f}%)</li>" for s, c in vc_s.items()]) + "</ul>"
+                            estaciones_html = ""
+                            if isinstance(df_loc, pd.DataFrame) and 'Estación' in df_loc.columns and total > 0:
+                                vc_e = df_loc['Estación'].fillna('Sin estación').astype(str).value_counts()
+                                estaciones_html = "<p><strong>Desglose por Estación (top 10):</strong></p><ul>" + "".join([f"<li>{e}: {int(c)} ({(c/total)*100:.1f}%)</li>" for e, c in vc_e.head(10).items()]) + "</ul>"
+                            per_station_html = ""
+                            if isinstance(df_loc, pd.DataFrame) and 'Estación' in df_loc.columns and total > 0:
+                                top_e = vc_e.head(5) if 'vc_e' in locals() else df_loc['Estación'].fillna('Sin estación').astype(str).value_counts().head(5)
+                                items = []
+                                for est_name, _cnt in top_e.items():
+                                    df_s = df_loc[df_loc['Estación'].fillna('Sin estación').astype(str) == est_name]
+                                    sz = len(df_s)
+                                    z_block = ""
+                                    if 'Zona' in df_s.columns and sz > 0:
+                                        vc_zs = df_s['Zona'].fillna('N/D').astype(str).value_counts()
+                                        z_block = "<ul>" + "".join([f"<li>{z}: {int(c)} ({(c/sz)*100:.1f}%)</li>" for z, c in vc_zs.items()]) + "</ul>"
+                                    s_block = ""
+                                    if 'Sistema' in df_s.columns and sz > 0:
+                                        vc_ss = df_s['Sistema'].fillna('N/D').astype(str).value_counts()
+                                        s_block = "<ul>" + "".join([f"<li>{s}: {int(c)} ({(c/sz)*100:.1f}%)</li>" for s, c in vc_ss.items()]) + "</ul>"
+                                    items.append(f"<li><strong>{est_name}</strong><ul><li>Distribución por Zona:{z_block}</li><li>Distribución por Sistema:{s_block}</li></ul></li>")
+                                per_station_html = "<p><strong>Detalle por Estación (top 5):</strong></p><ul>" + "".join(items) + "</ul>"
+                            default_body = (
+                                f"<p>Se adjunta el reporte <strong>{datos['evento']}</strong> correspondiente al <strong>{datos['fecha']}</strong>.</p>"
+                                f"<p><strong>Enviado por:</strong> {indicativo_usuario} - {nombre_usuario}</p>"
+                                f"<p><strong>Resumen de estadísticas:</strong></p>"
+                                f"<ul>"
+                                f"<li>Total de reportes: {total}</li>"
+                                f"<li>Estaciones únicas: {ests}</li>"
+                                f"<li>Zona más reportada: {zona_m}</li>"
+                                f"<li>Sistema más usado: {sist_m}</li>"
+                                f"<li>Cobertura geográfica: {ests_geo} estados</li>"
+                                f"</ul>"
+                                f"{zonas_html}"
+                                f"{sistemas_html}"
+                                f"{estaciones_html}"
+                                f"{per_station_html}"
+                                f"<p>El adjunto incluye el detalle de registros y distribuciones por zona y sistema.</p>"
+                            )
+                            col_l, col_r = st.columns([2, 1])
+                            with col_r:
+                                to_d = st.text_input("Correos (separados por coma)", key="dlg_trad_pdf_to")
+                                body_d = st.text_area("Cuerpo del correo (HTML permitido)", value=default_body, key="dlg_trad_pdf_body", height=240)
+                                send_d = st.button("📨 Enviar", type="primary", use_container_width=True, key="dlg_trad_pdf_send")
+                            with col_l:
+                                st.subheader("Vista previa")
+                                st.markdown(st.session_state.get('dlg_trad_pdf_body') or default_body, unsafe_allow_html=True)
+                            if send_d:
+                                emails = [p.strip() for p in (to_d or "").replace(";", ",").split(",") if p.strip()]
+                                if not emails:
+                                    st.error("Ingrese al menos un destinatario")
+                                elif not pv_loc:
+                                    st.error("Genere el adjunto antes de enviar")
+                                else:
+                                    mailer = EmailSender(db)
+                                    ok = mailer.send_email_with_attachments(
+                                        to_emails=emails,
+                                        subject=f"Reporte Tradicional {datos['evento']} - {datos['fecha']}",
+                                        body=(st.session_state.get('dlg_trad_pdf_body') or default_body),
+                                        attachments=[(pv_loc['file_name'], pv_loc['bytes'], pv_loc['mime'])],
+                                        is_html=True
+                                    )
+                                    if ok:
+                                        st.success("✅ Correo enviado")
+                                        st.balloons()
+                                    else:
+                                        st.error("No se pudo enviar el correo")
+                        _trad_pdf_dialog()
+                    if not hasattr(st, "dialog"):
+                        st.info("Tu versión de Streamlit no soporta ventanas modales (st.dialog). Actualiza Streamlit para usar 'Enviar por Correo'.")
 
         # Información adicional
         st.subheader("ℹ️ Información del Reporte")

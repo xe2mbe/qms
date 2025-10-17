@@ -2199,31 +2199,120 @@ def show_sistemas_report():
                 'Señal': r.get('senal', 0)
             } for r in reportes])
 
-            # Análisis por sistema
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.subheader("📊 Uso de Sistemas")
-                sistemas_count = df_sistemas['Sistema'].value_counts()
-                st.bar_chart(sistemas_count)
-
-                # Porcentaje de uso
-                total = len(df_sistemas)
-                st.subheader("📈 Porcentaje de Uso")
-                for sistema, count in sistemas_count.items():
-                    porcentaje = (count / total) * 100
-                    st.write(f"**{sistema}:** {count} ({porcentaje:.1f}%)")
-
-            with col2:
-                st.subheader("📡 Calidad de Señal por Sistema")
+            # Análisis por sistema - Versión vertical
+            st.subheader("📊 Uso de Sistemas", divider='rainbow')
+            
+            # Gráfico de barras con Plotly para mejor personalización
+            if px is not None:
+                # Primera sección: Uso de Sistemas
+                st.markdown("#### 📋 Distribución de Reportes por Sistema")
+                sistemas_count = df_sistemas['Sistema'].value_counts().reset_index()
+                sistemas_count.columns = ['Sistema', 'Reportes']
+                
+                # Calcular porcentajes
+                total = sistemas_count['Reportes'].sum()
+                sistemas_count['Porcentaje'] = (sistemas_count['Reportes'] / total * 100).round(1).astype(str) + '%'
+                
+                # Ordenar por cantidad de reportes
+                sistemas_count = sistemas_count.sort_values('Reportes', ascending=False)
+                
+                # Crear gráfico de barras
+                fig1 = px.bar(
+                    sistemas_count,
+                    x='Sistema',
+                    y='Reportes',
+                    color='Sistema',
+                    title='Reportes por Sistema',
+                    labels={'Reportes': 'Número de Reportes', 'Sistema': 'Sistema'},
+                    text='Reportes',
+                    color_discrete_sequence=px.colors.qualitative.Plotly
+                )
+                
+                # Mejorar el diseño del gráfico
+                fig1.update_traces(
+                    textposition='outside',
+                    marker_line_color='rgb(8,48,107)',
+                    marker_line_width=1.5,
+                    opacity=0.8
+                )
+                
+                fig1.update_layout(
+                    showlegend=False,
+                    xaxis_tickangle=-45,
+                    margin=dict(l=0, r=0, t=40, b=60),
+                    height=400
+                )
+                
+                st.plotly_chart(fig1, use_container_width=True)
+                
+                # Mostrar tabla con porcentajes
+                st.dataframe(
+                    sistemas_count[['Sistema', 'Reportes', 'Porcentaje']],
+                    column_config={
+                        'Sistema': 'Sistema',
+                        'Reportes': st.column_config.NumberColumn('Reportes'),
+                        'Porcentaje': 'Porcentaje'
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
+                
+                # Espaciador
+                st.markdown("---")
+                
+                # Segunda sección: Calidad de Señal
+                st.markdown("#### 📡 Calidad de Señal por Sistema")
+                
                 # Calcular promedio de señal por sistema
-                senal_por_sistema = df_sistemas.groupby('Sistema')['Señal'].mean().sort_values(ascending=False)
-                st.bar_chart(senal_por_sistema)
-
-                # Mostrar promedios
-                st.subheader("📊 Promedio de Señal")
-                for sistema, promedio in senal_por_sistema.items():
-                    st.write(f"**{sistema}:** {promedio:.1f}")
+                senal_por_sistema = df_sistemas.groupby('Sistema')['Señal'].agg(['mean', 'count']).reset_index()
+                senal_por_sistema.columns = ['Sistema', 'Promedio Señal', 'Muestras']
+                senal_por_sistema = senal_por_sistema.sort_values('Promedio Señal', ascending=False)
+                
+                # Crear gráfico de barras para la señal
+                fig2 = px.bar(
+                    senal_por_sistema,
+                    x='Sistema',
+                    y='Promedio Señal',
+                    color='Sistema',
+                    title='Promedio de Calidad de Señal',
+                    labels={'Promedio Señal': 'Señal Promedio (0-10)', 'Sistema': 'Sistema'},
+                    text_auto='.1f',
+                    color_discrete_sequence=px.colors.qualitative.Pastel1
+                )
+                
+                # Mejorar el diseño del gráfico
+                fig2.update_traces(
+                    textposition='outside',
+                    marker_line_color='rgb(8,48,107)',
+                    marker_line_width=1.5,
+                    opacity=0.8
+                )
+                
+                fig2.update_layout(
+                    showlegend=False,
+                    xaxis_tickangle=-45,
+                    yaxis_range=[0, 10],  # Asumiendo que la señal va de 0 a 10
+                    margin=dict(l=0, r=0, t=40, b=60),
+                    height=400
+                )
+                
+                st.plotly_chart(fig2, use_container_width=True)
+                
+                # Mostrar tabla con promedios
+                st.dataframe(
+                    senal_por_sistema[['Sistema', 'Promedio Señal', 'Muestras']],
+                    column_config={
+                        'Sistema': 'Sistema',
+                        'Promedio Señal': st.column_config.NumberColumn('Señal Promedio (0-10)', format='%.1f'),
+                        'Muestras': 'Muestras'
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
+            else:
+                # Fallback a gráficos simples si no hay Plotly
+                st.bar_chart(df_sistemas['Sistema'].value_counts())
+                st.bar_chart(df_sistemas.groupby('Sistema')['Señal'].mean())
 
             # Análisis HF específico
             if 'HF' in df_sistemas['Sistema'].values:

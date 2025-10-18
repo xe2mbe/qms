@@ -2887,24 +2887,200 @@ def show_evento_report():
                                         s_block = "<ul>" + "".join([f"<li>{s}: {int(c)} ({(c/sz)*100:.1f}%)</li>" for s, c in vc_ss.items()]) + "</ul>"
                                     items.append(f"<li><strong>{est_name}</strong><ul><li>Distribución por Zona:{z_block}</li><li>Distribución por Sistema:{s_block}</li></ul></li>")
                                 per_station_html = "<p><strong>Detalle por Estación (top 5):</strong></p><ul>" + "".join(items) + "</ul>"
-                            default_body = (
-                                f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:8px;'><img src='cid:logo_fmre_small' alt='FMRE' style='height:40px'/><div style='font-family:Arial, sans-serif; font-size:16px; font-weight:700; color:#1f4e79;'>Federación Mexicana de Radioexperimentadores A.C.</div></div><hr/>"
-                                f"<p>Se adjunta el reporte <strong>{datos['evento']}</strong> correspondiente al <strong>{datos['fecha']}</strong>.</p>"
-                                f"<p><strong>Enviado por:</strong> {indicativo_usuario} - {nombre_usuario}</p>"
-                                f"<p><strong>Resumen de estadísticas:</strong></p>"
-                                f"<ul>"
-                                f"<li>Total de reportes: {total}</li>"
-                                f"<li>Estaciones únicas: {ests}</li>"
-                                f"<li>Zona más reportada: {zona_m}</li>"
-                                f"<li>Sistema más usado: {sist_m}</li>"
-                                f"<li>Cobertura geográfica: {ests_geo} estados</li>"
-                                f"</ul>"
-                                f"{zonas_html}"
-                                f"{sistemas_html}"
-                                f"{estaciones_html}"
-                                f"{per_station_html}"
-                                f"<p>El adjunto incluye el detalle de registros y distribuciones por zona y sistema.</p>"
-                            )
+                            # Cuerpo narrativo (Excel)
+                            try:
+                                meses_es = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"]
+                                fecha_larga = datos['fecha']
+                                try:
+                                    fdt = datetime.strptime(datos['fecha'], '%Y-%m-%d')
+                                    fecha_larga = f"{fdt.day} de {meses_es[fdt.month-1]} de {fdt.year}"
+                                except Exception:
+                                    pass
+                                vc_z_loc = df_loc['Zona'].fillna('N/D').astype(str).value_counts() if isinstance(df_loc, pd.DataFrame) and 'Zona' in df_loc.columns and total > 0 else pd.Series(dtype=int)
+                                vc_s_loc = df_loc['Sistema'].fillna('N/D').astype(str).value_counts() if isinstance(df_loc, pd.DataFrame) and 'Sistema' in df_loc.columns and total > 0 else pd.Series(dtype=int)
+                                vc_e_loc = df_loc['Estación'].fillna('Sin estación').astype(str).value_counts() if isinstance(df_loc, pd.DataFrame) and 'Estación' in df_loc.columns and total > 0 else pd.Series(dtype=int)
+                                def fmt_pct(n, d):
+                                    return f"{(n/d*100):.1f}%" if d else "0.0%"
+                                zonas_presentes = [z for z in vc_z_loc.index if z in ['XE1','XE2','XE3']]
+                                ext_count = int(vc_z_loc.get('EXT', 0)) if hasattr(vc_z_loc, 'get') else 0
+                                zona_frase = ""
+                                if len(vc_z_loc) > 0:
+                                    z_pairs = list(vc_z_loc.items())
+                                    topz = z_pairs[0]
+                                    zona_frase = f"La zona {topz[0]} fue la más activa con {int(topz[1])} reportes ({fmt_pct(topz[1], total)})."
+                                    if len(z_pairs) > 1:
+                                        z2 = z_pairs[1]
+                                        zona_frase = zona_frase[:-1] + f", seguida por {z2[0]} ({fmt_pct(z2[1], total)})."
+                                    if len(z_pairs) > 2:
+                                        z3 = z_pairs[2]
+                                        zona_frase = zona_frase[:-1] + f" y {z3[0]} ({fmt_pct(z3[1], total)})."
+                                    if ext_count > 0:
+                                        zona_frase = zona_frase[:-1] + f" Además, {ext_count} estaciones extranjeras ({fmt_pct(ext_count, total)})."
+                                sistemas_frase = ""
+                                if len(vc_s_loc) > 0:
+                                    s_pairs = list(vc_s_loc.items())
+                                    stp = s_pairs[0]
+                                    sistemas_frase = f"En sistemas, {stp[0]} lideró con {fmt_pct(stp[1], total)}"
+                                    if len(s_pairs) > 1:
+                                        s2 = s_pairs[1]
+                                        sistemas_frase += f", seguido por {s2[0]} ({fmt_pct(s2[1], total)})."
+                                    else:
+                                        sistemas_frase += "."
+                                dist_zona_html = "<ul>" + "".join([f"<li>{z}: {int(c)} ({fmt_pct(c, total)})</li>" for z, c in vc_z_loc.items()]) + "</ul>" if len(vc_z_loc) > 0 else ""
+                                dist_sist_html = "<ul>" + "".join([f"<li>{s}: {int(c)} ({fmt_pct(c, total)})</li>" for s, c in vc_s_loc.items()]) + "</ul>" if len(vc_s_loc) > 0 else ""
+                                top10 = list(vc_e_loc.items())[:10]
+                                top10_html = "<ul>" + "".join([f"<li>{e}: {int(c)} ({fmt_pct(c, total)})</li>" for e, c in top10]) + "</ul>" if top10 else ""
+                                # Desglose narrativo para estaciones específicas (XE1LM y XE2BC)
+                                det_xe_html = ""
+                                for _st_code in ['XE1LM','XE2BC']:
+                                    _df_s = df_loc[df_loc['Estación'].fillna('Sin estación').astype(str) == _st_code]
+                                    _sz = len(_df_s)
+                                    if _sz > 0:
+                                        _pct_tot = fmt_pct(_sz, total)
+                                        _z_s = _df_s['Zona'].fillna('N/D').astype(str).value_counts() if 'Zona' in _df_s.columns else pd.Series(dtype=int)
+                                        _s_s = _df_s['Sistema'].fillna('N/D').astype(str).value_counts() if 'Sistema' in _df_s.columns else pd.Series(dtype=int)
+                                        _zona_frase_st = ""
+                                        if len(_z_s) > 0:
+                                            _z_pairs = list(_z_s.items())
+                                            _topz = _z_pairs[0]
+                                            _zona_frase_st = f"La zona {_topz[0]} fue la más activa con {int(_topz[1])} reportes ({fmt_pct(_topz[1], _sz)})"
+                                            if len(_z_pairs) > 1:
+                                                _zona_frase_st += f", seguida por {_z_pairs[1][0]} ({fmt_pct(_z_pairs[1][1], _sz)})"
+                                            if len(_z_pairs) > 2:
+                                                _zona_frase_st += f" y {_z_pairs[2][0]} ({fmt_pct(_z_pairs[2][1], _sz)})"
+                                            _ext_st = int(_z_s.get('EXT', 0)) if hasattr(_z_s, 'get') else 0
+                                            if _ext_st > 0:
+                                                _zona_frase_st += f", además de {_ext_st} estaciones extranjeras ({fmt_pct(_ext_st, _sz)})."
+                                            else:
+                                                _zona_frase_st += "."
+                                        _sistemas_frase_st = ""
+                                        if len(_s_s) > 0:
+                                            _s_pairs = list(_s_s.items())
+                                            _stp = _s_pairs[0]
+                                            _sistemas_frase_st = f"En cuanto a los sistemas, {_stp[0]} encabezó la actividad con el {fmt_pct(_stp[1], _sz)}"
+                                            if len(_s_pairs) > 1:
+                                                _sistemas_frase_st += f", seguido por {_s_pairs[1][0]} ({fmt_pct(_s_pairs[1][1], _sz)})"
+                                            if len(_s_pairs) > 2:
+                                                _sistemas_frase_st += f", {_s_pairs[2][0]} ({fmt_pct(_s_pairs[2][1], _sz)})"
+                                            _otros_pct = 100.0 - sum([(v/_sz*100) for _, v in _s_pairs[:3]]) if _sz else 0.0
+                                            if len(_s_pairs) > 3 and _otros_pct > 0:
+                                                _sistemas_frase_st += f" y el {_otros_pct:.1f}% restante en otros sistemas."
+                                            else:
+                                                _sistemas_frase_st += "."
+                                        det_xe_html += f"<p>La Estación <strong>{_st_code}</strong> informa que se reportaron <strong>{_sz}</strong> colegas, que representan el <strong>{_pct_tot}</strong> del total de reportes del boletín.</p><p>{_zona_frase_st}</p><p>{_sistemas_frase_st}</p>"
+                                # Desglose narrativo para estaciones específicas (XE1LM y XE2BC)
+                                det_xe_html = ""
+                                for _st_code in ['XE1LM','XE2BC']:
+                                    _df_s = df_loc[df_loc['Estación'].fillna('Sin estación').astype(str) == _st_code]
+                                    _sz = len(_df_s)
+                                    if _sz > 0:
+                                        _pct_tot = fmt_pct(_sz, total)
+                                        _z_s = _df_s['Zona'].fillna('N/D').astype(str).value_counts() if 'Zona' in _df_s.columns else pd.Series(dtype=int)
+                                        _s_s = _df_s['Sistema'].fillna('N/D').astype(str).value_counts() if 'Sistema' in _df_s.columns else pd.Series(dtype=int)
+                                        _zona_frase_st = ""
+                                        if len(_z_s) > 0:
+                                            _z_pairs = list(_z_s.items())
+                                            _topz = _z_pairs[0]
+                                            _zona_frase_st = f"La zona {_topz[0]} fue la más activa con {int(_topz[1])} reportes ({fmt_pct(_topz[1], _sz)})"
+                                            if len(_z_pairs) > 1:
+                                                _zona_frase_st += f", seguida por {_z_pairs[1][0]} ({fmt_pct(_z_pairs[1][1], _sz)})"
+                                            if len(_z_pairs) > 2:
+                                                _zona_frase_st += f" y {_z_pairs[2][0]} ({fmt_pct(_z_pairs[2][1], _sz)})"
+                                            _ext_st = int(_z_s.get('EXT', 0)) if hasattr(_z_s, 'get') else 0
+                                            if _ext_st > 0:
+                                                _zona_frase_st += f", además de {_ext_st} estaciones extranjeras ({fmt_pct(_ext_st, _sz)})."
+                                            else:
+                                                _zona_frase_st += "."
+                                        _sistemas_frase_st = ""
+                                        if len(_s_s) > 0:
+                                            _s_pairs = list(_s_s.items())
+                                            _stp = _s_pairs[0]
+                                            _sistemas_frase_st = f"En cuanto a los sistemas, {_stp[0]} encabezó la actividad con el {fmt_pct(_stp[1], _sz)}"
+                                            if len(_s_pairs) > 1:
+                                                _sistemas_frase_st += f", seguido por {_s_pairs[1][0]} ({fmt_pct(_s_pairs[1][1], _sz)})"
+                                            if len(_s_pairs) > 2:
+                                                _sistemas_frase_st += f", {_s_pairs[2][0]} ({fmt_pct(_s_pairs[2][1], _sz)})"
+                                            _otros_pct = 100.0 - sum([(v/_sz*100) for _, v in _s_pairs[:3]]) if _sz else 0.0
+                                            if len(_s_pairs) > 3 and _otros_pct > 0:
+                                                _sistemas_frase_st += f" y el {_otros_pct:.1f}% restante en otros sistemas."
+                                            else:
+                                                _sistemas_frase_st += "."
+                                        det_xe_html += f"<p>La Estación <strong>{_st_code}</strong> informa que se reportaron <strong>{_sz}</strong> colegas, que representan el <strong>{_pct_tot}</strong> del total de reportes del boletín.</p><p>{_zona_frase_st}</p><p>{_sistemas_frase_st}</p>"
+                                # Desglose narrativo para estaciones específicas (XE1LM y XE2BC)
+                                det_xe_html = ""
+                                for _st_code in ['XE1LM','XE2BC']:
+                                    _df_s = df_loc[df_loc['Estación'].fillna('Sin estación').astype(str) == _st_code]
+                                    _sz = len(_df_s)
+                                    if _sz > 0:
+                                        _pct_tot = fmt_pct(_sz, total)
+                                        _z_s = _df_s['Zona'].fillna('N/D').astype(str).value_counts() if 'Zona' in _df_s.columns else pd.Series(dtype=int)
+                                        _s_s = _df_s['Sistema'].fillna('N/D').astype(str).value_counts() if 'Sistema' in _df_s.columns else pd.Series(dtype=int)
+                                        _zona_frase_st = ""
+                                        if len(_z_s) > 0:
+                                            _z_pairs = list(_z_s.items())
+                                            _topz = _z_pairs[0]
+                                            _zona_frase_st = f"La zona {_topz[0]} fue la más activa con {int(_topz[1])} reportes ({fmt_pct(_topz[1], _sz)})"
+                                            if len(_z_pairs) > 1:
+                                                _zona_frase_st += f", seguida por {_z_pairs[1][0]} ({fmt_pct(_z_pairs[1][1], _sz)})"
+                                            if len(_z_pairs) > 2:
+                                                _zona_frase_st += f" y {_z_pairs[2][0]} ({fmt_pct(_z_pairs[2][1], _sz)})"
+                                            _ext_st = int(_z_s.get('EXT', 0)) if hasattr(_z_s, 'get') else 0
+                                            if _ext_st > 0:
+                                                _zona_frase_st += f", además de {_ext_st} estaciones extranjeras ({fmt_pct(_ext_st, _sz)})."
+                                            else:
+                                                _zona_frase_st += "."
+                                        _sistemas_frase_st = ""
+                                        if len(_s_s) > 0:
+                                            _s_pairs = list(_s_s.items())
+                                            _stp = _s_pairs[0]
+                                            _sistemas_frase_st = f"En cuanto a los sistemas, {_stp[0]} encabezó la actividad con el {fmt_pct(_stp[1], _sz)}"
+                                            if len(_s_pairs) > 1:
+                                                _sistemas_frase_st += f", seguido por {_s_pairs[1][0]} ({fmt_pct(_s_pairs[1][1], _sz)})"
+                                            if len(_s_pairs) > 2:
+                                                _sistemas_frase_st += f", {_s_pairs[2][0]} ({fmt_pct(_s_pairs[2][1], _sz)})"
+                                            _otros_pct = 100.0 - sum([(v/_sz*100) for _, v in _s_pairs[:3]]) if _sz else 0.0
+                                            if len(_s_pairs) > 3 and _otros_pct > 0:
+                                                _sistemas_frase_st += f" y el {_otros_pct:.1f}% restante en otros sistemas."
+                                            else:
+                                                _sistemas_frase_st += "."
+                                        det_xe_html += f"<p>La Estación <strong>{_st_code}</strong> informa que se reportaron <strong>{_sz}</strong> colegas, que representan el <strong>{_pct_tot}</strong> del total de reportes del boletín.</p><p>{_zona_frase_st}</p><p>{_sistemas_frase_st}</p>"
+                                zonas_txt = ", ".join(zonas_presentes) + (" y EXT" if ext_count > 0 else "") if zonas_presentes or ext_count > 0 else "N/D"
+                                sistema_mas_usado = (vc_s_loc.index[0] if len(vc_s_loc) > 0 else 'N/D')
+                                general_stats_html = (
+                                    "<ul>"
+                                    f"<li>📡 Total de reportes: {total}</li>"
+                                    f"<li>👥 Estaciones únicas: {ests}</li>"
+                                    f"<li>🗺️ Zonas participantes: {zonas_txt}</li>"
+                                    f"<li>🔗 Sistema más usado: {sistema_mas_usado}</li>"
+                                    f"<li>🌎 Cobertura geográfica: {ests_geo} estados</li>"
+                                    "</ul>"
+                                )
+                                body_html = (
+                                    f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:8px;'><img src='cid:logo_fmre_small' alt='FMRE' style='height:40px'/><div style='font-family:Arial, sans-serif; font-size:16px; font-weight:700; color:#1f4e79;'>Federación Mexicana de Radioexperimentadores A.C.</div></div><hr/>"
+                                    f"<p>Nos da gusto compartirles el resumen de estadísticas correspondiente a <strong>{datos['evento']}</strong> del <strong>{fecha_larga}</strong>, generado automáticamente por el Sistema de Gestión de QSO (QMS).</p>"
+                                    f"<p>En esta ocasión se registraron <strong>{total}</strong> reportes, con la participación de <strong>{ests}</strong> estaciones únicas provenientes de <strong>{ests_geo}</strong> estados.</p>"
+                                    f"<p>{zona_frase}</p>"
+                                    f"<p>{sistemas_frase}</p>"
+                                    f"<h4>Estadísticas Generales</h4>"
+                                    f"{general_stats_html}"
+                                    f"<h4>Distribución por Zona</h4>"
+                                    f"{dist_zona_html}"
+                                    f"<h4>Distribución por Sistema</h4>"
+                                    f"{dist_sist_html}"
+                                    f"<h4>Top 10 de Estaciones con mayor participación</h4>"
+                                    f"{top10_html}"
+                                    f"<h4>Desglose por Estaciones (XE1LM y XE2BC)</h4>"
+                                    f"{det_xe_html}"
+                                    f"<p>El archivo adjunto incluye el detalle completo de registros y las distribuciones por zona, sistema y estación.</p>"
+                                    f"<p>¡Nos escuchamos en el próximo boletín!<br/>73 de parte del equipo de la FMRE</p>"
+                                    f"<hr/><p><strong>Enviado por:</strong> {indicativo_usuario} - {nombre_usuario}</p>"
+                                )
+                            except Exception:
+                                body_html = (
+                                    f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:8px;'><img src='cid:logo_fmre_small' alt='FMRE' style='height:40px'/><div style='font-family:Arial, sans-serif; font-size:16px; font-weight:700; color:#1f4e79;'>Federación Mexicana de Radioexperimentadores A.C.</div></div><hr/>"
+                                    f"<p>Se adjunta el reporte <strong>{datos['evento']}</strong> correspondiente al <strong>{datos['fecha']}</strong>.</p>"
+                                )
+                            default_body = body_html
                             col_l, col_r = st.columns([2, 1])
                             with col_r:
                                 users_list = db.get_all_users() or []
@@ -3019,24 +3195,124 @@ def show_evento_report():
                                         s_block = "<ul>" + "".join([f"<li>{s}: {int(c)} ({(c/sz)*100:.1f}%)</li>" for s, c in vc_ss.items()]) + "</ul>"
                                     items.append(f"<li><strong>{est_name}</strong><ul><li>Distribución por Zona:{z_block}</li><li>Distribución por Sistema:{s_block}</li></ul></li>")
                                 per_station_html = "<p><strong>Detalle por Estación (top 5):</strong></p><ul>" + "".join(items) + "</ul>"
-                            default_body = (
-                                f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:8px;'><img src='cid:logo_fmre_small' alt='FMRE' style='height:40px'/><div style='font-family:Arial, sans-serif; font-size:16px; font-weight:700; color:#1f4e79;'>Federación Mexicana de Radioexperimentadores A.C.</div></div><hr/>"
-                                f"<p>Se adjunta el reporte <strong>{datos['evento']}</strong> correspondiente al <strong>{datos['fecha']}</strong>.</p>"
-                                f"<p><strong>Enviado por:</strong> {indicativo_usuario} - {nombre_usuario}</p>"
-                                f"<p><strong>Resumen de estadísticas:</strong></p>"
-                                f"<ul>"
-                                f"<li>Total de reportes: {total}</li>"
-                                f"<li>Estaciones únicas: {ests}</li>"
-                                f"<li>Zona más reportada: {zona_m}</li>"
-                                f"<li>Sistema más usado: {sist_m}</li>"
-                                f"<li>Cobertura geográfica: {ests_geo} estados</li>"
-                                f"</ul>"
-                                f"{zonas_html}"
-                                f"{sistemas_html}"
-                                f"{estaciones_html}"
-                                f"{per_station_html}"
-                                f"<p>El adjunto incluye el detalle de registros y distribuciones por zona y sistema.</p>"
-                            )
+                            # Cuerpo narrativo (CSV)
+                            try:
+                                meses_es = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"]
+                                fecha_larga = datos['fecha']
+                                try:
+                                    fdt = datetime.strptime(datos['fecha'], '%Y-%m-%d')
+                                    fecha_larga = f"{fdt.day} de {meses_es[fdt.month-1]} de {fdt.year}"
+                                except Exception:
+                                    pass
+                                vc_z_loc = df_loc['Zona'].fillna('N/D').astype(str).value_counts() if isinstance(df_loc, pd.DataFrame) and 'Zona' in df_loc.columns and total > 0 else pd.Series(dtype=int)
+                                vc_s_loc = df_loc['Sistema'].fillna('N/D').astype(str).value_counts() if isinstance(df_loc, pd.DataFrame) and 'Sistema' in df_loc.columns and total > 0 else pd.Series(dtype=int)
+                                vc_e_loc = df_loc['Estación'].fillna('Sin estación').astype(str).value_counts() if isinstance(df_loc, pd.DataFrame) and 'Estación' in df_loc.columns and total > 0 else pd.Series(dtype=int)
+                                def fmt_pct(n, d):
+                                    return f"{(n/d*100):.1f}%" if d else "0.0%"
+                                zonas_presentes = [z for z in vc_z_loc.index if z in ['XE1','XE2','XE3']]
+                                ext_count = int(vc_z_loc.get('EXT', 0)) if hasattr(vc_z_loc, 'get') else 0
+                                zona_frase = ""
+                                if len(vc_z_loc) > 0:
+                                    z_pairs = list(vc_z_loc.items())
+                                    topz = z_pairs[0]
+                                    zona_frase = f"La zona {topz[0]} fue la más activa con {int(topz[1])} reportes ({fmt_pct(topz[1], total)})."
+                                    if len(z_pairs) > 1:
+                                        z2 = z_pairs[1]
+                                        zona_frase = zona_frase[:-1] + f", seguida por {z2[0]} ({fmt_pct(z2[1], total)})."
+                                    if len(z_pairs) > 2:
+                                        z3 = z_pairs[2]
+                                        zona_frase = zona_frase[:-1] + f" y {z3[0]} ({fmt_pct(z3[1], total)})."
+                                    if ext_count > 0:
+                                        zona_frase = zona_frase[:-1] + f" Además, {ext_count} estaciones extranjeras ({fmt_pct(ext_count, total)})."
+                                sistemas_frase = ""
+                                if len(vc_s_loc) > 0:
+                                    s_pairs = list(vc_s_loc.items())
+                                    stp = s_pairs[0]
+                                    sistemas_frase = f"En sistemas, {stp[0]} lideró con {fmt_pct(stp[1], total)}"
+                                    if len(s_pairs) > 1:
+                                        s2 = s_pairs[1]
+                                        sistemas_frase += f", seguido por {s2[0]} ({fmt_pct(s2[1], total)})."
+                                    else:
+                                        sistemas_frase += "."
+                                dist_zona_html = "<ul>" + "".join([f"<li>{z}: {int(c)} ({fmt_pct(c, total)})</li>" for z, c in vc_z_loc.items()]) + "</ul>" if len(vc_z_loc) > 0 else ""
+                                dist_sist_html = "<ul>" + "".join([f"<li>{s}: {int(c)} ({fmt_pct(c, total)})</li>" for s, c in vc_s_loc.items()]) + "</ul>" if len(vc_s_loc) > 0 else ""
+                                top10 = list(vc_e_loc.items())[:10]
+                                top10_html = "<ul>" + "".join([f"<li>{e}: {int(c)} ({fmt_pct(c, total)})</li>" for e, c in top10]) + "</ul>" if top10 else ""
+                                # Desglose narrativo para estaciones específicas (XE1LM y XE2BC)
+                                det_xe_html = ""
+                                for _st_code in ['XE1LM','XE2BC']:
+                                    _df_s = df_loc[df_loc['Estación'].fillna('Sin estación').astype(str) == _st_code]
+                                    _sz = len(_df_s)
+                                    if _sz > 0:
+                                        _pct_tot = fmt_pct(_sz, total)
+                                        _z_s = _df_s['Zona'].fillna('N/D').astype(str).value_counts() if 'Zona' in _df_s.columns else pd.Series(dtype=int)
+                                        _s_s = _df_s['Sistema'].fillna('N/D').astype(str).value_counts() if 'Sistema' in _df_s.columns else pd.Series(dtype=int)
+                                        _zona_frase_st = ""
+                                        if len(_z_s) > 0:
+                                            _z_pairs = list(_z_s.items())
+                                            _topz = _z_pairs[0]
+                                            _zona_frase_st = f"La zona {_topz[0]} fue la más activa con {int(_topz[1])} reportes ({fmt_pct(_topz[1], _sz)})"
+                                            if len(_z_pairs) > 1:
+                                                _zona_frase_st += f", seguida por {_z_pairs[1][0]} ({fmt_pct(_z_pairs[1][1], _sz)})"
+                                            if len(_z_pairs) > 2:
+                                                _zona_frase_st += f" y {_z_pairs[2][0]} ({fmt_pct(_z_pairs[2][1], _sz)})"
+                                            _ext_st = int(_z_s.get('EXT', 0)) if hasattr(_z_s, 'get') else 0
+                                            if _ext_st > 0:
+                                                _zona_frase_st += f", además de {_ext_st} estaciones extranjeras ({fmt_pct(_ext_st, _sz)})."
+                                            else:
+                                                _zona_frase_st += "."
+                                        _sistemas_frase_st = ""
+                                        if len(_s_s) > 0:
+                                            _s_pairs = list(_s_s.items())
+                                            _stp = _s_pairs[0]
+                                            _sistemas_frase_st = f"En cuanto a los sistemas, {_stp[0]} encabezó la actividad con el {fmt_pct(_stp[1], _sz)}"
+                                            if len(_s_pairs) > 1:
+                                                _sistemas_frase_st += f", seguido por {_s_pairs[1][0]} ({fmt_pct(_s_pairs[1][1], _sz)})"
+                                            if len(_s_pairs) > 2:
+                                                _sistemas_frase_st += f", {_s_pairs[2][0]} ({fmt_pct(_s_pairs[2][1], _sz)})"
+                                            _otros_pct = 100.0 - sum([(v/_sz*100) for _, v in _s_pairs[:3]]) if _sz else 0.0
+                                            if len(_s_pairs) > 3 and _otros_pct > 0:
+                                                _sistemas_frase_st += f" y el {_otros_pct:.1f}% restante en otros sistemas."
+                                            else:
+                                                _sistemas_frase_st += "."
+                                        det_xe_html += f"<p>La Estación <strong>{_st_code}</strong> informa que se reportaron <strong>{_sz}</strong> colegas, que representan el <strong>{_pct_tot}</strong> del total de reportes del boletín.</p><p>{_zona_frase_st}</p><p>{_sistemas_frase_st}</p>"
+                                zonas_txt = ", ".join(zonas_presentes) + (" y EXT" if ext_count > 0 else "") if zonas_presentes or ext_count > 0 else "N/D"
+                                sistema_mas_usado = (vc_s_loc.index[0] if len(vc_s_loc) > 0 else 'N/D')
+                                general_stats_html = (
+                                    "<ul>"
+                                    f"<li>📡 Total de reportes: {total}</li>"
+                                    f"<li>👥 Estaciones únicas: {ests}</li>"
+                                    f"<li>🗺️ Zonas participantes: {zonas_txt}</li>"
+                                    f"<li>🔗 Sistema más usado: {sistema_mas_usado}</li>"
+                                    f"<li>🌎 Cobertura geográfica: {ests_geo} estados</li>"
+                                    "</ul>"
+                                )
+                                body_html = (
+                                    f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:8px;'><img src='cid:logo_fmre_small' alt='FMRE' style='height:40px'/><div style='font-family:Arial, sans-serif; font-size:16px; font-weight:700; color:#1f4e79;'>Federación Mexicana de Radioexperimentadores A.C.</div></div><hr/>"
+                                    f"<p>Nos da gusto compartirles el resumen de estadísticas correspondiente a <strong>{datos['evento']}</strong> del <strong>{fecha_larga}</strong>, generado automáticamente por el Sistema de Gestión de QSO (QMS).</p>"
+                                    f"<p>En esta ocasión se registraron <strong>{total}</strong> reportes, con la participación de <strong>{ests}</strong> estaciones únicas provenientes de <strong>{ests_geo}</strong> estados.</p>"
+                                    f"<p>{zona_frase}</p>"
+                                    f"<p>{sistemas_frase}</p>"
+                                    f"<h4>Estadísticas Generales</h4>"
+                                    f"{general_stats_html}"
+                                    f"<h4>Distribución por Zona</h4>"
+                                    f"{dist_zona_html}"
+                                    f"<h4>Distribución por Sistema</h4>"
+                                    f"{dist_sist_html}"
+                                    f"<h4>Top 10 de Estaciones con mayor participación</h4>"
+                                    f"{top10_html}"
+                                    f"<h4>Desglose por Estaciones (XE1LM y XE2BC)</h4>"
+                                    f"{det_xe_html}"
+                                    f"<p>El archivo adjunto incluye el detalle completo de registros y las distribuciones por zona, sistema y estación.</p>"
+                                    f"<p>¡Nos escuchamos en el próximo boletín!<br/>73 de parte del equipo de la FMRE</p>"
+                                    f"<hr/><p><strong>Enviado por:</strong> {indicativo_usuario} - {nombre_usuario}</p>"
+                                )
+                            except Exception:
+                                body_html = (
+                                    f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:8px;'><img src='cid:logo_fmre_small' alt='FMRE' style='height:40px'/><div style='font-family:Arial, sans-serif; font-size:16px; font-weight:700; color:#1f4e79;'>Federación Mexicana de Radioexperimentadores A.C.</div></div><hr/>"
+                                    f"<p>Se adjunta el reporte <strong>{datos['evento']}</strong> correspondiente al <strong>{datos['fecha']}</strong>.</p>"
+                                )
+                            default_body = body_html
                             col_l, col_r = st.columns([2, 1])
                             with col_r:
                                 users_list = db.get_all_users() or []
@@ -4135,24 +4411,85 @@ def show_evento_report():
                                         s_block = "<ul>" + "".join([f"<li>{s}: {int(c)} ({(c/sz)*100:.1f}%)</li>" for s, c in vc_ss.items()]) + "</ul>"
                                     items.append(f"<li><strong>{est_name}</strong><ul><li>Distribución por Zona:{z_block}</li><li>Distribución por Sistema:{s_block}</li></ul></li>")
                                 per_station_html = "<p><strong>Detalle por Estación (top 5):</strong></p><ul>" + "".join(items) + "</ul>"
-                            default_body = (
-                                f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:8px;'><img src='cid:logo_fmre_small' alt='FMRE' style='height:40px'/><div style='font-family:Arial, sans-serif; font-size:16px; font-weight:700; color:#1f4e79;'>Federación Mexicana de Radioexperimentadores A.C.</div></div><hr/>"
-                                f"<p>Se adjunta el reporte <strong>{datos['evento']}</strong> correspondiente al <strong>{datos['fecha']}</strong>.</p>"
-                                f"<p><strong>Enviado por:</strong> {indicativo_usuario} - {nombre_usuario}</p>"
-                                f"<p><strong>Resumen de estadísticas:</strong></p>"
-                                f"<ul>"
-                                f"<li>Total de reportes: {total}</li>"
-                                f"<li>Estaciones únicas: {ests}</li>"
-                                f"<li>Zona más reportada: {zona_m}</li>"
-                                f"<li>Sistema más usado: {sist_m}</li>"
-                                f"<li>Cobertura geográfica: {ests_geo} estados</li>"
-                                f"</ul>"
-                                f"{zonas_html}"
-                                f"{sistemas_html}"
-                                f"{estaciones_html}"
-                                f"{per_station_html}"
-                                f"<p>El adjunto incluye el detalle de registros y distribuciones por zona y sistema.</p>"
-                            )
+                            try:
+                                meses_es = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"]
+                                fecha_larga = datos['fecha']
+                                try:
+                                    fdt = datetime.strptime(datos['fecha'], '%Y-%m-%d')
+                                    fecha_larga = f"{fdt.day} de {meses_es[fdt.month-1]} de {fdt.year}"
+                                except Exception:
+                                    pass
+                                vc_z_loc = df_loc['Zona'].fillna('N/D').astype(str).value_counts() if isinstance(df_loc, pd.DataFrame) and 'Zona' in df_loc.columns and total > 0 else pd.Series(dtype=int)
+                                vc_s_loc = df_loc['Sistema'].fillna('N/D').astype(str).value_counts() if isinstance(df_loc, pd.DataFrame) and 'Sistema' in df_loc.columns and total > 0 else pd.Series(dtype=int)
+                                vc_e_loc = df_loc['Estación'].fillna('Sin estación').astype(str).value_counts() if isinstance(df_loc, pd.DataFrame) and 'Estación' in df_loc.columns and total > 0 else pd.Series(dtype=int)
+                                def fmt_pct(n, d):
+                                    return f"{(n/d*100):.1f}%" if d else "0.0%"
+                                zonas_presentes = [z for z in vc_z_loc.index if z in ['XE1','XE2','XE3']]
+                                ext_count = int(vc_z_loc.get('EXT', 0)) if hasattr(vc_z_loc, 'get') else 0
+                                zona_frase = ""
+                                if len(vc_z_loc) > 0:
+                                    z_pairs = list(vc_z_loc.items())
+                                    topz = z_pairs[0]
+                                    zona_frase = f"La zona {topz[0]} fue la más activa con {int(topz[1])} reportes ({fmt_pct(topz[1], total)})."
+                                    if len(z_pairs) > 1:
+                                        z2 = z_pairs[1]
+                                        zona_frase = zona_frase[:-1] + f", seguida por {z2[0]} ({fmt_pct(z2[1], total)})."
+                                    if len(z_pairs) > 2:
+                                        z3 = z_pairs[2]
+                                        zona_frase = zona_frase[:-1] + f" y {z3[0]} ({fmt_pct(z3[1], total)})."
+                                    if ext_count > 0:
+                                        zona_frase = zona_frase[:-1] + f" Además, {ext_count} estaciones extranjeras ({fmt_pct(ext_count, total)})."
+                                sistemas_frase = ""
+                                if len(vc_s_loc) > 0:
+                                    s_pairs = list(vc_s_loc.items())
+                                    stp = s_pairs[0]
+                                    sistemas_frase = f"En sistemas, {stp[0]} lideró con {fmt_pct(stp[1], total)}"
+                                    if len(s_pairs) > 1:
+                                        s2 = s_pairs[1]
+                                        sistemas_frase += f", seguido por {s2[0]} ({fmt_pct(s2[1], total)})."
+                                    else:
+                                        sistemas_frase += "."
+                                dist_zona_html = "<ul>" + "".join([f"<li>{z}: {int(c)} ({fmt_pct(c, total)})</li>" for z, c in vc_z_loc.items()]) + "</ul>" if len(vc_z_loc) > 0 else ""
+                                dist_sist_html = "<ul>" + "".join([f"<li>{s}: {int(c)} ({fmt_pct(c, total)})</li>" for s, c in vc_s_loc.items()]) + "</ul>" if len(vc_s_loc) > 0 else ""
+                                top10 = list(vc_e_loc.items())[:10]
+                                top10_html = "<ul>" + "".join([f"<li>{e}: {int(c)} ({fmt_pct(c, total)})</li>" for e, c in top10]) + "</ul>" if top10 else ""
+                                zonas_txt = ", ".join(zonas_presentes) + (" y EXT" if ext_count > 0 else "") if zonas_presentes or ext_count > 0 else "N/D"
+                                sistema_mas_usado = (vc_s_loc.index[0] if len(vc_s_loc) > 0 else 'N/D')
+                                general_stats_html = (
+                                    "<ul>"
+                                    f"<li>📡 Total de reportes: {total}</li>"
+                                    f"<li>👥 Estaciones únicas: {ests}</li>"
+                                    f"<li>🗺️ Zonas participantes: {zonas_txt}</li>"
+                                    f"<li>🔗 Sistema más usado: {sistema_mas_usado}</li>"
+                                    f"<li>🌎 Cobertura geográfica: {ests_geo} estados</li>"
+                                    "</ul>"
+                                )
+                                body_html = (
+                                    f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:8px;'><img src='cid:logo_fmre_small' alt='FMRE' style='height:40px'/><div style='font-family:Arial, sans-serif; font-size:16px; font-weight:700; color:#1f4e79;'>Federación Mexicana de Radioexperimentadores A.C.</div></div><hr/>"
+                                    f"<p>Nos da gusto compartirles el resumen de estadísticas correspondiente a <strong>{datos['evento']}</strong> del <strong>{fecha_larga}</strong>, generado automáticamente por el Sistema de Gestión de QSO (QMS).</p>"
+                                    f"<p>En esta ocasión se registraron <strong>{total}</strong> reportes, con la participación de <strong>{ests}</strong> estaciones únicas provenientes de <strong>{ests_geo}</strong> estados.</p>"
+                                    f"<p>{zona_frase}</p>"
+                                    f"<p>{sistemas_frase}</p>"
+                                    f"<h4>Estadísticas Generales</h4>"
+                                    f"{general_stats_html}"
+                                    f"<h4>Distribución por Zona</h4>"
+                                    f"{dist_zona_html}"
+                                    f"<h4>Distribución por Sistema</h4>"
+                                    f"{dist_sist_html}"
+                                    f"<h4>Top 10 de Estaciones con mayor participación</h4>"
+                                    f"{top10_html}"
+                                    f"<h4>Desglose por Estaciones (XE1LM y XE2BC)</h4>"
+                                    f"{det_xe_html}"
+                                    f"<p>El archivo adjunto incluye el detalle completo de registros y las distribuciones por zona, sistema y estación.</p>"
+                                    f"<p>¡Nos escuchamos en el próximo boletín!<br/>73 de parte del equipo de la FMRE</p>"
+                                    f"<hr/><p><strong>Enviado por:</strong> {indicativo_usuario} - {nombre_usuario}</p>"
+                                )
+                            except Exception:
+                                body_html = (
+                                    f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:8px;'><img src='cid:logo_fmre_small' alt='FMRE' style='height:40px'/><div style='font-family:Arial, sans-serif; font-size:16px; font-weight:700; color:#1f4e79;'>Federación Mexicana de Radioexperimentadores A.C.</div></div><hr/>"
+                                    f"<p>Se adjunta el reporte <strong>{datos['evento']}</strong> correspondiente al <strong>{datos['fecha']}</strong>.</p>"
+                                )
+                            default_body = body_html
                             col_l, col_r = st.columns([2, 1])
                             with col_r:
                                 users_list = db.get_all_users() or []

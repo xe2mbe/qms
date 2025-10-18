@@ -2932,118 +2932,121 @@ def show_evento_report():
                                 top10_html = "<ul>" + "".join([f"<li>{e}: {int(c)} ({fmt_pct(c, total)})</li>" for e, c in top10]) + "</ul>" if top10 else ""
                                 # Desglose narrativo para estaciones específicas (XE1LM y XE2BC)
                                 det_xe_html = ""
-                                for _st_code in ['XE1LM','XE2BC']:
-                                    _df_s = df_loc[df_loc['Estación'].fillna('Sin estación').astype(str) == _st_code]
-                                    _sz = len(_df_s)
-                                    if _sz > 0:
-                                        _pct_tot = fmt_pct(_sz, total)
-                                        _z_s = _df_s['Zona'].fillna('N/D').astype(str).value_counts() if 'Zona' in _df_s.columns else pd.Series(dtype=int)
-                                        _s_s = _df_s['Sistema'].fillna('N/D').astype(str).value_counts() if 'Sistema' in _df_s.columns else pd.Series(dtype=int)
-                                        _zona_frase_st = ""
-                                        if len(_z_s) > 0:
-                                            _z_pairs = list(_z_s.items())
-                                            _topz = _z_pairs[0]
-                                            _zona_frase_st = f"La zona {_topz[0]} fue la más activa con {int(_topz[1])} reportes ({fmt_pct(_topz[1], _sz)})"
-                                            if len(_z_pairs) > 1:
-                                                _zona_frase_st += f", seguida por {_z_pairs[1][0]} ({fmt_pct(_z_pairs[1][1], _sz)})"
-                                            if len(_z_pairs) > 2:
-                                                _zona_frase_st += f" y {_z_pairs[2][0]} ({fmt_pct(_z_pairs[2][1], _sz)})"
-                                            _ext_st = int(_z_s.get('EXT', 0)) if hasattr(_z_s, 'get') else 0
-                                            if _ext_st > 0:
-                                                _zona_frase_st += f", además de {_ext_st} estaciones extranjeras ({fmt_pct(_ext_st, _sz)})."
-                                            else:
-                                                _zona_frase_st += "."
-                                        _sistemas_frase_st = ""
-                                        if len(_s_s) > 0:
-                                            _s_pairs = list(_s_s.items())
-                                            _stp = _s_pairs[0]
-                                            _sistemas_frase_st = f"En cuanto a los sistemas, {_stp[0]} encabezó la actividad con el {fmt_pct(_stp[1], _sz)}"
-                                            if len(_s_pairs) > 1:
-                                                _sistemas_frase_st += f", seguido por {_s_pairs[1][0]} ({fmt_pct(_s_pairs[1][1], _sz)})"
-                                            if len(_s_pairs) > 2:
-                                                _sistemas_frase_st += f", {_s_pairs[2][0]} ({fmt_pct(_s_pairs[2][1], _sz)})"
-                                            _otros_pct = 100.0 - sum([(v/_sz*100) for _, v in _s_pairs[:3]]) if _sz else 0.0
-                                            if len(_s_pairs) > 3 and _otros_pct > 0:
-                                                _sistemas_frase_st += f" y el {_otros_pct:.1f}% restante en otros sistemas."
-                                            else:
-                                                _sistemas_frase_st += "."
-                                        det_xe_html += f"<p>La Estación <strong>{_st_code}</strong> informa que se reportaron <strong>{_sz}</strong> colegas, que representan el <strong>{_pct_tot}</strong> del total de reportes del boletín.</p><p>{_zona_frase_st}</p><p>{_sistemas_frase_st}</p>"
+                                if isinstance(df_loc, pd.DataFrame) and ('Estación' in df_loc.columns) and total > 0:
+                                    for _st_code in ['XE1LM','XE2BC']:
+                                        _df_s = df_loc[df_loc['Estación'].fillna('Sin estación').astype(str) == _st_code]
+                                        _sz = len(_df_s)
+                                        if _sz > 0:
+                                            _pct_tot = fmt_pct(_sz, total)
+                                            _z_s = _df_s['Zona'].fillna('N/D').astype(str).value_counts() if 'Zona' in _df_s.columns else pd.Series(dtype=int)
+                                            _s_s = _df_s['Sistema'].fillna('N/D').astype(str).value_counts() if 'Sistema' in _df_s.columns else pd.Series(dtype=int)
+                                            _zona_frase_st = ""
+                                            if len(_z_s) > 0:
+                                                _z_pairs = list(_z_s.items())
+                                                _topz = _z_pairs[0]
+                                                _zona_frase_st = f"La zona {_topz[0]} fue la más activa con {int(_topz[1])} reportes ({fmt_pct(_topz[1], _sz)})"
+                                                if len(_z_pairs) > 1:
+                                                    _zona_frase_st += f", seguida por {_z_pairs[1][0]} ({fmt_pct(_z_pairs[1][1], _sz)})"
+                                                if len(_z_pairs) > 2:
+                                                    _zona_frase_st += f" y {_z_pairs[2][0]} ({fmt_pct(_z_pairs[2][1], _sz)})"
+                                                _ext_st = int(_z_s.get('EXT', 0)) if hasattr(_z_s, 'get') else 0
+                                                if _ext_st > 0:
+                                                    _zona_frase_st += f", además de {_ext_st} estaciones extranjeras ({fmt_pct(_ext_st, _sz)})."
+                                                else:
+                                                    _zona_frase_st += "."
+                                            _sistemas_frase_st = ""
+                                            if len(_s_s) > 0:
+                                                _s_pairs = list(_s_s.items())
+                                                _stp = _s_pairs[0]
+                                                _sistemas_frase_st = f"En cuanto a los sistemas, {_stp[0]} encabezó la actividad con el {fmt_pct(_stp[1], _sz)}"
+                                                if len(_s_pairs) > 1:
+                                                    _sistemas_frase_st += f", seguido por {_s_pairs[1][0]} ({fmt_pct(_s_pairs[1][1], _sz)})"
+                                                if len(_s_pairs) > 2:
+                                                    _sistemas_frase_st += f", {_s_pairs[2][0]} ({fmt_pct(_s_pairs[2][1], _sz)})"
+                                                _otros_pct = 100.0 - sum([(v/_sz*100) for _, v in _s_pairs[:3]]) if _sz else 0.0
+                                                if len(_s_pairs) > 3 and _otros_pct > 0:
+                                                    _sistemas_frase_st += f" y el {_otros_pct:.1f}% restante en otros sistemas."
+                                                else:
+                                                    _sistemas_frase_st += "."
+                                            det_xe_html += f"<p>La Estación <strong>{_st_code}</strong> informa que se reportaron <strong>{_sz}</strong> colegas, que representan el <strong>{_pct_tot}</strong> del total de reportes del boletín.</p><p>{_zona_frase_st}</p><p>{_sistemas_frase_st}</p>"
                                 # Desglose narrativo para estaciones específicas (XE1LM y XE2BC)
                                 det_xe_html = ""
-                                for _st_code in ['XE1LM','XE2BC']:
-                                    _df_s = df_loc[df_loc['Estación'].fillna('Sin estación').astype(str) == _st_code]
-                                    _sz = len(_df_s)
-                                    if _sz > 0:
-                                        _pct_tot = fmt_pct(_sz, total)
-                                        _z_s = _df_s['Zona'].fillna('N/D').astype(str).value_counts() if 'Zona' in _df_s.columns else pd.Series(dtype=int)
-                                        _s_s = _df_s['Sistema'].fillna('N/D').astype(str).value_counts() if 'Sistema' in _df_s.columns else pd.Series(dtype=int)
-                                        _zona_frase_st = ""
-                                        if len(_z_s) > 0:
-                                            _z_pairs = list(_z_s.items())
-                                            _topz = _z_pairs[0]
-                                            _zona_frase_st = f"La zona {_topz[0]} fue la más activa con {int(_topz[1])} reportes ({fmt_pct(_topz[1], _sz)})"
-                                            if len(_z_pairs) > 1:
-                                                _zona_frase_st += f", seguida por {_z_pairs[1][0]} ({fmt_pct(_z_pairs[1][1], _sz)})"
-                                            if len(_z_pairs) > 2:
-                                                _zona_frase_st += f" y {_z_pairs[2][0]} ({fmt_pct(_z_pairs[2][1], _sz)})"
-                                            _ext_st = int(_z_s.get('EXT', 0)) if hasattr(_z_s, 'get') else 0
-                                            if _ext_st > 0:
-                                                _zona_frase_st += f", además de {_ext_st} estaciones extranjeras ({fmt_pct(_ext_st, _sz)})."
-                                            else:
-                                                _zona_frase_st += "."
-                                        _sistemas_frase_st = ""
-                                        if len(_s_s) > 0:
-                                            _s_pairs = list(_s_s.items())
-                                            _stp = _s_pairs[0]
-                                            _sistemas_frase_st = f"En cuanto a los sistemas, {_stp[0]} encabezó la actividad con el {fmt_pct(_stp[1], _sz)}"
-                                            if len(_s_pairs) > 1:
-                                                _sistemas_frase_st += f", seguido por {_s_pairs[1][0]} ({fmt_pct(_s_pairs[1][1], _sz)})"
-                                            if len(_s_pairs) > 2:
-                                                _sistemas_frase_st += f", {_s_pairs[2][0]} ({fmt_pct(_s_pairs[2][1], _sz)})"
-                                            _otros_pct = 100.0 - sum([(v/_sz*100) for _, v in _s_pairs[:3]]) if _sz else 0.0
-                                            if len(_s_pairs) > 3 and _otros_pct > 0:
-                                                _sistemas_frase_st += f" y el {_otros_pct:.1f}% restante en otros sistemas."
-                                            else:
-                                                _sistemas_frase_st += "."
-                                        det_xe_html += f"<p>La Estación <strong>{_st_code}</strong> informa que se reportaron <strong>{_sz}</strong> colegas, que representan el <strong>{_pct_tot}</strong> del total de reportes del boletín.</p><p>{_zona_frase_st}</p><p>{_sistemas_frase_st}</p>"
+                                if isinstance(df_loc, pd.DataFrame) and ('Estación' in df_loc.columns) and total > 0:
+                                    for _st_code in ['XE1LM','XE2BC']:
+                                        _df_s = df_loc[df_loc['Estación'].fillna('Sin estación').astype(str) == _st_code]
+                                        _sz = len(_df_s)
+                                        if _sz > 0:
+                                            _pct_tot = fmt_pct(_sz, total)
+                                            _z_s = _df_s['Zona'].fillna('N/D').astype(str).value_counts() if 'Zona' in _df_s.columns else pd.Series(dtype=int)
+                                            _s_s = _df_s['Sistema'].fillna('N/D').astype(str).value_counts() if 'Sistema' in _df_s.columns else pd.Series(dtype=int)
+                                            _zona_frase_st = ""
+                                            if len(_z_s) > 0:
+                                                _z_pairs = list(_z_s.items())
+                                                _topz = _z_pairs[0]
+                                                _zona_frase_st = f"La zona {_topz[0]} fue la más activa con {int(_topz[1])} reportes ({fmt_pct(_topz[1], _sz)})"
+                                                if len(_z_pairs) > 1:
+                                                    _zona_frase_st += f", seguida por {_z_pairs[1][0]} ({fmt_pct(_z_pairs[1][1], _sz)})"
+                                                if len(_z_pairs) > 2:
+                                                    _zona_frase_st += f" y {_z_pairs[2][0]} ({fmt_pct(_z_pairs[2][1], _sz)})"
+                                                _ext_st = int(_z_s.get('EXT', 0)) if hasattr(_z_s, 'get') else 0
+                                                if _ext_st > 0:
+                                                    _zona_frase_st += f", además de {_ext_st} estaciones extranjeras ({fmt_pct(_ext_st, _sz)})."
+                                                else:
+                                                    _zona_frase_st += "."
+                                            _sistemas_frase_st = ""
+                                            if len(_s_s) > 0:
+                                                _s_pairs = list(_s_s.items())
+                                                _stp = _s_pairs[0]
+                                                _sistemas_frase_st = f"En cuanto a los sistemas, {_stp[0]} encabezó la actividad con el {fmt_pct(_stp[1], _sz)}"
+                                                if len(_s_pairs) > 1:
+                                                    _sistemas_frase_st += f", seguido por {_s_pairs[1][0]} ({fmt_pct(_s_pairs[1][1], _sz)})"
+                                                if len(_s_pairs) > 2:
+                                                    _sistemas_frase_st += f", {_s_pairs[2][0]} ({fmt_pct(_s_pairs[2][1], _sz)})"
+                                                _otros_pct = 100.0 - sum([(v/_sz*100) for _, v in _s_pairs[:3]]) if _sz else 0.0
+                                                if len(_s_pairs) > 3 and _otros_pct > 0:
+                                                    _sistemas_frase_st += f" y el {_otros_pct:.1f}% restante en otros sistemas."
+                                                else:
+                                                    _sistemas_frase_st += "."
+                                            det_xe_html += f"<p>La Estación <strong>{_st_code}</strong> informa que se reportaron <strong>{_sz}</strong> colegas, que representan el <strong>{_pct_tot}</strong> del total de reportes del boletín.</p><p>{_zona_frase_st}</p><p>{_sistemas_frase_st}</p>"
                                 # Desglose narrativo para estaciones específicas (XE1LM y XE2BC)
                                 det_xe_html = ""
-                                for _st_code in ['XE1LM','XE2BC']:
-                                    _df_s = df_loc[df_loc['Estación'].fillna('Sin estación').astype(str) == _st_code]
-                                    _sz = len(_df_s)
-                                    if _sz > 0:
-                                        _pct_tot = fmt_pct(_sz, total)
-                                        _z_s = _df_s['Zona'].fillna('N/D').astype(str).value_counts() if 'Zona' in _df_s.columns else pd.Series(dtype=int)
-                                        _s_s = _df_s['Sistema'].fillna('N/D').astype(str).value_counts() if 'Sistema' in _df_s.columns else pd.Series(dtype=int)
-                                        _zona_frase_st = ""
-                                        if len(_z_s) > 0:
-                                            _z_pairs = list(_z_s.items())
-                                            _topz = _z_pairs[0]
-                                            _zona_frase_st = f"La zona {_topz[0]} fue la más activa con {int(_topz[1])} reportes ({fmt_pct(_topz[1], _sz)})"
-                                            if len(_z_pairs) > 1:
-                                                _zona_frase_st += f", seguida por {_z_pairs[1][0]} ({fmt_pct(_z_pairs[1][1], _sz)})"
-                                            if len(_z_pairs) > 2:
-                                                _zona_frase_st += f" y {_z_pairs[2][0]} ({fmt_pct(_z_pairs[2][1], _sz)})"
-                                            _ext_st = int(_z_s.get('EXT', 0)) if hasattr(_z_s, 'get') else 0
-                                            if _ext_st > 0:
-                                                _zona_frase_st += f", además de {_ext_st} estaciones extranjeras ({fmt_pct(_ext_st, _sz)})."
-                                            else:
-                                                _zona_frase_st += "."
-                                        _sistemas_frase_st = ""
-                                        if len(_s_s) > 0:
-                                            _s_pairs = list(_s_s.items())
-                                            _stp = _s_pairs[0]
-                                            _sistemas_frase_st = f"En cuanto a los sistemas, {_stp[0]} encabezó la actividad con el {fmt_pct(_stp[1], _sz)}"
-                                            if len(_s_pairs) > 1:
-                                                _sistemas_frase_st += f", seguido por {_s_pairs[1][0]} ({fmt_pct(_s_pairs[1][1], _sz)})"
-                                            if len(_s_pairs) > 2:
-                                                _sistemas_frase_st += f", {_s_pairs[2][0]} ({fmt_pct(_s_pairs[2][1], _sz)})"
-                                            _otros_pct = 100.0 - sum([(v/_sz*100) for _, v in _s_pairs[:3]]) if _sz else 0.0
-                                            if len(_s_pairs) > 3 and _otros_pct > 0:
-                                                _sistemas_frase_st += f" y el {_otros_pct:.1f}% restante en otros sistemas."
-                                            else:
-                                                _sistemas_frase_st += "."
-                                        det_xe_html += f"<p>La Estación <strong>{_st_code}</strong> informa que se reportaron <strong>{_sz}</strong> colegas, que representan el <strong>{_pct_tot}</strong> del total de reportes del boletín.</p><p>{_zona_frase_st}</p><p>{_sistemas_frase_st}</p>"
+                                if isinstance(df_loc, pd.DataFrame) and ('Estación' in df_loc.columns) and total > 0:
+                                    for _st_code in ['XE1LM','XE2BC']:
+                                        _df_s = df_loc[df_loc['Estación'].fillna('Sin estación').astype(str) == _st_code]
+                                        _sz = len(_df_s)
+                                        if _sz > 0:
+                                            _pct_tot = fmt_pct(_sz, total)
+                                            _z_s = _df_s['Zona'].fillna('N/D').astype(str).value_counts() if 'Zona' in _df_s.columns else pd.Series(dtype=int)
+                                            _s_s = _df_s['Sistema'].fillna('N/D').astype(str).value_counts() if 'Sistema' in _df_s.columns else pd.Series(dtype=int)
+                                            _zona_frase_st = ""
+                                            if len(_z_s) > 0:
+                                                _z_pairs = list(_z_s.items())
+                                                _topz = _z_pairs[0]
+                                                _zona_frase_st = f"La zona {_topz[0]} fue la más activa con {int(_topz[1])} reportes ({fmt_pct(_topz[1], _sz)})"
+                                                if len(_z_pairs) > 1:
+                                                    _zona_frase_st += f", seguida por {_z_pairs[1][0]} ({fmt_pct(_z_pairs[1][1], _sz)})"
+                                                if len(_z_pairs) > 2:
+                                                    _zona_frase_st += f" y {_z_pairs[2][0]} ({fmt_pct(_z_pairs[2][1], _sz)})"
+                                                _ext_st = int(_z_s.get('EXT', 0)) if hasattr(_z_s, 'get') else 0
+                                                if _ext_st > 0:
+                                                    _zona_frase_st += f", además de {_ext_st} estaciones extranjeras ({fmt_pct(_ext_st, _sz)})."
+                                                else:
+                                                    _zona_frase_st += "."
+                                            _sistemas_frase_st = ""
+                                            if len(_s_s) > 0:
+                                                _s_pairs = list(_s_s.items())
+                                                _stp = _s_pairs[0]
+                                                _sistemas_frase_st = f"En cuanto a los sistemas, {_stp[0]} encabezó la actividad con el {fmt_pct(_stp[1], _sz)}"
+                                                if len(_s_pairs) > 1:
+                                                    _sistemas_frase_st += f", seguido por {_s_pairs[1][0]} ({fmt_pct(_s_pairs[1][1], _sz)})"
+                                                if len(_s_pairs) > 2:
+                                                    _sistemas_frase_st += f", {_s_pairs[2][0]} ({fmt_pct(_s_pairs[2][1], _sz)})"
+                                                _otros_pct = 100.0 - sum([(v/_sz*100) for _, v in _s_pairs[:3]]) if _sz else 0.0
+                                                if len(_s_pairs) > 3 and _otros_pct > 0:
+                                                    _sistemas_frase_st += f" y el {_otros_pct:.1f}% restante en otros sistemas."
+                                                else:
+                                                    _sistemas_frase_st += "."
+                                            det_xe_html += f"<p>La Estación <strong>{_st_code}</strong> informa que se reportaron <strong>{_sz}</strong> colegas, que representan el <strong>{_pct_tot}</strong> del total de reportes del boletín.</p><p>{_zona_frase_st}</p><p>{_sistemas_frase_st}</p>"
                                 zonas_txt = ", ".join(zonas_presentes) + (" y EXT" if ext_count > 0 else "") if zonas_presentes or ext_count > 0 else "N/D"
                                 sistema_mas_usado = (vc_s_loc.index[0] if len(vc_s_loc) > 0 else 'N/D')
                                 general_stats_html = (
@@ -3067,9 +3070,9 @@ def show_evento_report():
                                     f"{dist_zona_html}"
                                     f"<h4>Distribución por Sistema</h4>"
                                     f"{dist_sist_html}"
-                                    f"<h4>Top 10 de Estaciones con mayor participación</h4>"
+                                    f"<h4>Estaciones Control participantes</h4>"
                                     f"{top10_html}"
-                                    f"<h4>Desglose por Estaciones (XE1LM y XE2BC)</h4>"
+                                    f"<h4>Desglose por Estaciones Control</h4>"
                                     f"{det_xe_html}"
                                     f"<p>El archivo adjunto incluye el detalle completo de registros y las distribuciones por zona, sistema y estación.</p>"
                                     f"<p>¡Nos escuchamos en el próximo boletín!<br/>73 de parte del equipo de la FMRE</p>"
@@ -3081,6 +3084,54 @@ def show_evento_report():
                                     f"<p>Se adjunta el reporte <strong>{datos['evento']}</strong> correspondiente al <strong>{datos['fecha']}</strong>.</p>"
                                 )
                             default_body = body_html
+                            # Actualizar el cuerpo del PDF en sesión si está vacío o contiene el fallback
+                            try:
+                                _curr_pdf = st.session_state.get('dlg_trad_pdf_body')
+                                if (not _curr_pdf) or (isinstance(_curr_pdf, str) and 'Se adjunta el reporte' in _curr_pdf):
+                                    st.session_state['dlg_trad_pdf_body'] = default_body
+                            except Exception:
+                                st.session_state['dlg_trad_pdf_body'] = default_body
+                            # Sincronizar vista previa/textarea con el machote narrativo si hay fallback previo
+                            try:
+                                _curr_pdf = st.session_state.get('dlg_trad_pdf_body')
+                                if (not _curr_pdf) or (isinstance(_curr_pdf, str) and 'Se adjunta el reporte' in _curr_pdf):
+                                    st.session_state['dlg_trad_pdf_body'] = default_body
+                            except Exception:
+                                st.session_state['dlg_trad_pdf_body'] = default_body
+                            try:
+                                _curr_pdf = st.session_state.get('dlg_trad_pdf_body')
+                                if (not _curr_pdf) or (isinstance(_curr_pdf, str) and 'Se adjunta el reporte' in _curr_pdf):
+                                    st.session_state['dlg_trad_pdf_body'] = default_body
+                            except Exception:
+                                st.session_state['dlg_trad_pdf_body'] = default_body
+                            # Sincronizar el cuerpo del PDF con el machote narrativo si la sesión está vacía o con el fallback
+                            try:
+                                _curr_pdf = st.session_state.get('dlg_trad_pdf_body')
+                                if (not _curr_pdf) or (isinstance(_curr_pdf, str) and 'Se adjunta el reporte' in _curr_pdf):
+                                    st.session_state['dlg_trad_pdf_body'] = default_body
+                            except Exception:
+                                st.session_state['dlg_trad_pdf_body'] = default_body
+                            # Asegurar que la vista previa y el textarea no queden con el fallback minimalista
+                            try:
+                                _curr_pdf = st.session_state.get('dlg_trad_pdf_body')
+                                if (not _curr_pdf) or (isinstance(_curr_pdf, str) and 'Se adjunta el reporte' in _curr_pdf):
+                                    st.session_state['dlg_trad_pdf_body'] = default_body
+                            except Exception:
+                                st.session_state['dlg_trad_pdf_body'] = default_body
+                            # Refrescar el cuerpo del correo (PDF) si está vacío o contiene el texto minimalista
+                            try:
+                                _curr_pdf = st.session_state.get('dlg_trad_pdf_body')
+                                if (not _curr_pdf) or (isinstance(_curr_pdf, str) and 'Se adjunta el reporte' in _curr_pdf):
+                                    st.session_state['dlg_trad_pdf_body'] = default_body
+                            except Exception:
+                                st.session_state['dlg_trad_pdf_body'] = default_body
+                            # Refrescar el cuerpo del correo en sesión si está vacío o contiene el texto minimalista
+                            try:
+                                _curr = st.session_state.get('dlg_trad_pdf_body')
+                                if (not _curr) or (isinstance(_curr, str) and 'Se adjunta el reporte' in _curr):
+                                    st.session_state['dlg_trad_pdf_body'] = default_body
+                            except Exception:
+                                st.session_state['dlg_trad_pdf_body'] = default_body
                             col_l, col_r = st.columns([2, 1])
                             with col_r:
                                 users_list = db.get_all_users() or []
@@ -3299,9 +3350,9 @@ def show_evento_report():
                                     f"{dist_zona_html}"
                                     f"<h4>Distribución por Sistema</h4>"
                                     f"{dist_sist_html}"
-                                    f"<h4>Top 10 de Estaciones con mayor participación</h4>"
+                                    f"<h4>Estaciones Control participantes</h4>"
                                     f"{top10_html}"
-                                    f"<h4>Desglose por Estaciones (XE1LM y XE2BC)</h4>"
+                                    f"<h4>Desglose por Estaciones Control</h4>"
                                     f"{det_xe_html}"
                                     f"<p>El archivo adjunto incluye el detalle completo de registros y las distribuciones por zona, sistema y estación.</p>"
                                     f"<p>¡Nos escuchamos en el próximo boletín!<br/>73 de parte del equipo de la FMRE</p>"
@@ -3313,6 +3364,12 @@ def show_evento_report():
                                     f"<p>Se adjunta el reporte <strong>{datos['evento']}</strong> correspondiente al <strong>{datos['fecha']}</strong>.</p>"
                                 )
                             default_body = body_html
+                            try:
+                                _curr_pdf = st.session_state.get('dlg_trad_pdf_body')
+                                if (not _curr_pdf) or (isinstance(_curr_pdf, str) and 'Se adjunta el reporte' in _curr_pdf):
+                                    st.session_state['dlg_trad_pdf_body'] = default_body
+                            except Exception:
+                                st.session_state['dlg_trad_pdf_body'] = default_body
                             col_l, col_r = st.columns([2, 1])
                             with col_r:
                                 users_list = db.get_all_users() or []
@@ -4376,7 +4433,13 @@ def show_evento_report():
                                 unsafe_allow_html=True
                             )
                             pv_loc = st.session_state.get('trad_pdf')
-                            df_loc = df_export
+                            # Dataset para construir el cuerpo del correo (PDF)
+                            try:
+                                df_loc = df_export
+                            except Exception:
+                                df_loc = datos['df_evento']
+                            if df_loc is None:
+                                df_loc = datos['df_evento']
                             total = int(len(df_loc)) if isinstance(df_loc, pd.DataFrame) else 0
                             ests = int(df_loc['Indicativo'].nunique()) if isinstance(df_loc, pd.DataFrame) and 'Indicativo' in df_loc.columns else 0
                             zona_m = (df_loc['Zona'].mode().iloc[0] if isinstance(df_loc, pd.DataFrame) and 'Zona' in df_loc.columns and not df_loc['Zona'].mode().empty else "N/A")
@@ -4453,6 +4516,44 @@ def show_evento_report():
                                 dist_sist_html = "<ul>" + "".join([f"<li>{s}: {int(c)} ({fmt_pct(c, total)})</li>" for s, c in vc_s_loc.items()]) + "</ul>" if len(vc_s_loc) > 0 else ""
                                 top10 = list(vc_e_loc.items())[:10]
                                 top10_html = "<ul>" + "".join([f"<li>{e}: {int(c)} ({fmt_pct(c, total)})</li>" for e, c in top10]) + "</ul>" if top10 else ""
+                                # Desglose narrativo para estaciones específicas (XE1LM y XE2BC)
+                                det_xe_html = ""
+                                for _st_code in ['XE1LM','XE2BC']:
+                                    _df_s = df_loc[df_loc['Estación'].fillna('Sin estación').astype(str) == _st_code]
+                                    _sz = len(_df_s)
+                                    if _sz > 0:
+                                        _pct_tot = fmt_pct(_sz, total)
+                                        _z_s = _df_s['Zona'].fillna('N/D').astype(str).value_counts() if 'Zona' in _df_s.columns else pd.Series(dtype=int)
+                                        _s_s = _df_s['Sistema'].fillna('N/D').astype(str).value_counts() if 'Sistema' in _df_s.columns else pd.Series(dtype=int)
+                                        _zona_frase_st = ""
+                                        if len(_z_s) > 0:
+                                            _z_pairs = list(_z_s.items())
+                                            _topz = _z_pairs[0]
+                                            _zona_frase_st = f"La zona {_topz[0]} fue la más activa con {int(_topz[1])} reportes ({fmt_pct(_topz[1], _sz)})"
+                                            if len(_z_pairs) > 1:
+                                                _zona_frase_st += f", seguida por {_z_pairs[1][0]} ({fmt_pct(_z_pairs[1][1], _sz)})"
+                                            if len(_z_pairs) > 2:
+                                                _zona_frase_st += f" y {_z_pairs[2][0]} ({fmt_pct(_z_pairs[2][1], _sz)})"
+                                            _ext_st = int(_z_s.get('EXT', 0)) if hasattr(_z_s, 'get') else 0
+                                            if _ext_st > 0:
+                                                _zona_frase_st += f", además de {_ext_st} estaciones extranjeras ({fmt_pct(_ext_st, _sz)})."
+                                            else:
+                                                _zona_frase_st += "."
+                                        _sistemas_frase_st = ""
+                                        if len(_s_s) > 0:
+                                            _s_pairs = list(_s_s.items())
+                                            _stp = _s_pairs[0]
+                                            _sistemas_frase_st = f"En cuanto a los sistemas, {_stp[0]} encabezó la actividad con el {fmt_pct(_stp[1], _sz)}"
+                                            if len(_s_pairs) > 1:
+                                                _sistemas_frase_st += f", seguido por {_s_pairs[1][0]} ({fmt_pct(_s_pairs[1][1], _sz)})"
+                                            if len(_s_pairs) > 2:
+                                                _sistemas_frase_st += f", {_s_pairs[2][0]} ({fmt_pct(_s_pairs[2][1], _sz)})"
+                                            _otros_pct = 100.0 - sum([(v/_sz*100) for _, v in _s_pairs[:3]]) if _sz else 0.0
+                                            if len(_s_pairs) > 3 and _otros_pct > 0:
+                                                _sistemas_frase_st += f" y el {_otros_pct:.1f}% restante en otros sistemas."
+                                            else:
+                                                _sistemas_frase_st += "."
+                                        det_xe_html += f"<p>La Estación <strong>{_st_code}</strong> informa que se reportaron <strong>{_sz}</strong> colegas, que representan el <strong>{_pct_tot}</strong> del total de reportes del boletín.</p><p>{_zona_frase_st}</p><p>{_sistemas_frase_st}</p>"
                                 zonas_txt = ", ".join(zonas_presentes) + (" y EXT" if ext_count > 0 else "") if zonas_presentes or ext_count > 0 else "N/D"
                                 sistema_mas_usado = (vc_s_loc.index[0] if len(vc_s_loc) > 0 else 'N/D')
                                 general_stats_html = (
@@ -4476,9 +4577,9 @@ def show_evento_report():
                                     f"{dist_zona_html}"
                                     f"<h4>Distribución por Sistema</h4>"
                                     f"{dist_sist_html}"
-                                    f"<h4>Top 10 de Estaciones con mayor participación</h4>"
+                                    f"<h4>Estaciones Control participacipantes</h4>"
                                     f"{top10_html}"
-                                    f"<h4>Desglose por Estaciones (XE1LM y XE2BC)</h4>"
+                                    f"<h4>Desglose por Estaciones Control</h4>"
                                     f"{det_xe_html}"
                                     f"<p>El archivo adjunto incluye el detalle completo de registros y las distribuciones por zona, sistema y estación.</p>"
                                     f"<p>¡Nos escuchamos en el próximo boletín!<br/>73 de parte del equipo de la FMRE</p>"

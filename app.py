@@ -19,6 +19,7 @@ import base64
 from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
+import pandas as pd
 from utils import show_gestion_estaciones
 from rs_management import show_rs_management
 
@@ -96,6 +97,203 @@ def _load_mexico_states_geojson() -> dict | None:
         st.warning(f"No se pudo cargar el archivo GeoJSON de estados: {exc}")
         return None
 
+def _infer_featureidkey(geojson: dict) -> tuple[str, str]:
+    """Infere la propiedad a usar como featureidkey para el GeoJSON (compatibilidad amplia)."""
+    try:
+        props = geojson.get('features', [{}])[0].get('properties', {})
+        for key in (
+            "state_name", "STATE_NAME",  # GeoJSON común (este repo)
+            "name", "NOMGEO", "NOM_ENT", "estado", "nombre"
+        ):
+            if key in props:
+                return f"properties.{key}", key
+    except Exception:
+        pass
+    # Fallback razonable
+    return "properties.state_name", "state_name"
+
+def show_public_home():
+    """Página pública con mapa y filtros para usuarios no autenticados"""
+    # Encabezado con botón Login a la derecha
+    h_left, h_right = st.columns([6, 1])
+    with h_left:
+        st.subheader("Actividad pública de reportes")
+        st.caption("Datos agregados recientes sin información personal")
+    with h_right:
+        if st.button("Login", type="primary"):
+            open_dialog = getattr(st, "dialog", None)
+            if callable(open_dialog):
+                @st.dialog("Iniciar sesión")
+                def _login_dialog():
+                    st.write("Para continuar, abre la página de inicio de sesión.")
+                    if st.button("Ir al login", type="primary"):
+                        st.session_state.force_login = True
+                        st.rerun()
+                _login_dialog()
+            else:
+                st.session_state.force_login = True
+                st.rerun()
+
+    rango = st.selectbox("Rango", ["Últimos 7 días", "Últimos 30 días", "Últimos 12 meses", "Todo"], index=1)
+
+    # Construir consulta agregada por estado
+    where = []
+    params: list = []
+    today = datetime.now().date()
+    # Normalizar fecha a formato ISO YYYY-MM-DD para comparar
+    fecha_expr = (
+        "(CASE "
+        " WHEN fecha_reporte LIKE '__/__/____%' THEN substr(fecha_reporte,7,4)||'-'||substr(fecha_reporte,4,2)||'-'||substr(fecha_reporte,1,2)"
+        " WHEN fecha_reporte LIKE '____-__-__%' THEN substr(fecha_reporte,1,10)"
+        " ELSE substr(fecha_reporte,1,10) END)"
+    )
+    if rango == "Últimos 7 días":
+        start = (today - timedelta(days=7)).strftime('%Y-%m-%d')
+        where.append(f"{fecha_expr} >= ?")
+        params.append(start)
+    elif rango == "Últimos 30 días":
+        start = (today - timedelta(days=30)).strftime('%Y-%m-%d')
+        where.append(f"{fecha_expr} >= ?")
+        params.append(start)
+    elif rango == "Últimos 12 meses":
+        start = (today - timedelta(days=365)).strftime('%Y-%m-%d')
+        where.append(f"{fecha_expr} >= ?")
+        params.append(start)
+
+    where_clause = " WHERE " + " AND ".join(where) if where else ""
+    try:
+        with db.get_connection() as conn:
+            cur = conn.cursor()
+            total = cur.execute(f"SELECT COUNT(*) FROM reportes{where_clause}", params).fetchone()[0]
+            estaciones = cur.execute(f"SELECT COUNT(DISTINCT indicativo) FROM reportes{where_clause}", params).fetchone()[0]
+            estados_cnt = cur.execute(f"SELECT COUNT(DISTINCT CASE WHEN estado IS NOT NULL AND estado<>'' THEN estado END) FROM reportes{where_clause}", params).fetchone()[0]
+            zonas_cnt = cur.execute(f"SELECT COUNT(DISTINCT CASE WHEN zona IS NOT NULL AND zona<>'' THEN zona END) FROM reportes{where_clause}", params).fetchone()[0]
+            sistemas_cnt = cur.execute(f"SELECT COUNT(DISTINCT CASE WHEN sistema IS NOT NULL AND sistema<>'' THEN sistema END) FROM reportes{where_clause}", params).fetchone()[0]
+    except Exception:
+        total = estaciones = estados_cnt = zonas_cnt = sistemas_cnt = 0
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Reportes", int(total))
+    m2.metric("Estaciones", int(estaciones))
+    m3.metric("Estados", int(estados_cnt))
+    m4.metric("Zonas", int(zonas_cnt))
+    m5.metric("Sistemas", int(sistemas_cnt))
+
+    sql = "SELECT estado, COUNT(*) as c FROM reportes"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " GROUP BY estado"
+
+    rows = []
+    try:
+        with db.get_connection() as conn:
+            cur = conn.cursor()
+            rows = cur.execute(sql, params).fetchall() or []
+    except Exception:
+        rows = []
+
+    # Cargar GeoJSON y preparar índice por estado
+    geo = _load_mexico_states_geojson()
+    if not geo:
+        st.info("No se encontró el mapa de estados. Contacte al administrador.")
+        return
+    featureidkey, prop_key = _infer_featureidkey(geo)
+
+    # Mapa de normalización a propiedad original del GeoJSON
+    geo_index: dict[str, str] = {}
+    try:
+        for feat in geo.get('features', []):
+            props = feat.get('properties', {})
+            val = str(props.get(prop_key, '')).strip()
+            if not val:
+                continue
+            norm = _normalizar_estado_nombre(val)
+            geo_index[norm] = val
+    except Exception:
+        pass
+
+    def _match_geo_key(e: str) -> str | None:
+        if not e:
+            return None
+        e_norm = _normalizar_estado_nombre(e)
+        # Coincidencia directa con propiedades del GeoJSON
+        if e_norm in geo_index:
+            return e_norm
+        # Intentar alias conocidos
+        alias = GEOJSON_STATE_ALIASES.get(e_norm)
+        if alias:
+            alias_norm = _normalizar_estado_nombre(alias)
+            if alias_norm in geo_index:
+                return alias_norm
+            # Caso especial: Estado de México
+            if alias_norm == "mexico" and "estado de mexico" in geo_index:
+                return "estado de mexico"
+        # Caso especial: DB dice "mexico", GeoJSON usa "estado de mexico"
+        if e_norm == "mexico" and "estado de mexico" in geo_index:
+            return "estado de mexico"
+        return None
+
+    data_map = []
+    total_extranjero = 0
+    for r in rows:
+        estado_db = r[0]
+        conteo = int(r[1] or 0)
+        match_key = _match_geo_key(estado_db)
+        if not match_key:
+            # Contabilizar extranjero si aplica
+            if _normalizar_estado_nombre(estado_db) in ("extranjero", "ext"):
+                total_extranjero += conteo
+            continue
+        target = geo_index.get(match_key)
+        if target:
+            data_map.append({"estado": target, "conteo": conteo})
+
+    if not data_map:
+        st.caption("Sin datos para el rango/filtros seleccionados")
+        return
+
+    df_map = pd.DataFrame(data_map)
+    fig = px.choropleth(
+        df_map,
+        geojson=geo,
+        locations="estado",
+        color="conteo",
+        featureidkey=featureidkey,
+        color_continuous_scale="YlOrRd",
+        projection="mercator",
+    )
+    fig.update_geos(fitbounds="locations", visible=False)
+    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
+    st.plotly_chart(fig, width='stretch')
+
+    if total_extranjero:
+        st.caption(f"Incluye {total_extranjero} reporte(s) de 'Extranjero' no mapeados en el coroplético")
+    try:
+        with db.get_connection() as conn:
+            cur = conn.cursor()
+            add_cond = " AND " if where_clause else " WHERE "
+            rows_est = cur.execute(
+                f"SELECT estado, COUNT(*) as c FROM reportes{where_clause}{add_cond}estado IS NOT NULL AND estado<>'' GROUP BY estado ORDER BY c DESC",
+                params,
+            ).fetchall() or []
+            rows_sys = cur.execute(
+                f"SELECT sistema, COUNT(*) as c FROM reportes{where_clause}{add_cond}sistema IS NOT NULL AND sistema<>'' GROUP BY sistema ORDER BY c DESC",
+                params,
+            ).fetchall() or []
+    except Exception:
+        rows_est, rows_sys = [], []
+    if rows_est:
+        df_est = pd.DataFrame(rows_est, columns=["estado", "reportes"])
+        st.subheader("Por estado")
+        fig_est = px.bar(df_est, x="estado", y="reportes")
+        st.plotly_chart(fig_est, width='stretch')
+        st.dataframe(df_est, use_container_width=True)
+    if rows_sys:
+        df_sys = pd.DataFrame(rows_sys, columns=["sistema", "reportes"])
+        st.subheader("Por sistema")
+        fig_sys = px.bar(df_sys, x="sistema", y="reportes")
+        st.plotly_chart(fig_sys, width='stretch')
+        st.dataframe(df_sys, use_container_width=True)
+
 def show_sidebar():
     """Muestra la barra lateral solo cuando el usuario está autenticado"""
     if 'user' not in st.session_state:
@@ -108,8 +306,11 @@ def show_sidebar():
         st.markdown(
             """
             <style>
+            [data-testid="stSidebar"] > div:first-child { min-height:100vh; display:flex; flex-direction:column; }
             [data-testid="stSidebar"] [data-testid="stImage"] { display:flex; justify-content:center; }
             [data-testid="stSidebar"] [data-testid="stImage"] img { display:block; margin-left:auto; margin-right:auto; }
+            .qms-sb-spacer { flex: 1 1 auto; }
+            .qms-sb-session { margin-top:auto; }
             </style>
             """,
             unsafe_allow_html=True,
@@ -162,11 +363,21 @@ def show_sidebar():
             auth.logout()
             st.rerun()
 
+        # Espaciador flexible para empujar la info de sesión al fondo
+        st.markdown('<div class="qms-sb-spacer"></div>', unsafe_allow_html=True)
+
         # Información de sesión en la parte inferior
-        st.divider()
         current_date = get_current_cdmx_time().strftime("%d/%m/%Y %H:%M %Z")
-        st.caption(f"👤 {user['role'].capitalize()} — {user['full_name']}")
-        st.caption(f"📅 Sesión: {current_date} (Hora CDMX)")
+        st.markdown(
+            f"""
+<div class="qms-sb-session">
+  <hr/>
+  <div>👤 {user['role'].capitalize()} — {user['full_name']}</div>
+  <div>📅 Sesión: {current_date} (Hora CDMX)</div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
 
 def show_home():
     """Muestra la página de inicio"""
@@ -7394,13 +7605,16 @@ def main():
     
     # Verificar autenticación
     if 'user' not in st.session_state:
-        # No mostrar barra lateral en el login
+        # Modo público con mapa y botón de Login (o login completo si se solicita)
         st.set_page_config(
-            page_title="Inicio de Sesión - QMS",
-            page_icon="🔒",
-            layout="centered"
+            page_title="QMS Público - FMRE",
+            page_icon="📻",
+            layout="wide"
         )
-        auth.show_login()
+        if st.session_state.get('force_login'):
+            auth.show_login()
+        else:
+            show_public_home()
     else:
         # Configurar página con barra lateral solo cuando está autenticado
         st.set_page_config(
@@ -7409,6 +7623,7 @@ def main():
             layout="wide",
             initial_sidebar_state="expanded"
         )
+        
         # Mostrar la barra lateral solo cuando está autenticado
         show_sidebar()
         

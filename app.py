@@ -15,6 +15,7 @@ import re
 import io
 import unicodedata
 import json
+import base64
 from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
@@ -123,7 +124,7 @@ def show_sidebar():
         
         # Menú de navegación
         st.markdown("### Menú")
-        menu_options = ["🏠 Inicio", "📝 Toma de Reportes", "📋 Registros", "🧾 Reportes", "📊 Estadísticas", "📧 Enviar Reportes"]
+        menu_options = ["🏠 Inicio", "📝 Toma de Reportes", "📋 Registros", "🧾 Reportes", "📊 Estadísticas"]
         
         # Mostrar opciones de administración solo para administradores
         if user['role'] == 'admin':
@@ -157,11 +158,81 @@ def show_sidebar():
 def show_home():
     """Muestra la página de inicio"""
     st.title("Bienvenido al Sistema de Gestión de QSOs")
-    st.markdown("""
-    ### 📊 Panel de Control
-    
-    Utilice el menú lateral para navegar por las diferentes secciones del sistema.
-    """)
+    user = st.session_state.get('user')
+    now_cdmx = get_current_cdmx_time()
+    if user:
+        st.markdown(f"### {user['full_name']}")
+        st.caption(f"{user['role'].capitalize()} · {now_cdmx.strftime('%d/%m/%Y %H:%M %Z')}")
+    else:
+        st.caption(now_cdmx.strftime("%d/%m/%Y %H:%M %Z"))
+
+    total_reportes = 0
+    total_radios = 0
+    zonas_activas = 0
+    last_fecha = None
+    last_tipo = None
+    try:
+        with db.get_connection() as conn:
+            cur = conn.cursor()
+            total_reportes = cur.execute("SELECT COUNT(*) FROM reportes").fetchone()[0] or 0
+            total_radios = cur.execute("SELECT COUNT(*) FROM radioexperimentadores WHERE activo=1").fetchone()[0] or 0
+            try:
+                zonas_activas = cur.execute("SELECT COUNT(*) FROM zonas WHERE activo=1").fetchone()[0] or 0
+            except Exception:
+                zonas_activas = cur.execute("SELECT COUNT(*) FROM zonas").fetchone()[0] or 0
+            r = cur.execute("SELECT tipo_reporte, fecha_reporte FROM reportes ORDER BY fecha_reporte DESC, id DESC LIMIT 1").fetchone()
+            if r:
+                last_tipo = r[0] or "N/D"
+                last_fecha = str(r[1])
+    except Exception:
+        pass
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Reportes", f"{total_reportes}")
+    with c2:
+        st.metric("Estaciones registradas", f"{total_radios}")
+    with c3:
+        st.metric("Zonas activas", f"{zonas_activas}")
+    with c4:
+        if last_fecha or last_tipo:
+            st.metric("Último reporte", f"{last_fecha or 'N/D'}", last_tipo)
+        else:
+            st.metric("Último reporte", "N/D")
+
+    st.subheader("Actividad reciente")
+    lines = []
+    try:
+        with db.get_connection() as conn:
+            cur = conn.cursor()
+            rows = cur.execute("SELECT fecha_reporte, indicativo, estado, zona, sistema FROM reportes ORDER BY fecha_reporte DESC, id DESC LIMIT 8").fetchall()
+            for row in rows or []:
+                fr = row[0]
+                ind = row[1]
+                est = row[2] or 'N/D'
+                zon = row[3] or 'N/D'
+                sis = row[4] or 'N/D'
+                lines.append(f"- {fr}: {ind} · {zon} · {sis} · {est}")
+    except Exception:
+        pass
+    if lines:
+        st.markdown("\n".join(lines))
+    else:
+        st.caption("Sin actividad reciente")
+
+    st.subheader("Próximas sesiones")
+    def _next_weekday(base_dt, target_wd):
+        d = (target_wd - base_dt.weekday()) % 7
+        if d == 0:
+            d = 7
+        return (base_dt + timedelta(days=d)).date()
+    prox_dom = _next_weekday(now_cdmx, 6)
+    prox_mie = _next_weekday(now_cdmx, 2)
+    cc1, cc2 = st.columns(2)
+    with cc1:
+        st.markdown(f"**Domingo (Boletín en Vivo):** {prox_dom.strftime('%d/%m/%Y')}")
+    with cc2:
+        st.markdown(f"**Miércoles (Retransmisión CREBC):** {prox_mie.strftime('%d/%m/%Y')}")
 
 def show_gestion_usuarios():
     """Muestra la gestión de usuarios dentro de la sección de Gestión"""
@@ -8370,5 +8441,22 @@ def _show_crear_radioexperimentador():
             st.rerun()
         
 
+try:
+    with open("assets/LogoFMRE_small.png", "rb") as _lf:
+        _logo_fmre_b64 = base64.b64encode(_lf.read()).decode()
+except Exception:
+    _logo_fmre_b64 = ""
+_footer_html = f"""
+<div style="margin-top:24px;padding:12px 0;text-align:center;color:#555;font:12px/1.4 system-ui,-apple-system,'Segoe UI',Roboto,Arial,'Noto Sans'">
+  <div style="margin-bottom:6px;">
+    <img src="data:image/png;base64,{_logo_fmre_b64}" alt="FMRE" style="height:18px;vertical-align:middle;margin-right:8px;">
+    <strong>Federación Mexicana de Radioexperimentadores A.C.</strong>
+  </div>
+  <div style="margin-bottom:4px;">QMS — Sistema de Gestión de QSO</div>
+  <div>Desarrollado por integrantes del Radio Club Guadiana · <a href="https://rcg.org.mx" target="_blank" rel="noopener">rcg.org.mx</a></div>
+</div>
+"""
+
 if __name__ == "__main__":
     main()
+    st.markdown(_footer_html, unsafe_allow_html=True)

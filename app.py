@@ -104,23 +104,30 @@ def show_sidebar():
         return
 
     with st.sidebar:
-        # Usar una versión más grande del logo con un ancho máximo
-        st.image(
-            "assets/LogoFMRE_medium.png",
-            width='content',  # Ancho fijo en lugar de usar el contenedor
-            output_format='PNG',
-            #width=200  # Ancho máximo en píxeles
+        # Centrar cualquier imagen en la barra lateral (incluye el logo FMRE)
+        st.markdown(
+            """
+            <style>
+            [data-testid="stSidebar"] [data-testid="stImage"] { display:flex; justify-content:center; }
+            [data-testid="stSidebar"] [data-testid="stImage"] img { display:block; margin-left:auto; margin-right:auto; }
+            </style>
+            """,
+            unsafe_allow_html=True,
         )
+        # Logo FMRE centrado sin modificar tamaño (contenedor flex con base64)
+        try:
+            _logo_b64_mid = base64.b64encode(Path("assets/LogoFMRE_medium.png").read_bytes()).decode()
+            st.markdown(
+                f'<div style="width:100%;display:flex;justify-content:center;">\n'
+                f'  <img src="data:image/png;base64,{_logo_b64_mid}" alt="FMRE" style="display:block;height:auto;"/>\n'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        except Exception:
+            st.image("assets/LogoFMRE_medium.png", output_format='PNG')
         
-        # Mostrar información del usuario
+        # Datos de usuario (para menú y para mostrar al final)
         user = st.session_state.user
-        st.markdown(f"### {user['full_name']}")
-        st.caption(f"👤 {user['role'].capitalize()}")
-        
-        # Mostrar fecha actual en CDMX
-        current_date = get_current_cdmx_time().strftime("%d/%m/%Y %H:%M %Z")
-        st.markdown(f"---")
-        st.caption(f"📅 Sesión: {current_date} (Hora CDMX)")
         
         # Menú de navegación
         st.markdown("### Menú")
@@ -154,6 +161,12 @@ def show_sidebar():
         if st.button("🚪 Cerrar sesión", width='stretch'):
             auth.logout()
             st.rerun()
+
+        # Información de sesión en la parte inferior
+        st.divider()
+        current_date = get_current_cdmx_time().strftime("%d/%m/%Y %H:%M %Z")
+        st.caption(f"👤 {user['role'].capitalize()} — {user['full_name']}")
+        st.caption(f"📅 Sesión: {current_date} (Hora CDMX)")
 
 def show_home():
     """Muestra la página de inicio"""

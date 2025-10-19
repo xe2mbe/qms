@@ -135,10 +135,34 @@ def show_public_home():
         except Exception:
             pass
     with h_txt:
-        st.subheader("Estadísticas de la toma de reportes del boletín FMRE")
+        st.subheader("Estadísticas de la toma de reportes de los programas de la FMRE")
         st.caption("Mapa interactivo de México con actividad por estado y resúmenes por estado y sistema.")
+        st.markdown(
+            """
+            <style>
+            /* Compacta selects y date inputs */
+            div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
+                min-height: 34px;
+            }
+            div[data-testid="stSelectbox"] div[data-baseweb="select"] * {
+                font-size: 0.9rem;
+            }
+            div[data-testid="stDateInput"] input {
+                height: 34px;
+                padding-top: 4px;
+                padding-bottom: 4px;
+                font-size: 0.9rem;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    rango = st.selectbox("Rango", ["Últimos 7 días", "Últimos 30 días", "Últimos 12 meses", "Todo", "Personalizado"], index=1)
+    flt_r1c1, flt_r1c2, _ = st.columns([1, 1, 6])
+    with flt_r1c1:
+        rango = st.selectbox("Rango", ["Hoy", "Últimos 7 días", "Últimos 30 días", "Últimos 12 meses", "Todo", "Personalizado"], index=2, key="pub_rango")
+    with flt_r1c2:
+        tipo_datos = st.selectbox("Tipo", ["Tradicional", "Redes Sociales"], index=0, key="pub_tipo_datos")
 
     # Rango personalizado (opcional)
     fecha_ini_input = None
@@ -164,7 +188,11 @@ def show_public_home():
         " WHEN fecha_reporte LIKE '____-__-__%' THEN substr(fecha_reporte,1,10)"
         " ELSE substr(fecha_reporte,1,10) END)"
     )
-    if rango == "Últimos 7 días":
+    if rango == "Hoy":
+        today_str = today.strftime('%Y-%m-%d')
+        where.append(f"{fecha_expr} = ?")
+        params.append(today_str)
+    elif rango == "Últimos 7 días":
         start = (today - timedelta(days=7)).strftime('%Y-%m-%d')
         where.append(f"{fecha_expr} >= ?")
         params.append(start)
@@ -184,7 +212,6 @@ def show_public_home():
         where.append(f"{fecha_expr} <= ?")
         params.append(end)
     # Filtros por tipo de datos y evento/RS
-    tipo_datos = st.selectbox("Tipo", ["Tradicional", "Redes Sociales"], index=0, key="pub_tipo_datos")
 
     if tipo_datos == "Tradicional":
         # Cargar eventos desde la tabla 'eventos' (solo activos)
@@ -194,7 +221,9 @@ def show_public_home():
         except Exception:
             opciones_eventos = []
 
-        evento_sel = st.selectbox("Evento", ["Todos"] + opciones_eventos, index=0, key="pub_evento_sel")
+        evt_col, _ = st.columns([1, 3])
+        with evt_col:
+            evento_sel = st.selectbox("Evento", ["Todos"] + opciones_eventos, index=0, key="pub_evento_sel")
         if evento_sel and evento_sel != "Todos":
             where.append("tipo_reporte = ?")
             params.append(evento_sel)
@@ -208,6 +237,9 @@ def show_public_home():
         if rango == "Personalizado" and fecha_ini_input and fecha_fin_input:
             rs_start = start
             rs_end = end
+        elif rango == "Hoy":
+            rs_start = today.strftime('%Y-%m-%d')
+            rs_end = today.strftime('%Y-%m-%d')
         elif rango == "Últimos 7 días":
             rs_start = (today - timedelta(days=7)).strftime('%Y-%m-%d')
             rs_end = today.strftime('%Y-%m-%d')
@@ -241,7 +273,9 @@ def show_public_home():
         except Exception:
             plataformas = []
 
-        plat_sel = st.selectbox("Tipo RS", ["Todas"] + plataformas, index=0, key="pub_plat_sel")
+        plat_col, _ = st.columns([1, 3])
+        with plat_col:
+            plat_sel = st.selectbox("Tipo RS", ["Todas"] + plataformas, index=0, key="pub_plat_sel")
 
         # Construir condiciones para RS
         rs_where_parts = []
@@ -470,8 +504,39 @@ def show_public_home():
                 f"SELECT sistema, COUNT(*) as c FROM reportes{where_clause}{add_cond}sistema IS NOT NULL AND sistema<>'' GROUP BY sistema ORDER BY c DESC",
                 params,
             ).fetchall() or []
+            rows_calls_ham = cur.execute(
+                f"""
+                WITH filtered AS (
+                    SELECT indicativo, nombre, estado, ciudad
+                    FROM reportes{where_clause}
+                )
+                SELECT f.indicativo,
+                       COALESCE(MAX(r.nombre_completo), MAX(f.nombre)) as nombre,
+                       COALESCE(MAX(r.estado), MAX(f.estado)) as estado,
+                       COALESCE(MAX(r.municipio), MAX(f.ciudad)) as ciudad,
+                       COUNT(*) as c
+                FROM filtered f
+                LEFT JOIN radioexperimentadores r ON r.indicativo = f.indicativo
+                WHERE UPPER(f.indicativo) <> 'SWL'
+                GROUP BY f.indicativo
+                ORDER BY c DESC, f.indicativo
+                """,
+                params,
+            ).fetchall() or []
+            rows_calls_swl = cur.execute(
+                f"""
+                SELECT COALESCE(nombre, '') as nombre,
+                       COALESCE(estado, '') as estado,
+                       COALESCE(ciudad, '') as ciudad,
+                       COUNT(*) as c
+                FROM reportes{where_clause}{add_cond}UPPER(indicativo) = 'SWL'
+                GROUP BY COALESCE(nombre, ''), COALESCE(estado, ''), COALESCE(ciudad, '')
+                ORDER BY c DESC, nombre
+                """,
+                params,
+            ).fetchall() or []
     except Exception:
-        rows_est, rows_sys = [], []
+        rows_est, rows_sys, rows_calls_ham, rows_calls_swl = [], [], [], []
     if rows_est:
         df_est = pd.DataFrame(rows_est, columns=["estado", "reportes"])
         df_est.insert(0, "Numero", range(1, len(df_est) + 1))
@@ -482,6 +547,16 @@ def show_public_home():
         )
         fig_est.update_layout(showlegend=False)
         st.plotly_chart(fig_est, use_container_width=True)
+        # Añadir porcentaje respecto al total filtrado
+        try:
+            tot = int(total)
+        except Exception:
+            tot = 0
+        if tot > 0:
+            df_est["Porcentaje"] = (df_est["reportes"].astype(float) / tot) * 100.0
+        else:
+            df_est["Porcentaje"] = 0.0
+        df_est["Porcentaje"] = df_est["Porcentaje"].round(1).astype(str) + "%"
         df_est_display = df_est.rename(columns={
             "Numero": "Número",
             "estado": "Estado",
@@ -498,12 +573,45 @@ def show_public_home():
         )
         fig_sys.update_layout(showlegend=False)
         st.plotly_chart(fig_sys, use_container_width=True)
+        # Añadir porcentaje respecto al total filtrado
+        try:
+            tot = int(total)
+        except Exception:
+            tot = 0
+        if tot > 0:
+            df_sys["Porcentaje"] = (df_sys["reportes"].astype(float) / tot) * 100.0
+        else:
+            df_sys["Porcentaje"] = 0.0
+        df_sys["Porcentaje"] = df_sys["Porcentaje"].round(1).astype(str) + "%"
         df_sys_display = df_sys.rename(columns={
             "Numero": "Número",
             "sistema": "Sistema",
             "reportes": "Reportes"
         })
         st.dataframe(df_sys_display, width=720, hide_index=True)
+    if rows_calls_ham or rows_calls_swl:
+        st.subheader("Por estación")
+        df_ham = pd.DataFrame(rows_calls_ham, columns=["indicativo", "nombre", "estado", "ciudad", "reportes"]) if rows_calls_ham else pd.DataFrame(columns=["indicativo", "nombre", "estado", "ciudad", "reportes"])
+        df_swl = pd.DataFrame(rows_calls_swl, columns=["nombre", "estado", "ciudad", "reportes"]) if rows_calls_swl else pd.DataFrame(columns=["nombre", "estado", "ciudad", "reportes"])
+        df_swl.insert(0, "indicativo", "SWL")
+        # Combinar y normalizar valores vacíos
+        df_calls_detail = pd.concat([
+            df_ham,
+            df_swl[["indicativo", "nombre", "estado", "ciudad", "reportes"]]
+        ], ignore_index=True)
+        if not df_calls_detail.empty:
+            df_calls_detail.replace({"": "N/D", None: "N/D"}, inplace=True)
+            df_calls_detail = df_calls_detail.sort_values(by=["reportes", "indicativo", "nombre"], ascending=[False, True, True], kind="mergesort")
+            df_calls_detail.insert(0, "Numero", range(1, len(df_calls_detail) + 1))
+            df_calls_display = df_calls_detail.rename(columns={
+                "Numero": "Número",
+                "indicativo": "Indicativo",
+                "nombre": "Nombre",
+                "estado": "Estado",
+                "ciudad": "Ciudad",
+                "reportes": "Reportes",
+            })
+            st.dataframe(df_calls_display, width=720, hide_index=True)
 
 def show_sidebar():
     """Muestra la barra lateral solo cuando el usuario está autenticado"""

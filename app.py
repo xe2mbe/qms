@@ -114,12 +114,16 @@ def _infer_featureidkey(geojson: dict) -> tuple[str, str]:
 
 def show_public_home():
     """Página pública con mapa y filtros para usuarios no autenticados"""
-    # Encabezado con botón Login a la derecha
-    h_left, h_right = st.columns([6, 1])
-    with h_left:
-        st.subheader("Actividad pública de reportes")
-        st.caption("Datos agregados recientes sin información personal")
-    with h_right:
+    h_logo, h_txt, h_btn = st.columns([1, 6, 1])
+    with h_logo:
+        try:
+            st.image("assets/LogoFMRE_medium.png")
+        except Exception:
+            pass
+    with h_txt:
+        st.subheader("Actividad pública de reportes FMRE")
+        st.caption("Mapa interactivo de México con actividad por estado y resúmenes por estado y sistema. Selecciona fechas para explorar.")
+    with h_btn:
         if st.button("Login", type="primary"):
             open_dialog = getattr(st, "dialog", None)
             if callable(open_dialog):
@@ -134,7 +138,20 @@ def show_public_home():
                 st.session_state.force_login = True
                 st.rerun()
 
-    rango = st.selectbox("Rango", ["Últimos 7 días", "Últimos 30 días", "Últimos 12 meses", "Todo"], index=1)
+    rango = st.selectbox("Rango", ["Últimos 7 días", "Últimos 30 días", "Últimos 12 meses", "Todo", "Personalizado"], index=1)
+
+    # Rango personalizado (opcional)
+    fecha_ini_input = None
+    fecha_fin_input = None
+    if rango == "Personalizado":
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            fecha_ini_input = st.date_input("Fecha inicio", value=datetime.now() - timedelta(days=30), key="pub_fecha_inicio")
+        with col_f2:
+            fecha_fin_input = st.date_input("Fecha fin", value=datetime.now(), key="pub_fecha_fin")
+        if fecha_ini_input > fecha_fin_input:
+            st.error("❌ La fecha de inicio debe ser anterior o igual a la fecha de fin")
+            return
 
     # Construir consulta agregada por estado
     where = []
@@ -159,6 +176,13 @@ def show_public_home():
         start = (today - timedelta(days=365)).strftime('%Y-%m-%d')
         where.append(f"{fecha_expr} >= ?")
         params.append(start)
+    elif rango == "Personalizado" and fecha_ini_input and fecha_fin_input:
+        start = fecha_ini_input.strftime('%Y-%m-%d')
+        end = fecha_fin_input.strftime('%Y-%m-%d')
+        where.append(f"{fecha_expr} >= ?")
+        params.append(start)
+        where.append(f"{fecha_expr} <= ?")
+        params.append(end)
 
     where_clause = " WHERE " + " AND ".join(where) if where else ""
     try:
@@ -249,16 +273,21 @@ def show_public_home():
 
     if not data_map:
         st.caption("Sin datos para el rango/filtros seleccionados")
-        return
 
-    df_map = pd.DataFrame(data_map)
+    # Construir mapa para TODOS los estados de México (los sin datos en 0)
+    counts_by_estado = {d['estado']: d['conteo'] for d in data_map}
+    full_map = [
+        {"estado": estado_full, "conteo": counts_by_estado.get(estado_full, 0)}
+        for estado_full in geo_index.values()
+    ]
+    df_map = pd.DataFrame(full_map)
     fig = px.choropleth(
         df_map,
         geojson=geo,
         locations="estado",
         color="conteo",
         featureidkey=featureidkey,
-        color_continuous_scale="YlOrRd",
+        color_continuous_scale="Greens",
         projection="mercator",
     )
     fig.update_geos(fitbounds="locations", visible=False)
@@ -284,13 +313,21 @@ def show_public_home():
     if rows_est:
         df_est = pd.DataFrame(rows_est, columns=["estado", "reportes"])
         st.subheader("Por estado")
-        fig_est = px.bar(df_est, x="estado", y="reportes")
+        fig_est = px.bar(
+            df_est, x="estado", y="reportes", color="estado",
+            color_discrete_sequence=px.colors.qualitative.Plotly
+        )
+        fig_est.update_layout(showlegend=False)
         st.plotly_chart(fig_est, use_container_width=True)
         st.dataframe(df_est, use_container_width=True)
     if rows_sys:
         df_sys = pd.DataFrame(rows_sys, columns=["sistema", "reportes"])
         st.subheader("Por sistema")
-        fig_sys = px.bar(df_sys, x="sistema", y="reportes")
+        fig_sys = px.bar(
+            df_sys, x="sistema", y="reportes", color="sistema",
+            color_discrete_sequence=px.colors.qualitative.Dark24
+        )
+        fig_sys.update_layout(showlegend=False)
         st.plotly_chart(fig_sys, use_container_width=True)
         st.dataframe(df_sys, use_container_width=True)
 

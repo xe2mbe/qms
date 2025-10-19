@@ -181,6 +181,168 @@ def show_public_home():
         params.append(start)
         where.append(f"{fecha_expr} <= ?")
         params.append(end)
+    # Filtros por tipo de datos y evento/RS
+    tipo_datos = st.selectbox("Tipo", ["Tradicional", "Redes Sociales"], index=0, key="pub_tipo_datos")
+
+    if tipo_datos == "Tradicional":
+        # Cargar eventos desde la tabla 'eventos' (solo activos)
+        try:
+            eventos = db.get_all_eventos(incluir_inactivos=False)
+            opciones_eventos = sorted(list({str(e.get('tipo', '')).strip() for e in eventos if str(e.get('tipo', '')).strip()}))
+        except Exception:
+            opciones_eventos = []
+
+        evento_sel = st.selectbox("Evento", ["Todos"] + opciones_eventos, index=0, key="pub_evento_sel")
+        if evento_sel and evento_sel != "Todos":
+            where.append("tipo_reporte = ?")
+            params.append(evento_sel)
+    else:
+        # Resumen de Redes Sociales en página pública (sin mapa)
+        st.subheader("Actividad en Redes Sociales")
+
+        # Determinar rango de fechas para RS
+        rs_start = None
+        rs_end = None
+        if rango == "Personalizado" and fecha_ini_input and fecha_fin_input:
+            rs_start = start
+            rs_end = end
+        elif rango == "Últimos 7 días":
+            rs_start = (today - timedelta(days=7)).strftime('%Y-%m-%d')
+            rs_end = today.strftime('%Y-%m-%d')
+        elif rango == "Últimos 30 días":
+            rs_start = (today - timedelta(days=30)).strftime('%Y-%m-%d')
+            rs_end = today.strftime('%Y-%m-%d')
+        elif rango == "Últimos 12 meses":
+            rs_start = (today - timedelta(days=365)).strftime('%Y-%m-%d')
+            rs_end = today.strftime('%Y-%m-%d')
+        # Para "Todo" deja None para no filtrar por fecha
+
+        # Cargar plataformas disponibles
+        plataformas = []
+        try:
+            with db.get_connection() as conn:
+                cur = conn.cursor()
+                if rs_start and rs_end:
+                    plat_rows = cur.execute(
+                        "SELECT DISTINCT plataforma_nombre FROM estadisticas_rs WHERE fecha_reporte BETWEEN ? AND ? ORDER BY plataforma_nombre",
+                        (rs_start, rs_end),
+                    ).fetchall() or []
+                else:
+                    plat_rows = cur.execute(
+                        "SELECT DISTINCT plataforma_nombre FROM estadisticas_rs ORDER BY plataforma_nombre"
+                    ).fetchall() or []
+                plataformas = [
+                    (r[0] if isinstance(r, (list, tuple)) else r.get('plataforma_nombre', ''))
+                    for r in plat_rows
+                    if (r[0] if isinstance(r, (list, tuple)) else r.get('plataforma_nombre'))
+                ]
+        except Exception:
+            plataformas = []
+
+        plat_sel = st.selectbox("Tipo RS", ["Todas"] + plataformas, index=0, key="pub_plat_sel")
+
+        # Construir condiciones para RS
+        rs_where_parts = []
+        rs_params: list = []
+        if rs_start and rs_end:
+            rs_where_parts.append("fecha_reporte BETWEEN ? AND ?")
+            rs_params.extend([rs_start, rs_end])
+        if plat_sel and plat_sel != "Todas":
+            rs_where_parts.append("plataforma_nombre = ?")
+            rs_params.append(plat_sel)
+        rs_where_clause = (" WHERE " + " AND ".join(rs_where_parts)) if rs_where_parts else ""
+
+        # Métricas totales RS
+        try:
+            with db.get_connection() as conn:
+                cur = conn.cursor()
+                row_tot = cur.execute(
+                    f"SELECT SUM(me_gusta), SUM(comentarios), SUM(compartidos), SUM(reproducciones) FROM estadisticas_rs{rs_where_clause}",
+                    rs_params,
+                ).fetchone()
+                mg, cm, cp, rp = (row_tot or (0, 0, 0, 0))
+                mg = int(mg or 0)
+                cm = int(cm or 0)
+                cp = int(cp or 0)
+                rp = int(rp or 0)
+        except Exception:
+            mg = cm = cp = rp = 0
+
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.metric("Me gusta", mg)
+        with c2:
+            st.metric("Comentarios", cm)
+        with c3:
+            st.metric("Compartidos", cp)
+        with c4:
+            st.metric("Reproducciones", rp)
+
+        # Resumen por plataforma
+        try:
+            with db.get_connection() as conn:
+                cur = conn.cursor()
+                rows_rs = cur.execute(
+                    f"""
+                    SELECT plataforma_nombre,
+                           SUM(me_gusta) as me_gusta,
+                           SUM(comentarios) as comentarios,
+                           SUM(compartidos) as compartidos,
+                           SUM(reproducciones) as reproducciones
+                    FROM estadisticas_rs{rs_where_clause}
+                    GROUP BY plataforma_nombre
+                    ORDER BY plataforma_nombre
+                    """,
+                    rs_params,
+                ).fetchall() or []
+        except Exception:
+            rows_rs = []
+
+        if rows_rs:
+            try:
+                df_rs = pd.DataFrame(
+                    rows_rs,
+                    columns=["Plataforma", "Me gusta", "Comentarios", "Compartidos", "Reproducciones"],
+                )
+            except Exception:
+                # Fallback por si vienen como dict
+                df_rs = pd.DataFrame([
+                    {
+                        "Plataforma": r.get("plataforma_nombre", ""),
+                        "Me gusta": int(r.get("me_gusta", 0) or 0),
+                        "Comentarios": int(r.get("comentarios", 0) or 0),
+                        "Compartidos": int(r.get("compartidos", 0) or 0),
+                        "Reproducciones": int(r.get("reproducciones", 0) or 0),
+                    }
+                    for r in rows_rs
+                ])
+
+            df_rs["Interacciones"] = (
+                df_rs["Me gusta"].astype(int)
+                + df_rs["Comentarios"].astype(int)
+                + df_rs["Compartidos"].astype(int)
+                + df_rs["Reproducciones"].astype(int)
+            )
+
+            st.dataframe(df_rs, hide_index=True, width=720)
+
+            if px is not None and not df_rs.empty:
+                try:
+                    fig_rs = px.bar(
+                        df_rs,
+                        x="Plataforma",
+                        y="Interacciones",
+                        color="Plataforma",
+                        color_discrete_sequence=px.colors.qualitative.Plotly,
+                        title="Interacciones por Plataforma",
+                    )
+                    fig_rs.update_layout(showlegend=False)
+                    st.plotly_chart(fig_rs, width='stretch')
+                except Exception:
+                    pass
+
+        # Terminar flujo RS para no ejecutar el resto (mapa de reportes)
+        return
 
     where_clause = " WHERE " + " AND ".join(where) if where else ""
     try:

@@ -263,7 +263,7 @@ def show_public_home():
     )
     fig.update_geos(fitbounds="locations", visible=False)
     fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
 
     if total_extranjero:
         st.caption(f"Incluye {total_extranjero} reporte(s) de 'Extranjero' no mapeados en el coroplético")
@@ -285,13 +285,13 @@ def show_public_home():
         df_est = pd.DataFrame(rows_est, columns=["estado", "reportes"])
         st.subheader("Por estado")
         fig_est = px.bar(df_est, x="estado", y="reportes")
-        st.plotly_chart(fig_est, width='stretch')
+        st.plotly_chart(fig_est, use_container_width=True)
         st.dataframe(df_est, use_container_width=True)
     if rows_sys:
         df_sys = pd.DataFrame(rows_sys, columns=["sistema", "reportes"])
         st.subheader("Por sistema")
         fig_sys = px.bar(df_sys, x="sistema", y="reportes")
-        st.plotly_chart(fig_sys, width='stretch')
+        st.plotly_chart(fig_sys, use_container_width=True)
         st.dataframe(df_sys, use_container_width=True)
 
 def show_sidebar():
@@ -891,30 +891,33 @@ def show_gestion_eventos():
                             col1, col2 = st.columns(2)
                             
                             with col1:
-                                if st.form_submit_button("💾 Guardar cambios", width='stretch'):
-                                    try:
-                                        # Actualizar el evento
-                                        if db.update_evento(
-                                            evento_id=evento['id'],
-                                            tipo=nombre,
-                                            descripcion=descripcion,
-                                            activo=1 if activo else 0
-                                        ):
-                                            st.success("✅ Evento actualizado correctamente")
-                                            time.sleep(2)
-                                            # Limpiar estado de edición
-                                            del st.session_state[f'editing_evento_{evento["id"]}']
-                                            st.rerun()
-                                        else:
-                                            st.error("❌ Error al actualizar el evento")
-                                    except Exception as e:
-                                        st.error(f"Error al actualizar el evento: {str(e)}")
-                            
+                                save_changes = st.form_submit_button("💾 Guardar cambios", width='stretch')
+
                             with col2:
-                                if st.form_submit_button("❌ Cancelar", type="secondary", width='stretch'):
-                                    # Cancelar edición
-                                    del st.session_state[f'editing_evento_{evento["id"]}']
-                                    st.rerun()
+                                cancel_edit = st.form_submit_button("❌ Cancelar", width='stretch')
+
+                            if save_changes:
+                                try:
+                                    # Actualizar el evento
+                                    if db.update_evento(
+                                        evento_id=evento['id'],
+                                        tipo=nombre,
+                                        descripcion=descripcion,
+                                        activo=1 if activo else 0
+                                    ):
+                                        st.success("✅ Evento actualizado correctamente")
+                                        time.sleep(2)
+                                        # Limpiar estado de edición
+                                        del st.session_state[f'editing_evento_{evento["id"]}']
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Error al actualizar el evento")
+                                except Exception as e:
+                                    st.error(f"Error al actualizar el evento: {str(e)}")
+                            elif cancel_edit:
+                                # Cancelar edición
+                                del st.session_state[f'editing_evento_{evento["id"]}']
+                                st.rerun()
             
             if not eventos:
                 st.info("No se encontraron eventos que coincidan con los criterios de búsqueda")
@@ -1040,7 +1043,7 @@ def show_reportes():
         show_evento_report()
 
     with tab2:
-        show_rs_event_report()
+        show_rs_reports()
 
 def show_rs_reports():
     st.subheader("📱 Reportes de Redes Sociales")
@@ -1055,83 +1058,12 @@ def show_rs_reports():
         return
     fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d')
     fecha_fin_str = fecha_fin.strftime('%Y-%m-%d')
-    reportes_rs = db.get_reportes_rs_por_fecha(fecha_inicio_str, fecha_fin_str)
-    est = db.get_estadisticas_rs_por_fecha(fecha_inicio_str, fecha_fin_str)
-
-    c1, c2, c3, c4, c5 = st.columns(5)
-    with c1:
-        st.metric("Total", int(((est or {}).get('total_registros') or 0)))
-    metricas = (est or {}).get('metricas', {}) or {}
-    with c2:
-        st.metric("Me gusta", int(metricas.get('me_gusta') or 0))
-    with c3:
-        st.metric("Comentarios", int(metricas.get('comentarios') or 0))
-    with c4:
-        st.metric("Compartidos", int(metricas.get('compartidos') or 0))
-    with c5:
-        st.metric("Interacciones", int(metricas.get('interacciones') or 0))
-
-    plataformas_top = (est or {}).get('plataformas_top', []) or []
-    if plataformas_top:
-        import pandas as pd
-        df_plat = pd.DataFrame(plataformas_top)
-        st.dataframe(df_plat, hide_index=True, width='stretch')
-
-    if reportes_rs:
-        import pandas as pd
-        df = pd.DataFrame([
-            {
-                'Fecha': r.get('fecha_reporte', ''),
-                'Indicativo': r.get('indicativo', ''),
-                'Operador': r.get('operador', ''),
-                'Plataforma': r.get('plataforma_nombre', ''),
-                'Estado': r.get('estado', ''),
-                'Ciudad': r.get('ciudad', ''),
-                'Zona': r.get('zona', ''),
-                'Señal': r.get('senal', ''),
-                'Capturado Por': r.get('qrz_captured_by', ''),
-                'Operando': r.get('qrz_station', ''),
-                'Observaciones': r.get('observaciones', '')
-            }
-            for r in reportes_rs
-        ])
-        st.dataframe(df, hide_index=True, width='stretch')
-
-        datos_por_dia = (est or {}).get('datos_por_dia', []) or []
-        if datos_por_dia:
-            df_dia = pd.DataFrame(datos_por_dia)
-            if not df_dia.empty and 'interacciones' in df_dia.columns and 'fecha_reporte' in df_dia.columns:
-                st.line_chart(df_dia.set_index('fecha_reporte')['interacciones'])
-    else:
-        st.info("No hay reportes de redes sociales para el período seleccionado.")
-
-def show_rs_event_report():
-    """Muestra reportes de Redes Sociales por período con estadísticas y exportación"""
-    import pandas as pd
-    from datetime import datetime
-    import io
-
-    st.subheader("📱 Reportes de Redes Sociales")
-
-    # Filtros de período
-    col1, col2 = st.columns(2)
-    with col1:
-        fecha_inicio = st.date_input("Fecha inicio", value=datetime.now().replace(day=1), key="rs_evt_fecha_inicio")
-    with col2:
-        fecha_fin = st.date_input("Fecha fin", value=datetime.now(), key="rs_evt_fecha_fin")
-
-    if fecha_inicio > fecha_fin:
-        st.error("❌ La fecha de inicio debe ser anterior a la fecha de fin")
-        return
-
-    fecha_inicio_str = fecha_inicio.strftime('%Y-%m-%d')
-    fecha_fin_str = fecha_fin.strftime('%Y-%m-%d')
     fecha_rango_lbl = f"{fecha_inicio_str} a {fecha_fin_str}" if fecha_inicio_str != fecha_fin_str else fecha_inicio_str
 
     # Obtener datos RS de la BD
     try:
-        reportes_rs = db.get_reportes_rs_por_fecha(fecha_inicio_str, fecha_fin_str) or []
-        est = db.get_estadisticas_rs_por_fecha(fecha_inicio_str, fecha_fin_str) or {}
+        reportes_rs = db.get_reportes_rs_por_fecha(fecha_inicio_str, fecha_fin_str)
+        est = db.get_estadisticas_rs_por_fecha(fecha_inicio_str, fecha_fin_str)
     except Exception as e:
         st.error(f"Error al cargar reportes RS: {e}")
         return
@@ -1231,7 +1163,6 @@ def show_rs_event_report():
         total_reproducciones_ui += rp
 
     if plat_metrics_records_ui:
-        import pandas as pd
         plat_metrics_records_ui.append({
             'Plataforma': 'Total',
             'Me gusta': total_me_gusta_ui,
@@ -2213,7 +2144,7 @@ def show_geografico_report():
                                 height=600
                             )
 
-                            st.plotly_chart(fig, width='stretch')
+                            st.plotly_chart(fig, use_container_width=True)
 
                             if not unmatched_states.empty:
                                 st.caption(
@@ -2256,7 +2187,7 @@ def show_geografico_report():
                                 margin=dict(l=0, r=0, t=0, b=0)
                             )
 
-                            st.plotly_chart(fig, width='stretch')
+                            st.plotly_chart(fig, use_container_width=True)
 
                 estados_sin_coordenadas = conteo_por_estado[conteo_por_estado[['lat', 'lon']].isna().any(axis=1)]
                 if not estados_sin_coordenadas.empty:
@@ -2267,7 +2198,7 @@ def show_geografico_report():
 
             # Estandarizar los nombres de los estados antes de buscar la zona
             df_geografico['Estado'] = df_geografico['Estado'].apply(
-                lambda x: MAPEO_ESTADOS.get(x, x) if pd.notna(x) and x != '' else x
+                lambda x: MAPEO_ESTADOS.get(x, x) if pd.notna(x) and x != 'Desconocido' else x
             )
             
             # Obtener el mapeo de estados a zonas desde la base de datos
@@ -2398,7 +2329,7 @@ def show_geografico_report():
                     )
                     
                     # Mostrar el gráfico
-                    st.plotly_chart(fig, width='stretch')
+                    st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.info("No hay datos de zonas para mostrar")
             
@@ -2441,7 +2372,7 @@ def show_geografico_report():
                     )
                     
                     # Mostrar el gráfico
-                    st.plotly_chart(fig, width='stretch')
+                    st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.info("No hay datos de estados para mostrar")
 

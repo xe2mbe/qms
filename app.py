@@ -600,7 +600,11 @@ def show_public_home():
             df_swl[["indicativo", "nombre", "estado", "ciudad", "reportes"]]
         ], ignore_index=True)
         if not df_calls_detail.empty:
-            df_calls_detail.replace({"": "N/D", None: "N/D"}, inplace=True)
+            df_calls_detail = df_calls_detail.replace({"": "N/D", None: "N/D"})
+            try:
+                df_calls_detail = df_calls_detail.infer_objects(copy=False)
+            except Exception:
+                pass
             df_calls_detail = df_calls_detail.sort_values(by=["reportes", "indicativo", "nombre"], ascending=[False, True, True], kind="mergesort")
             df_calls_detail.insert(0, "Numero", range(1, len(df_calls_detail) + 1))
             df_calls_display = df_calls_detail.rename(columns={

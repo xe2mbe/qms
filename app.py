@@ -119,12 +119,14 @@ def show_public_home():
         popover = getattr(st, "popover", None)
         if callable(popover):
             with st.popover("☰"):
-                if st.button("Login", type="primary", width='stretch'):
+                st.markdown("**Menú**")
+                if st.button("🔑 Iniciar sesión", type="primary", width='stretch', key="pub_menu_login"):
                     st.session_state.force_login = True
                     st.rerun()
         else:
             with st.expander("☰", expanded=False):
-                if st.button("Login", type="primary", width='stretch'):
+                st.markdown("**Menú**")
+                if st.button("🔑 Iniciar sesión", type="primary", width='stretch', key="pub_menu_login_fallback"):
                     st.session_state.force_login = True
                     st.rerun()
     with h_logo:

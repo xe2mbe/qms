@@ -114,29 +114,27 @@ def _infer_featureidkey(geojson: dict) -> tuple[str, str]:
 
 def show_public_home():
     """Página pública con mapa y filtros para usuarios no autenticados"""
-    h_logo, h_txt, h_btn = st.columns([1, 6, 1])
+    h_menu, h_logo, h_txt = st.columns([1, 1, 6])
+    with h_menu:
+        popover = getattr(st, "popover", None)
+        if callable(popover):
+            with st.popover("☰"):
+                if st.button("Login", type="primary", width='stretch'):
+                    st.session_state.force_login = True
+                    st.rerun()
+        else:
+            with st.expander("☰", expanded=False):
+                if st.button("Login", type="primary", width='stretch'):
+                    st.session_state.force_login = True
+                    st.rerun()
     with h_logo:
         try:
             st.image("assets/LogoFMRE_medium.png")
         except Exception:
             pass
     with h_txt:
-        st.subheader("Actividad pública de reportes FMRE")
-        st.caption("Mapa interactivo de México con actividad por estado y resúmenes por estado y sistema. Selecciona fechas para explorar.")
-    with h_btn:
-        if st.button("Login", type="primary"):
-            open_dialog = getattr(st, "dialog", None)
-            if callable(open_dialog):
-                @st.dialog("Iniciar sesión")
-                def _login_dialog():
-                    st.write("Para continuar, abre la página de inicio de sesión.")
-                    if st.button("Ir al login", type="primary"):
-                        st.session_state.force_login = True
-                        st.rerun()
-                _login_dialog()
-            else:
-                st.session_state.force_login = True
-                st.rerun()
+        st.subheader("Estadísticas de la toma de reportes del boletín FMRE")
+        st.caption("Mapa interactivo de México con actividad por estado y resúmenes por estado y sistema.")
 
     rango = st.selectbox("Rango", ["Últimos 7 días", "Últimos 30 días", "Últimos 12 meses", "Todo", "Personalizado"], index=1)
 
@@ -291,7 +289,7 @@ def show_public_home():
         projection="mercator",
     )
     fig.update_geos(fitbounds="locations", visible=False)
-    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
+    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0), height=700)
     st.plotly_chart(fig, use_container_width=True)
 
     if total_extranjero:
@@ -312,6 +310,7 @@ def show_public_home():
         rows_est, rows_sys = [], []
     if rows_est:
         df_est = pd.DataFrame(rows_est, columns=["estado", "reportes"])
+        df_est.insert(0, "Numero", range(1, len(df_est) + 1))
         st.subheader("Por estado")
         fig_est = px.bar(
             df_est, x="estado", y="reportes", color="estado",
@@ -319,9 +318,15 @@ def show_public_home():
         )
         fig_est.update_layout(showlegend=False)
         st.plotly_chart(fig_est, use_container_width=True)
-        st.dataframe(df_est, use_container_width=True)
+        df_est_display = df_est.rename(columns={
+            "Numero": "Número",
+            "estado": "Estado",
+            "reportes": "Reportes"
+        })
+        st.dataframe(df_est_display, width=720, hide_index=True)
     if rows_sys:
         df_sys = pd.DataFrame(rows_sys, columns=["sistema", "reportes"])
+        df_sys.insert(0, "Numero", range(1, len(df_sys) + 1))
         st.subheader("Por sistema")
         fig_sys = px.bar(
             df_sys, x="sistema", y="reportes", color="sistema",
@@ -329,7 +334,12 @@ def show_public_home():
         )
         fig_sys.update_layout(showlegend=False)
         st.plotly_chart(fig_sys, use_container_width=True)
-        st.dataframe(df_sys, use_container_width=True)
+        df_sys_display = df_sys.rename(columns={
+            "Numero": "Número",
+            "sistema": "Sistema",
+            "reportes": "Reportes"
+        })
+        st.dataframe(df_sys_display, width=720, hide_index=True)
 
 def show_sidebar():
     """Muestra la barra lateral solo cuando el usuario está autenticado"""
